@@ -1,0 +1,8 @@
+functools
+joblib>=0.17.0
+numpy
+pandas
+pyproj==2.6.1.post1
+rasterio
+rasterio.warp
+Shapely
