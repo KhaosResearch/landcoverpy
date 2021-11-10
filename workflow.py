@@ -30,6 +30,7 @@ def get_minio():
     )
 
 def get_mongo_collection():
+    # Return a collection from Mongo DB
     mongo_client = MongoClient(
         "mongodb://" + settings.MONGO_HOST + ":" + str(settings.MONGO_PORT) + "/",
         username=settings.MONGO_USERNAME,
@@ -124,15 +125,20 @@ def normalize(matrix):
     # Normalize a numpy matrix
     return (matrix - np.nanmean(matrix)) / np.nanstd(matrix)
 
-def _dimension_reduction(percentage_variance: list, variance_explained: int):
-    cumulative_variance = 0
-    n_components = 0
-    while cumulative_variance < variance_explained:
-        cumulative_variance += percentage_variance[n_components]
-        n_components += 1
-    return n_components
-
 def pca(data: pd.DataFrame, variance_explained: int = 75):
+    '''
+    Return the main columns after a Principal Component Analysis.
+
+    Source: https://bitbucket.org/khaosresearchgroup/enbic2lab-images/src/master/soil/PCA_variance/pca-variance.py
+    '''
+    def _dimension_reduction(percentage_variance: list, variance_explained: int):
+        cumulative_variance = 0
+        n_components = 0
+        while cumulative_variance < variance_explained:
+            cumulative_variance += percentage_variance[n_components]
+            n_components += 1
+        return n_components
+
     pca = PCA()
     pca_data = pca.fit_transform(data)
     per_var = np.round(pca.explained_variance_ratio_ * 100, decimals=1)
@@ -158,6 +164,73 @@ def pca(data: pd.DataFrame, variance_explained: int = 75):
     column_names = data.columns 
     return [column_names[id_] for id_ in col_ids]
 
+def _get_corners(geometry: dict):
+    coordinates = geometry["coordinates"][0] # Takes only the outer ring of the polygon: https://geojson.org/geojson-spec.html#polygon
+    x = [] 
+    y = [] 
+    for coordinate in coordinates:
+        x.append(coordinate[0])
+        y.append(coordinate[1])
+
+    max_x = max(x)
+    min_x = min(x)
+    max_y = max(y)
+    min_y = min(y)
+
+    return {
+        "top_left": (min_x, max_y),
+        "top_right": (max_x, max_y),
+        "bottom_left": (min_x, min_y),
+        "bottom_right": (max_x, min_y),
+        } 
+
+def _get_centroid(geometry: dict):
+    '''
+    Only works for non-self-intersecting closed polygon. The vertices are assumed
+    to be numbered in order of their occurrence along the polygon's perimeter;
+    furthermore, the vertex ( xn, yn ) is assumed to be the same as ( x0, y0 ),
+    meaning i + 1 on the last case must loop around to i = 0.
+
+    Source: https://en.wikipedia.org/wiki/Centroid#Of_a_polygon
+    '''
+    coordinates = geometry["coordinates"][0] # Takes only the outer ring of the polygon: https://geojson.org/geojson-spec.html#polygon
+    x = [] 
+    y = [] 
+    for coordinate in coordinates:
+        x.append(coordinate[0])
+        y.append(coordinate[1])
+
+    # Calculate sums
+    sum_x = 0
+    sum_y = 0
+    sum_A = 0
+    for i in range(len(x)-1):
+        sum_x += (x[i] + x[i+1]) * ((x[i] * y[i+1]) - (x[i+1] * y[i]))
+        sum_y += (y[i] + y[i+1]) * ((x[i] * y[i+1]) - (x[i+1] * y[i]))
+        sum_A +=                   ((x[i] * y[i+1]) - (x[i+1] * y[i]))
+
+    # Calculate area inside the polygon's signed area
+    A = sum_A/2
+
+    # Calculate centroid coordinates
+    Cx = (1/(6*A)) * sum_x
+    Cy = (1/(6*A)) * sum_y
+
+    return (Cx, Cy)
+
+def _get_mgrs_from_geometry(geometry: dict):
+    '''
+    
+    This wont work for geometry bigger than a tile. A chunck of the image could not fit between the products of the 4 corners
+    '''
+
+    corners = _get_corners(geometry)
+    # mgrs_corners = get_mgrs(corners)
+    # return set(mgrs_corners)
+    warnings.warn("_get_mgrs_from_geometry is still not implemented, defaulting to 30SUF tile")
+    return set(["30SUF"])
+
+
 def workflow(training: bool = True):
     '''
         Step 1: Load Sentinel-2 imagery
@@ -172,43 +245,29 @@ def workflow(training: bool = True):
     '''
 
     geojson = read_geojson(Path("forest-db/Forest_DB_SNieves.geojson"))
-    tiles = set()
-    cache = {} 
-
-    # # Initialize Sentinel client
-    # sentinel_api = SentinelAPI(
-    #     settings.SENTINEL_USERNAME,
-    #     settings.SENTINEL_PASSWORD,
-    #     settings.SENTINEL_HOST,
-    #     show_progressbars=False,
-    # )
-
+    tiles = {} 
+    # TODO Iterate over a set of geojson (the databases may not be equal)
     print(f"Querying relevant tiles for {len(geojson['features'])} features")
     for feature in tqdm(geojson["features"]):
-        small_geojson = {"type": "FeatureCollection", "features":[feature]}
+        small_geojson = {"type": "FeatureCollection", "features": [feature] }
         footprint = geojson_to_wkt(small_geojson)
         geometry = small_geojson['features'][0]['geometry']
         classification_label = small_geojson['features'][0]['properties']['Nombre']
-        
-        break
-        # TODO: Find centroid of footprint and find the associated tile by coordinates
-         
-        # # Search is limited to those scenes that intersect with the AOI (area of interest) polygon
-        # products = sentinel_api.query(
-        #     area=footprint,
-        #     filename="S2*",
-        #     producttype="S2MSI2A",
-        #     platformname="Sentinel-2",
-        #     cloudcoverpercentage=(0, 100),
-        #     date=(datetime(2020,5,1), datetime(2020,5,31)),
-        # )
+        cover_percent = small_geojson['features'][0]['properties']['Cobertura']
+        intersection_tiles = _get_mgrs_from_geometry(geometry)
 
-        # # Get the list of products
-        # products_df = sentinel_api.to_dataframe(products)
-        # tiles.update(set(map(lambda x: x.split('_')[5], products_df['title'])))
+        for tile in intersection_tiles:
+            if tile not in tiles:
+                tiles[tile] = []
+
+            tiles[tile].append({
+                "label": classification_label,
+                "cover": cover_percent,
+                "geometry": geometry,
+            })
 
     # Tiles related to the traininig zone
-    tiles = ["T30SUF"] # ["T29SPA", "T29SPB", "T29SPC", "T29SPD", "T29SQA", "T29SQB", "T29SQC", "T29SQD", "T29SQV", "T29TMG", "T29TMH", "T29TMJ", "T29TNG", "T29TNH", "T29TNJ", "T29TPE", "T29TPF", "T29TPG", "T29TPH", "T29TPJ", "T29TQE", "T29TQF", "T29TQG", "T29TQH", "T29TQJ", "T30STE", "T30STF", "T30STG", "T30STH", "T30STJ", "T30SUE", "T30SUF", "T30SUG", "T30SUH", "T30SUJ", "T30SVF", "T30SVG", "T30SVH", "T30SVJ", "T30SWF", "T30SWG", "T30SWH", "T30SWJ", "T30SXF", "T30SXG", "T30SXH", "T30SXJ", "T30SYG", "T30SYH", "T30SYJ", "T30TTK", "T30TTL", "T30TTM", "T30TUK", "T30TUL", "T30TUM", "T30TUN", "T30TUP", "T30TVK", "T30TVL", "T30TVM", "T30TVN", "T30TVP", "T30TWK", "T30TWL", "T30TWM", "T30TWN", "T30TWP", "T30TXK", "T30TXL", "T30TXM", "T30TXN", "T30TXP", "T30TYK", "T30TYL", "T30TYM", "T30TYN", "T31SBC", "T31SBD", "T31TBE", "T31TBF", "T31TBG", "T31TCE", "T31TCF", "T31TCG", "T31TCH", "T31TDF", "T31TDG", "T31TDH", "T31TEG", "T31TEH"] 
+    tiles = ["30SUF"] # ["T29SPA", "T29SPB", "T29SPC", "T29SPD", "T29SQA", "T29SQB", "T29SQC", "T29SQD", "T29SQV", "T29TMG", "T29TMH", "T29TMJ", "T29TNG", "T29TNH", "T29TNJ", "T29TPE", "T29TPF", "T29TPG", "T29TPH", "T29TPJ", "T29TQE", "T29TQF", "T29TQG", "T29TQH", "T29TQJ", "T30STE", "T30STF", "T30STG", "T30STH", "T30STJ", "T30SUE", "T30SUF", "T30SUG", "T30SUH", "T30SUJ", "T30SVF", "T30SVG", "T30SVH", "T30SVJ", "T30SWF", "T30SWG", "T30SWH", "T30SWJ", "T30SXF", "T30SXG", "T30SXH", "T30SXJ", "T30SYG", "T30SYH", "T30SYJ", "T30TTK", "T30TTL", "T30TTM", "T30TUK", "T30TUL", "T30TUM", "T30TUN", "T30TUP", "T30TVK", "T30TVL", "T30TVM", "T30TVN", "T30TVP", "T30TWK", "T30TWL", "T30TWM", "T30TWN", "T30TWP", "T30TXK", "T30TXL", "T30TXM", "T30TXN", "T30TXP", "T30TYK", "T30TYL", "T30TYM", "T30TYN", "T31SBC", "T31SBD", "T31TBE", "T31TBF", "T31TBG", "T31TCE", "T31TCF", "T31TCG", "T31TCH", "T31TDF", "T31TDG", "T31TDH", "T31TEG", "T31TEH"] 
     bands = ["AOT_10m", "B01_60m", "B02_10m"] #, "B03_10m", "B04_10m", "B05_20m", "B06_20m", "B07_20m", "B08_10m", "B09_60m", "B11_20m", "B12_20m", "B8A_20m", "WVP_10m"] # Removed , "SCL_20m"
     # Step 1 
     minio_client = get_minio()
@@ -220,7 +279,7 @@ def workflow(training: bool = True):
     # Search product metadata in Mongo
     for tile in tiles:
         print(f"Working through tiles {tile}")
-        product_data = mongo_col.find({"title": {"$regex": f"_{tile}_"}})
+        product_data = mongo_col.find({"title": {"$regex": f"_T{tile}_"}})
 
         for product in product_data:
             year = product["date"].strftime("%Y")
