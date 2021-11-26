@@ -9,12 +9,14 @@ class _Settings(BaseSettings):
     MONGO_USERNAME: str = "user"
     MONGO_PASSWORD: str = "pass"
     MONGO_DB: str = "test"
-    MONGO_COLLECTION: str = "test"
+    MONGO_PRODUCTS_COLLECTION: str = "test"
+    MONGO_COMPOSITES_COLLECTION: str = "test"
 
     # DFS
     MINIO_HOST: str = None
     MINIO_PORT: int = 9000
-    MINIO_BUCKET_NAME: str = None
+    MINIO_BUCKET_NAME_PRODUCTS: str = None
+    MINIO_BUCKET_NAME_COMPOSITES: str = None
     MINIO_ACCESS_KEY: str = "minio"
     MINIO_SECRET_KEY: str = "minio"
 
