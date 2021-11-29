@@ -21,7 +21,7 @@ import rasterio
 from functools import partial
 from hashlib import sha256
 from itertools import compress
-
+from raw_index_calculation_composite import calculate_raw_indexes
 
 
 
@@ -348,61 +348,87 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
     composite_title = _get_title_composite(products_dates, products_tiles) 
     temp_path_composite = Path(settings.TMP_DIR, composite_title + '.SAFE')
 
-    num_bands = len(bands_paths_products[0])
-    for i_band in range(num_bands):
-        products_i_band_path = [bands_paths_product[i_band] for bands_paths_product in bands_paths_products]
-        band_name = get_raster_name_from_path(products_i_band_path[0])
-        band_filename = get_raster_filename_from_path(products_i_band_path[0])
+    print("Creating composite of ", len(products_titles), " products: ", products_titles)
+    uploaded_composite_band_paths = []
+    temp_paths_composite_bands = []
+    temp_product_dirs = []
+    result = None
+    try:
+        num_bands = len(bands_paths_products[0])
+        for i_band in range(num_bands):
+            products_i_band_path = [bands_paths_product[i_band] for bands_paths_product in bands_paths_products]
+            band_name = get_raster_name_from_path(products_i_band_path[0])
+            band_filename = get_raster_filename_from_path(products_i_band_path[0])
 
-        temp_path_composite_band = Path(temp_path_composite, band_filename)
+            temp_path_composite_band = Path(temp_path_composite, band_filename)
 
-        temp_path_list = []
-        for product_i_band_path in products_i_band_path:
-            product_title = product_i_band_path.split('/')[2]
-            temp_path_product = f"{settings.TMP_DIR}/{product_title}.SAFE/{band_filename}"
-            minio_client.fget_object(
-                            bucket_name=bucket_products,
-                            object_name=product_i_band_path,
-                            file_path=str(temp_path_product),
-                        )
+            temp_path_list = []
+            for product_i_band_path in products_i_band_path:
+                product_title = product_i_band_path.split('/')[2]
 
-            temp_path_list.append(temp_path_product)
+                temp_dir_product = f"{settings.TMP_DIR}/{product_title}.SAFE"
+                temp_path_product_band = f"{temp_dir_product}/{band_filename}"
+                minio_client.fget_object(
+                                bucket_name=bucket_products,
+                                object_name=product_i_band_path,
+                                file_path=str(temp_path_product_band),
+                            )
+                if temp_dir_product not in temp_product_dirs:
+                    temp_product_dirs.append(temp_dir_product)
+                temp_path_list.append(temp_path_product_band)
 
-        composite_i_band, kwargs_composite = composite(temp_path_list, band_name)
+            composite_i_band, kwargs_composite = composite(temp_path_list, band_name)
 
-        # Save raster to disk
-        if not Path.is_dir(temp_path_composite):
-            Path.mkdir(temp_path_composite)
-        # Update kwargs to reflect change in data type.
-        with rasterio.open(temp_path_composite_band, "w", **kwargs_composite) as file_composite:
-            print(composite_i_band.shape, kwargs_composite["count"])
-            file_composite.write(composite_i_band)
+            # Save raster to disk
+            if not Path.is_dir(temp_path_composite):
+                Path.mkdir(temp_path_composite)
+            # Update kwargs to reflect change in data type.
+            temp_paths_composite_bands.append(temp_path_composite_band)
+            with rasterio.open(temp_path_composite_band, "w", **kwargs_composite) as file_composite:
+                print(composite_i_band.shape, kwargs_composite["count"])
+                file_composite.write(composite_i_band)
 
-        # Upload raster to minio
-        minio_client.fput_object(
-            bucket_name = bucket_composites,
-            object_name =  f"{composite_title}/raw/{band_filename}",
-            file_path=temp_path_composite_band,
-            content_type="image/jp2"
-        )
-        # Delete band from disk
-        Path.unlink(temp_path_composite_band)
 
-        print("Inserted band in minio: ", f"{composite_title}/raw/{band_filename}")    
+            # Upload raster to minio
+            minio_band_path = f"{composite_title}/raw/{band_filename}"
+            minio_client.fput_object(
+                bucket_name = bucket_composites,
+                object_name =  minio_band_path,
+                file_path=temp_path_composite_band,
+                content_type="image/jp2"
+            )
+            uploaded_composite_band_paths.append(minio_band_path)
+            print("Inserted band in minio: ", minio_band_path)    
 
-    # Delete temp folder
-    Path.rmdir(temp_path_composite)
+        composite_metadata = dict()
+        composite_metadata["id"] = _get_id_composite(products_ids)
+        composite_metadata["title"] = composite_title
+        composite_metadata["products"] = [dict(id=product_id, title=products_title) for (product_id,products_title) in zip(products_ids,products_titles)]
+        composite_metadata["first_date"] = min(products_dates)
+        composite_metadata["last_date"] = max(products_dates)
 
-    composite_metadata = dict()
-    composite_metadata["id"] = _get_id_composite(products_ids)
-    composite_metadata["title"] = composite_title
-    composite_metadata["products"] = [dict(id=product_id, title=products_title) for (product_id,products_title) in zip(products_ids,products_titles)]
-    composite_metadata["first_date"] = min(products_dates)
-    composite_metadata["last_date"] = max(products_dates)
+        # Upload metadata to mongo
+        result = mongo_composites_collection.insert_one(composite_metadata)
+        print("Inserted data in mongo, id: ", result.inserted_id)
 
-    # Upload metadata to mongo
-    result = mongo_composites_collection.insert_one(composite_metadata)
-    print("Inserted data in mongo, id: ", result.inserted_id)
+        # Compute indexes
+        calculate_raw_indexes(_get_id_composite([products_metadata["id"] for products_metadata in products_metadata]))
+
+    except (Exception,KeyboardInterrupt) as e:
+        print("Removing uncompleted composite from minio")
+        for composite_band in uploaded_composite_band_paths:
+            minio_client.remove_object(
+                bucket_name=bucket_composites,
+                object_name=composite_band
+            )
+        products_ids = [products_metadata["id"] for products_metadata in products_metadata] 
+        mongo_composites_collection.delete_one({'id':_get_id_composite(products_ids)})
+        raise e
+
+    finally:
+        [Path.unlink(Path(composite_band)) for composite_band in temp_paths_composite_bands]
+        Path.rmdir(Path(temp_path_composite))
+        [Path.rmdir(Path(product_dir)) for product_dir in temp_product_dirs]
 
 
 def get_raster_filename_from_path(raster_path):

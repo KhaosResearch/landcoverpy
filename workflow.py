@@ -110,8 +110,8 @@ def workflow(training: bool = True):
 
     # Search product metadata in Mongo
     for tile in tiles:
+        print(f"Working through tiles {tile}")
         for geometry_id in (0,4, 69): # Take some ids to speed up the demo  
-            print(f"Working through tiles {tile}")
             # TODO Filter por fecha, take 3 of every year y añadir todas las bandas
             # Query sample {"title": {"$regex": "_T30SUF_"}, "date": {"$gte": ISODate("2020-07-01T00:00:00.000+00:00"),"$lte": ISODate("2020-07-31T23:59:59.999+00:00")}}
             
@@ -120,9 +120,9 @@ def workflow(training: bool = True):
             product_metadata_cursor_autumn = get_products_by_tile_and_date(tile, mongo_products_collection, autumn_start, autumn_end)
 
             product_per_season = {
+                "spring": list(product_metadata_cursor_spring),
                 "autumn": list(product_metadata_cursor_autumn),
                 "summer": list(product_metadata_cursor_summer),
-                "spring": list(product_metadata_cursor_spring),
             } 
 
             season_df = None
