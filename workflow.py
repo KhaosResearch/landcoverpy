@@ -88,7 +88,7 @@ def workflow(training: bool = True):
     '''
 
     # TODO Iterate over a set of geojson/databases (the databases may not be equal)
-    polygons_per_tile = group_polygons_by_tile(Path("forest-db/Forest_DB_SNieves.geojson"))
+    polygons_per_tile = group_polygons_by_tile(Path("forest-db/test.geojson"))
 
     # Tiles related to the traininig zone
     tiles = polygons_per_tile.keys() 
@@ -108,10 +108,14 @@ def workflow(training: bool = True):
     # Model input
     train_df = None
 
+    skip_bands = ['TCI']
+    not_normalizable_bands = ['cover-percentage', 'SCL','ndsi']
+    no_data_value = {'cover-percentage':-1, 'ndsi':-1}
+
     # Search product metadata in Mongo
     for tile in tiles:
         print(f"Working through tiles {tile}")
-        for geometry_id in (0,4, 69): # Take some ids to speed up the demo  
+        for geometry_id in [4]: # Take some ids to speed up the demo  
             # TODO Filter por fecha, take 3 of every year y añadir todas las bandas
             # Query sample {"title": {"$regex": "_T30SUF_"}, "date": {"$gte": ISODate("2020-07-01T00:00:00.000+00:00"),"$lte": ISODate("2020-07-31T23:59:59.999+00:00")}}
             
@@ -126,7 +130,6 @@ def workflow(training: bool = True):
             } 
 
             season_df = None
-
             for season, products_metadata in product_per_season.items():
                 bucket_products = settings.MINIO_BUCKET_NAME_PRODUCTS
                 bucket_composites = settings.MINIO_BUCKET_NAME_COMPOSITES
@@ -144,27 +147,32 @@ def workflow(training: bool = True):
                     current_bucket = bucket_composites
                 else:
                     continue
-
+                
                 product_name = product_metadata["title"]
-
                 (rasters_paths, is_band) = get_product_rasters_paths(product_metadata, minio_client, current_bucket)
 
                 temp_product_folder = Path(settings.TMP_DIR, product_name + '.SAFE')
+                if not temp_product_folder.exists():
+                    Path.mkdir(temp_product_folder)
 
                 # Create product dataframe
                 single_product_df = None
 
                 # Get all sentinel bands
+                already_read = []
                 for raster_path in rasters_paths:
                     raster_filename = get_raster_filename_from_path(raster_path)
                     raster_name = get_raster_name_from_path(raster_path)
                     temp_path = Path(temp_product_folder,raster_filename)
 
-                    if 'TCI' in raster_name:
+                    if any(x in raster_name for x in skip_bands):
                         continue
+                    # Read only the first band to avoid duplication of different spatial resolution
+                    if raster_name in str(already_read):
+                        continue
+                    already_read.append(raster_name)
 
                     print(f"Reading raster: -> {current_bucket}:{raster_path} into {temp_path}")
-                    
                     minio_client.fget_object(
                         bucket_name=current_bucket,
                         object_name=raster_path,
@@ -172,9 +180,10 @@ def workflow(training: bool = True):
                     )
 
                     # Once all rasters are loaded, they need to be passed to feature selection (PCA, regression, matusita)
-                    raster = read_raster(temp_path, mask_geometry = polygons_per_tile[tile][geometry_id]["geometry"], rescale=True)
+                    band_no_data_value = no_data_value.get(raster_name,0)
+                    raster = read_raster(temp_path, mask_geometry = polygons_per_tile[tile][geometry_id]["geometry"], rescale=True, no_data_value=band_no_data_value)
                     
-                    if not 'SCL' in raster_name:
+                    if not any(x in raster_name for x in not_normalizable_bands):
                         raster = normalize(raster)
                     
                     raster_df = pd.DataFrame({f"{season}_{raster_name}": raster.flatten()})
@@ -187,8 +196,10 @@ def workflow(training: bool = True):
                         single_product_df = pd.concat([single_product_df, raster_df], axis=1)
 
                     # Remove raster from disk
+                    print(f"Removing file {str(temp_path)}")
                     Path.unlink(temp_path)
                 
+                print(f"Removing folder {str(temp_product_folder)}")
                 Path.rmdir(temp_product_folder)
 
                 if season_df is None:
@@ -196,16 +207,16 @@ def workflow(training: bool = True):
                 else: 
                     season_df = pd.concat([season_df, single_product_df], axis=1)
 
-            #if training:
+            if training:
                 # Add classification label
-            #    season_df["class"] = polygons_per_tile[tile][geometry_id]["label"]
+                season_df["class"] = polygons_per_tile[tile][geometry_id]["label"]
 
-            #if train_df is None:
-            #    train_df = season_df
-            #else: 
-            #    train_df = pd.concat([train_df, season_df], axis=0)
-    print(season_df.head())  
-    season_df.to_csv("dataset.csv")
+            if train_df is None:
+                train_df = season_df
+            else: 
+                train_df = pd.concat([train_df, season_df], axis=0)
+    print(train_df.head())  
+    train_df.to_csv("dataset.csv", index=False)
     # Temporal code to load premade dataset for training 
     # train_df = pd.read_csv("dataset2.csv")
     # train_df = train_df.drop("Unnamed: 0", axis=1)

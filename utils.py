@@ -244,6 +244,7 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
 
         # Scale de image to a resolution of 10m per pixel
         if img_resolution > 10:
+            print(f"Rescaling raster {band_path}, from: {img_resolution}m to 10m")
             band = np.repeat(np.repeat(band, scale_factor, axis=1), scale_factor, axis=2)
             # Update band metadata
             kwargs["height"] *= scale_factor
@@ -267,6 +268,8 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
 def normalize(matrix):
     # Normalize a numpy matrix
     try:
+        matrix[matrix == -np.inf] = np.nan
+        matrix[matrix == np.inf] = np.nan
         normalized_matrix = (matrix - np.nanmean(matrix)) / np.nanstd(matrix)
     except exception:
         normalized_matrix = matrix
@@ -286,6 +289,7 @@ def composite(band_paths: Iterable[str], band_name: str, method: str = "median")
         if composite_kwargs is None:
             composite_kwargs = _get_kwargs_raster(band_path)
         composite_bands.append(read_raster(band_path))
+        print(f"Removing file {str(band_path)}")
         Path.unlink(Path(band_path))
 
     shapes = [np.shape(band) for band in composite_bands] 
@@ -311,17 +315,19 @@ def _get_id_composite(products_ids: List[str]) -> str:
     hashed_ids = sha256(concat_ids.encode('utf-8')).hexdigest()
     return hashed_ids
 
-def _get_title_composite(products_dates: List[str], products_tiles: List[str]) -> str:
+def _get_title_composite(products_dates: List[str], products_tiles: List[str], composite_id: str) -> str:
     if not all(product_tile==products_tiles[0] for product_tile in products_tiles):
         raise ValueError(f"Error creating composite, products have different tile: {products_tiles}")
     tile = products_tiles[0]
     first_product_date, last_product_date = min(products_dates), max(products_dates)
-    composite_title = f"S2X_MSIL2A_{first_product_date}_NXXX_RXXX_{tile}_{last_product_date}"
+    first_product_date = first_product_date.split('T')[0]
+    last_product_date = last_product_date.split('T')[0]
+    composite_title = f"S2X_MSIL2A_{first_product_date}_NXXX_RXXX_{tile}_{last_product_date}_{composite_id[:8]}"
     return composite_title
 
 # Intentar leer de mongo si existe algun composite con esos products
 def get_composite(products_metadata: Iterable[dict], mongo_collection: Collection) -> dict:
-    products_ids = [products_metadata["id"] for products_metadata in products_metadata]  
+    products_ids = [products_metadata["id"] for products_metadata in products_metadata] 
     hashed_id_composite = _get_id_composite(products_ids)
     composite_metadata = mongo_collection.find_one({"id":hashed_id_composite})
     return composite_metadata
@@ -345,7 +351,8 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
         (rasters_paths,is_band) = get_product_rasters_paths(product_metadata, minio_client, bucket_products)
         bands_paths_products.append(list(compress(rasters_paths, is_band)))
 
-    composite_title = _get_title_composite(products_dates, products_tiles) 
+    composite_id = _get_id_composite(products_ids)
+    composite_title = _get_title_composite(products_dates, products_tiles, composite_id) 
     temp_path_composite = Path(settings.TMP_DIR, composite_title + '.SAFE')
 
     print("Creating composite of ", len(products_titles), " products: ", products_titles)
@@ -368,6 +375,7 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
 
                 temp_dir_product = f"{settings.TMP_DIR}/{product_title}.SAFE"
                 temp_path_product_band = f"{temp_dir_product}/{band_filename}"
+                print(f"Reading raster: -> {bucket_products}:{product_i_band_path} into {temp_path_product_band}")
                 minio_client.fget_object(
                                 bucket_name=bucket_products,
                                 object_name=product_i_band_path,
@@ -398,14 +406,14 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
                 content_type="image/jp2"
             )
             uploaded_composite_band_paths.append(minio_band_path)
-            print("Inserted band in minio: ", minio_band_path)    
+            print(f"Uploaded raster: -> {temp_path_composite_band} into {bucket_composites}:{minio_band_path}") 
 
         composite_metadata = dict()
-        composite_metadata["id"] = _get_id_composite(products_ids)
+        composite_metadata["id"] = composite_id
         composite_metadata["title"] = composite_title
         composite_metadata["products"] = [dict(id=product_id, title=products_title) for (product_id,products_title) in zip(products_ids,products_titles)]
-        composite_metadata["first_date"] = min(products_dates)
-        composite_metadata["last_date"] = max(products_dates)
+        composite_metadata["first_date"] = sentinel_date_to_datetime(min(products_dates))
+        composite_metadata["last_date"] = sentinel_date_to_datetime(max(products_dates))
 
         # Upload metadata to mongo
         result = mongo_composites_collection.insert_one(composite_metadata)
@@ -426,9 +434,14 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
         raise e
 
     finally:
-        [Path.unlink(Path(composite_band)) for composite_band in temp_paths_composite_bands]
+        for composite_band in temp_paths_composite_bands:
+            print(f"Removing file {str(composite_band)}")
+            Path.unlink(Path(composite_band))
+        print(f"Removing folder {str(temp_path_composite)}")
         Path.rmdir(Path(temp_path_composite))
-        [Path.rmdir(Path(product_dir)) for product_dir in temp_product_dirs]
+        for product_dir in temp_product_dirs:
+            print(f"Removing folder {str(product_dir)}")
+            Path.rmdir(Path(product_dir))
 
 
 def get_raster_filename_from_path(raster_path):
@@ -436,9 +449,13 @@ def get_raster_filename_from_path(raster_path):
 
 def get_raster_name_from_path(raster_path):
     raster_filename = get_raster_filename_from_path(raster_path)
-    return raster_filename.split('.')[0]
+    return raster_filename.split('.')[0].split('_')[0]
 
 def _get_kwargs_raster(raster_path):
     with rasterio.open(raster_path) as raster_file:
         kwargs = raster_file.meta
         return kwargs
+
+def sentinel_date_to_datetime(date: str):
+    date_datetime = datetime(int(date[0:4]),int(date[4:6]),int(date[6:8]),int(date[9:11]),int(date[11:13]),int(date[13:15])) #YYYYMMDDTHHMMSS
+    return date_datetime

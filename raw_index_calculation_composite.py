@@ -214,6 +214,7 @@ def calculate_raw_indexes(uid: str):
     
     # Remove product from local folder
     try:
+        print(f"Removing folder {str(indexes_folder)} recursively")
         shutil.rmtree(indexes_folder)
     except OSError as e:
         print("Error: %s - %s." % (e.filename, e.strerror))
