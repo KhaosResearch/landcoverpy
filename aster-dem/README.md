@@ -12,3 +12,9 @@ This scripts takes aster products from a minio bucket, applies 2 denoise filter 
 
 Filter 1: Sigma 85 Iterations 60 for Topographic correction.
 Filter 2: Sigma 90 Iterations 5  for Slope, illumination, aspect, etc.
+
+## Aspect and Slope
+
+Has two dependencies, [mc](https://github.com/minio/mc) and [saga](https://sourceforge.net/projects/saga-gis/).
+
+This scripts takes the aster products from a minio bucket, calculates their aspect and slope bands, then uploads the results to a new bucket in minio.
