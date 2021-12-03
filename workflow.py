@@ -12,12 +12,13 @@ from pymongo import MongoClient
 from rasterio import mask
 from sentinelsat.sentinel import SentinelAPI, read_geojson, geojson_to_wkt
 from shapely.ops import transform, shape
-from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
 from tqdm import tqdm
+import shutil
 
 from config import settings
 
+from aster import get_slope_aspect_from_tile
 from utils import(
     get_products_by_tile_and_date,
     connect_mongo_products_collection,
@@ -33,46 +34,7 @@ from utils import(
     get_raster_name_from_path
 )
 
-def pca(data: pd.DataFrame, variance_explained: int = 75):
-    '''
-    Return the main columns after a Principal Component Analysis.
 
-    Source: https://bitbucket.org/khaosresearchgroup/enbic2lab-images/src/master/soil/PCA_variance/pca-variance.py
-    '''
-    def _dimension_reduction(percentage_variance: list, variance_explained: int):
-        cumulative_variance = 0
-        n_components = 0
-        while cumulative_variance < variance_explained:
-            cumulative_variance += percentage_variance[n_components]
-            n_components += 1
-        return n_components
-
-    pca = PCA()
-    pca_data = pca.fit_transform(data)
-    per_var = np.round(pca.explained_variance_ratio_ * 100, decimals=1)
-
-    number_components = _dimension_reduction(per_var, variance_explained)
-
-    pca = PCA(number_components)
-    pca_data = pca.fit_transform(data)
-    pc_labels = ["PC" + str(x) for x in range(1, number_components + 1)]
-    pca_df = pd.DataFrame(data=pca_data, columns=pc_labels)
-
-    pca_df.to_csv("PCA_plot.csv", sep=',', index=False)
-
-    col = []
-    for columns in np.arange(number_components):
-        col.append("PC" + str(columns + 1))
-
-    loadings = pd.DataFrame(pca.components_.T, columns=col, index=data.columns)
-    loadings.to_csv("covariance_matrix.csv", sep=',', index=True)
-
-    # Extract the most important column from each PC https://stackoverflow.com/questions/50796024/feature-variable-importance-after-a-pca-analysis 
-    col_ids = [np.abs(pc).argmax() for pc in pca.components_]
-    column_names = data.columns 
-    return [column_names[id_] for id_ in col_ids]
-
-    
 
 def workflow(training: bool = True):
     '''
@@ -108,14 +70,14 @@ def workflow(training: bool = True):
     # Model input
     train_df = None
 
-    skip_bands = ['TCI']
+    skip_bands = ['TCI','cover-percentage','ndsi']
     not_normalizable_bands = ['cover-percentage', 'SCL','ndsi']
-    no_data_value = {'cover-percentage':-1, 'ndsi':-1}
+    no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-99999, 'aspect':-99999}
 
     # Search product metadata in Mongo
     for tile in tiles:
         print(f"Working through tiles {tile}")
-        for geometry_id in [4]: # Take some ids to speed up the demo  
+        for geometry_id in [1]: # Take some ids to speed up the demo  
             # TODO Filter por fecha, take 3 of every year y añadir todas las bandas
             # Query sample {"title": {"$regex": "_T30SUF_"}, "date": {"$gte": ISODate("2020-07-01T00:00:00.000+00:00"),"$lte": ISODate("2020-07-31T23:59:59.999+00:00")}}
             
@@ -146,6 +108,7 @@ def workflow(training: bool = True):
                         product_metadata = get_composite(products_metadata_list, mongo_composites_collection)
                     current_bucket = bucket_composites
                 else:
+                    print("No product found in selected date")
                     continue
                 
                 product_name = product_metadata["title"]
@@ -182,14 +145,13 @@ def workflow(training: bool = True):
                     # Once all rasters are loaded, they need to be passed to feature selection (PCA, regression, matusita)
                     band_no_data_value = no_data_value.get(raster_name,0)
                     raster = read_raster(temp_path, mask_geometry = polygons_per_tile[tile][geometry_id]["geometry"], rescale=True, no_data_value=band_no_data_value)
-                    
+
                     if not any(x in raster_name for x in not_normalizable_bands):
                         raster = normalize(raster)
                     
                     raster_df = pd.DataFrame({f"{season}_{raster_name}": raster.flatten()})
-                    
                     raster_df= raster_df.dropna()
-                    
+
                     if single_product_df is None:
                         single_product_df = raster_df
                     else: 
@@ -206,6 +168,23 @@ def workflow(training: bool = True):
                     season_df = single_product_df
                 else: 
                     season_df = pd.concat([season_df, single_product_df], axis=1)
+ 
+            slope_path, aspect_path = get_slope_aspect_from_tile(tile,mongo_products_collection,minio_client,settings.MINIO_BUCKET_NAME_PRODUCTS,settings.MINIO_BUCKET_NAME_ASTER)
+
+
+            raster_name = 'slope'
+            band_no_data_value = no_data_value.get(raster_name,0)
+            slope = read_raster(slope_path,polygons_per_tile[tile][geometry_id]["geometry"],True,band_no_data_value)
+            raster_df = pd.DataFrame({raster_name: slope.flatten()})
+            raster_df = raster_df.dropna()
+            season_df = pd.concat([season_df, raster_df], axis=1)
+
+            raster_name = 'aspect'
+            band_no_data_value = no_data_value.get(raster_name,0)
+            aspect = read_raster(aspect_path,polygons_per_tile[tile][geometry_id]["geometry"],True,band_no_data_value)
+            raster_df = pd.DataFrame({raster_name: aspect.flatten()})
+            raster_df = raster_df.dropna()
+            season_df = pd.concat([season_df, raster_df], axis=1)
 
             if training:
                 # Add classification label
@@ -215,32 +194,10 @@ def workflow(training: bool = True):
                 train_df = season_df
             else: 
                 train_df = pd.concat([train_df, season_df], axis=0)
+
     print(train_df.head())  
     train_df.to_csv("dataset.csv", index=False)
-    # Temporal code to load premade dataset for training 
-    # train_df = pd.read_csv("dataset2.csv")
-    # train_df = train_df.drop("Unnamed: 0", axis=1)
-    # print(train_df.head())
-    #if training:
-        # Prepare data for training
-        #x_train_data = train_df.drop("class", axis=1)
-        #y_train_data = train_df["class"] 
 
-        # Filter bands according to PCA, matusita etc
-        #pc_columns = pca(x_train_data,95)
-        #print(pc_columns)
-        #reduced_x_train_data = x_train_data[pc_columns]
-        
-        # Train model 
-        #clf = RandomForestClassifier()
-        #clf.fit(reduced_x_train_data, y_train_data)
-        #joblib.dump(clf, 'model.pkl', compress=1)
-    #else: # Prediction
-        
-        #reduced_predict_data = train_df[['B02_10m', 'AOT_10m']] # This should be coming from the PCA used during training
-        #clf = joblib.load('model.pkl')
-        #results = clf.predict(reduced_predict_data)
-        #print(results)
 
 if __name__ == '__main__':
     import time
@@ -248,7 +205,7 @@ if __name__ == '__main__':
     print("Training")
     workflow(training=True)
     end1 = time.time()
-    # print('Training function took {:.3f} ms'.format((end1-start)*1000.0))
+    print('Training function took {:.3f} ms'.format((end1-start)*1000.0))
     # print("Testing")
     # workflow(training=False)
     # end2 = time.time()

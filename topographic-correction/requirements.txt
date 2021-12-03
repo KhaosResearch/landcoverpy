@@ -1,5 +1,0 @@
-black==21.9b0
-numpy==1.21.2
-pyproj==3.2.0
-rasterio==1.2.8
-Shapely==1.7.1

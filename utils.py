@@ -234,6 +234,7 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
         destination_crs = band_file.crs
         band = band_file.read().astype(np.float32)
 
+    band_name = get_raster_name_from_path(str(band_path))
     # Just in case...
     if len(band.shape) == 2:
         band = band.reshape((1,*band.shape))
@@ -244,7 +245,7 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
 
         # Scale de image to a resolution of 10m per pixel
         if img_resolution > 10:
-            print(f"Rescaling raster {band_path}, from: {img_resolution}m to 10m")
+            print(f"Rescaling raster {band_name}, from: {img_resolution}m to 10.0m")
             band = np.repeat(np.repeat(band, scale_factor, axis=1), scale_factor, axis=2)
             # Update band metadata
             kwargs["height"] *= scale_factor
@@ -254,13 +255,14 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
     # Create a temporal memory file to mask the band
     # This is necessary because the band is previously read to scale its resolution
     if mask_geometry:
+        print(f"Cropping raster {band_name}")
         projected_geometry = _project_shape(mask_geometry, dcs=destination_crs)
         with rasterio.io.MemoryFile() as memfile:
             with memfile.open(**kwargs) as memfile_band:
                 memfile_band.write(band)
                 masked_band, _ = rasterio.mask.mask(memfile_band, shapes=[projected_geometry], crop=True)
                 masked_band = masked_band.astype(np.float32)
-
+                band = masked_band
     band[band == no_data_value] = np.nan
 
     return band
