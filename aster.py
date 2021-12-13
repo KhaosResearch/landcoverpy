@@ -225,7 +225,7 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
 
     Returns the reprojected DEM path.
     """
-    reprojected_path = Path(str(dem_path).split(".sdat")[0] + "_r.sdat")
+    reprojected_path = Path(str(dem_path).split(".sdat")[0] + "_r.tif")
 
     with rasterio.open(dem_path) as src:
         transform, width, height = calculate_default_transform(

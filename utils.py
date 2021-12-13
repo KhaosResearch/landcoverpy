@@ -14,15 +14,18 @@ from mgrs import MGRS
 from config import settings
 from minio import Minio
 import pyproj
+from shapely.geometry import Point
 from shapely.ops import transform, shape
 import warnings
-import numpy as np
 import rasterio
 from functools import partial
 from hashlib import sha256
 from itertools import compress
 from raw_index_calculation_composite import calculate_raw_indexes
-
+from rasterio.warp import calculate_default_transform, reproject, Resampling
+import pandas as pd
+import numpy as np
+from sklearn.decomposition import PCA
 
 
 
@@ -223,34 +226,66 @@ def _project_shape(geom, scs: str = 'epsg:4326', dcs: str = 'epsg:32630'):
 
     return transform(project, shape(geom))
 
-def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = False, no_data_value: int = 0):
+def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = False, no_data_value: int = 0, path_to_disk: str = None, normalize_raster: bool = False):
     '''
     Reads a Sentinel band as a numpy array. It scales all bands to a 10m/pxl resolution.
     If mask_geometry is given, the resturning band is cropped to the mask
     '''
+    band_name = get_raster_name_from_path(str(band_path))
+    print(f"Reading raster {band_name}")
     with rasterio.open(band_path) as band_file:
         # Read file 
         kwargs = band_file.meta
         destination_crs = band_file.crs
         band = band_file.read().astype(np.float32)
+    print(f"Done")
 
-    band_name = get_raster_name_from_path(str(band_path))
     # Just in case...
     if len(band.shape) == 2:
-        band = band.reshape((1,*band.shape))
+        band = band.reshape((kwargs['count'],*band.shape))
+
+    if 'JP2' in kwargs['driver']:
+            kwargs['dtype'] = 'float32'
+            kwargs['driver'] = 'GTiff'
+            kwargs['nodata'] = 0
+            band[band == 0] = np.nan
+            band = band.astype(np.float32)
+
+            if path_to_disk is not None:
+                path_to_disk = path_to_disk[:-3] + 'tif'
+
+    if normalize_raster:
+        band = normalize(band)
         
     if rescale:
         img_resolution = kwargs["transform"][0]
         scale_factor = img_resolution/10
+        # Scale the image to a resolution of 10m per pixel
+        if img_resolution != 10:
+            
+            new_kwargs = kwargs.copy()
+            new_kwargs["height"] = int(kwargs["height"] * scale_factor)
+            new_kwargs["width"] = int(kwargs["width"] * scale_factor)
+            new_kwargs["transform"] = rasterio.Affine(10, 0.0, kwargs["transform"][2], 0.0, -10, kwargs["transform"][5])
+           
+            rescaled_raster = np.ndarray(shape=(new_kwargs["height"],new_kwargs["width"]),dtype=np.float32)
 
-        # Scale de image to a resolution of 10m per pixel
-        if img_resolution > 10:
-            print(f"Rescaling raster {band_name}, from: {img_resolution}m to 10.0m")
-            band = np.repeat(np.repeat(band, scale_factor, axis=1), scale_factor, axis=2)
+
+            print(f"Rescaling raster, from: {img_resolution}m to 10.0m")
+            reproject(
+                source=band,
+                destination=rescaled_raster,
+                src_transform=kwargs['transform'],
+                src_crs=kwargs['crs'],
+                dst_resolution=(new_kwargs['width'], new_kwargs['height']),
+                dst_transform=new_kwargs['transform'],
+                dst_crs=new_kwargs['crs'],
+                resampling=Resampling.nearest,
+            )
+            band = rescaled_raster.reshape((new_kwargs['count'],*rescaled_raster.shape))
+            kwargs = new_kwargs
             # Update band metadata
-            kwargs["height"] *= scale_factor
-            kwargs["width"] *= scale_factor
-            kwargs["transform"] = rasterio.Affine(10, 0.0, kwargs["transform"][2], 0.0, -10, kwargs["transform"][5])
+            print("Done")
 
     # Create a temporal memory file to mask the band
     # This is necessary because the band is previously read to scale its resolution
@@ -260,10 +295,26 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
         with rasterio.io.MemoryFile() as memfile:
             with memfile.open(**kwargs) as memfile_band:
                 memfile_band.write(band)
-                masked_band, _ = rasterio.mask.mask(memfile_band, shapes=[projected_geometry], crop=True)
+                masked_band, _ = rasterio.mask.mask(memfile_band, shapes=[projected_geometry], crop=True, nodata=np.nan)
                 masked_band = masked_band.astype(np.float32)
                 band = masked_band
+        
+        new_kwargs = kwargs.copy()
+        corners = _get_corners(mask_geometry)
+        top_left_corner = corners['top_left']
+        top_left_corner = (top_left_corner[1],top_left_corner[0])
+        project = pyproj.Transformer.from_crs(pyproj.CRS.from_epsg(4326), new_kwargs['crs'], always_xy=True).transform
+        top_left_corner = transform(project, Point(top_left_corner))
+        new_kwargs["transform"] = rasterio.Affine(new_kwargs["transform"][0], 0.0, top_left_corner.x, 0.0, new_kwargs["transform"][4], top_left_corner.y)
+        new_kwargs["width"] = band.shape[2]
+        new_kwargs["height"] = band.shape[1]
+        kwargs = new_kwargs
+        print("Done")
     band[band == no_data_value] = np.nan
+
+    if path_to_disk is not None:
+        with rasterio.open(path_to_disk, "w", **kwargs) as dst_file:
+            dst_file.write(band)
 
     return band
 
@@ -272,7 +323,7 @@ def normalize(matrix):
     try:
         matrix[matrix == -np.inf] = np.nan
         matrix[matrix == np.inf] = np.nan
-        normalized_matrix = (matrix - np.nanmean(matrix)) / np.nanstd(matrix)
+        normalized_matrix = (matrix.astype(dtype=np.float32) - np.nanmean(matrix)) / np.nanstd(matrix)
     except exception:
         normalized_matrix = matrix
     return normalized_matrix
@@ -461,3 +512,48 @@ def _get_kwargs_raster(raster_path):
 def sentinel_date_to_datetime(date: str):
     date_datetime = datetime(int(date[0:4]),int(date[4:6]),int(date[6:8]),int(date[9:11]),int(date[11:13]),int(date[13:15])) #YYYYMMDDTHHMMSS
     return date_datetime
+
+
+def pca(data: pd.DataFrame, variance_explained: int = 75):
+    '''
+    Return the main columns after a Principal Component Analysis.
+
+    Source: https://bitbucket.org/khaosresearchgroup/enbic2lab-images/src/master/soil/PCA_variance/pca-variance.py
+    '''
+    def _dimension_reduction(percentage_variance: list, variance_explained: int):
+        cumulative_variance = 0
+        n_components = 0
+        while cumulative_variance < variance_explained:
+            cumulative_variance += percentage_variance[n_components]
+            n_components += 1
+        return n_components
+
+    pca = PCA()
+    pca_data = pca.fit_transform(data)
+    per_var = np.round(pca.explained_variance_ratio_ * 100, decimals=1)
+
+    number_components = _dimension_reduction(per_var, variance_explained)
+
+    pca = PCA(number_components)
+    pca_data = pca.fit_transform(data)
+    pc_labels = ["PC" + str(x) for x in range(1, number_components + 1)]
+    pca_df = pd.DataFrame(data=pca_data, columns=pc_labels)
+
+    pca_df.to_csv("PCA_plot.csv", sep=',', index=False)
+
+    col = []
+    for columns in np.arange(number_components):
+        col.append("PC" + str(columns + 1))
+
+    loadings = pd.DataFrame(pca.components_.T, columns=col, index=data.columns)
+    loadings.to_csv("covariance_matrix.csv", sep=',', index=True)
+
+    # Extract the most important column from each PC https://stackoverflow.com/questions/50796024/feature-variable-importance-after-a-pca-analysis 
+    col_ids = [np.abs(pc).argmax() for pc in pca.components_]
+    column_names = data.columns 
+    col_names_list = [column_names[id_] for id_ in col_ids]
+    col_names_list = list(dict.fromkeys(col_names_list))
+    col_names_list.sort()
+    return col_names_list
+
+    

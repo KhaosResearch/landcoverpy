@@ -14,6 +14,7 @@ from sentinelsat.sentinel import SentinelAPI, read_geojson, geojson_to_wkt
 from shapely.ops import transform, shape
 from sklearn.ensemble import RandomForestClassifier
 from tqdm import tqdm
+from itertools import compress
 import shutil
 
 from config import settings
@@ -72,12 +73,12 @@ def workflow(training: bool = True):
 
     skip_bands = ['TCI','cover-percentage','ndsi']
     not_normalizable_bands = ['cover-percentage', 'SCL','ndsi']
-    no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-99999, 'aspect':-99999}
+    no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-1, 'aspect':-1}
 
     # Search product metadata in Mongo
     for tile in tiles:
         print(f"Working through tiles {tile}")
-        for geometry_id in [1]: # Take some ids to speed up the demo  
+        for geometry_id in range(70): # Take some ids to speed up the demo  
             # TODO Filter por fecha, take 3 of every year y añadir todas las bandas
             # Query sample {"title": {"$regex": "_T30SUF_"}, "date": {"$gte": ISODate("2020-07-01T00:00:00.000+00:00"),"$lte": ISODate("2020-07-31T23:59:59.999+00:00")}}
             
@@ -89,13 +90,16 @@ def workflow(training: bool = True):
                 "spring": list(product_metadata_cursor_spring),
                 "autumn": list(product_metadata_cursor_autumn),
                 "summer": list(product_metadata_cursor_summer),
-            } 
+            }
 
             season_df = None
             for season, products_metadata in product_per_season.items():
                 bucket_products = settings.MINIO_BUCKET_NAME_PRODUCTS
                 bucket_composites = settings.MINIO_BUCKET_NAME_COMPOSITES
                 current_bucket = None
+                cloud_percentages = [product["indexes"][5]["value"] for product in products_metadata]
+                products_mask = [cloud_percentage<25 for cloud_percentage in cloud_percentages]
+                products_metadata = list(compress(products_metadata, products_mask))
                 if len(products_metadata) == 1:
                     product_metadata = products_metadata[0]
                     current_bucket = bucket_products
@@ -144,11 +148,10 @@ def workflow(training: bool = True):
 
                     # Once all rasters are loaded, they need to be passed to feature selection (PCA, regression, matusita)
                     band_no_data_value = no_data_value.get(raster_name,0)
-                    raster = read_raster(temp_path, mask_geometry = polygons_per_tile[tile][geometry_id]["geometry"], rescale=True, no_data_value=band_no_data_value)
 
-                    if not any(x in raster_name for x in not_normalizable_bands):
-                        raster = normalize(raster)
-                    
+                    normalize = not any(x in raster_name for x in not_normalizable_bands)
+                    raster = read_raster(temp_path, mask_geometry = polygons_per_tile[tile][geometry_id]["geometry"], rescale=True, no_data_value=band_no_data_value,path_to_disk=str(Path(settings.TMP_DIR,'visualization',raster_filename)),normalize_raster=normalize)
+
                     raster_df = pd.DataFrame({f"{season}_{raster_name}": raster.flatten()})
                     raster_df= raster_df.dropna()
 
@@ -158,11 +161,13 @@ def workflow(training: bool = True):
                         single_product_df = pd.concat([single_product_df, raster_df], axis=1)
 
                     # Remove raster from disk
-                    print(f"Removing file {str(temp_path)}")
-                    Path.unlink(temp_path)
+                    if temp_path.exists() and temp_path.is_file():
+                        print(f"Removing file {str(temp_path)}")
+                        Path.unlink(temp_path)
                 
-                print(f"Removing folder {str(temp_product_folder)}")
-                Path.rmdir(temp_product_folder)
+                if temp_product_folder.is_dir() and (not any(Path(temp_product_folder).iterdir())):
+                    print(f"Removing folder {str(temp_product_folder)}")
+                    Path.rmdir(temp_product_folder)
 
                 if season_df is None:
                     season_df = single_product_df
@@ -171,17 +176,16 @@ def workflow(training: bool = True):
  
             slope_path, aspect_path = get_slope_aspect_from_tile(tile,mongo_products_collection,minio_client,settings.MINIO_BUCKET_NAME_PRODUCTS,settings.MINIO_BUCKET_NAME_ASTER)
 
-
             raster_name = 'slope'
             band_no_data_value = no_data_value.get(raster_name,0)
-            slope = read_raster(slope_path,polygons_per_tile[tile][geometry_id]["geometry"],True,band_no_data_value)
+            slope = read_raster(slope_path,polygons_per_tile[tile][geometry_id]["geometry"],True,band_no_data_value,str(Path(settings.TMP_DIR,'visualization','slope_r.tif')),normalize_raster=True)
             raster_df = pd.DataFrame({raster_name: slope.flatten()})
             raster_df = raster_df.dropna()
             season_df = pd.concat([season_df, raster_df], axis=1)
 
             raster_name = 'aspect'
             band_no_data_value = no_data_value.get(raster_name,0)
-            aspect = read_raster(aspect_path,polygons_per_tile[tile][geometry_id]["geometry"],True,band_no_data_value)
+            aspect = read_raster(aspect_path,polygons_per_tile[tile][geometry_id]["geometry"],True,band_no_data_value,str(Path(settings.TMP_DIR,'visualization','aspect_r.tif')),normalize_raster=True)
             raster_df = pd.DataFrame({raster_name: aspect.flatten()})
             raster_df = raster_df.dropna()
             season_df = pd.concat([season_df, raster_df], axis=1)
@@ -196,6 +200,8 @@ def workflow(training: bool = True):
                 train_df = pd.concat([train_df, season_df], axis=0)
 
     print(train_df.head())  
+    train_df = train_df.fillna(np.nan)
+    train_df = train_df.dropna()
     train_df.to_csv("dataset.csv", index=False)
 
 
