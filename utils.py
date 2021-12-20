@@ -1,13 +1,11 @@
-from ctypes import ArgumentError
-from enum import unique
 from logging import exception
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Tuple, Callable
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.cursor import Cursor
 from config import settings
 from datetime import datetime
-from sentinelsat.sentinel import SentinelAPI, read_geojson, geojson_to_wkt
+from sentinelsat.sentinel import read_geojson, geojson_to_wkt
 from pathlib import Path
 from tqdm import tqdm
 from mgrs import MGRS
@@ -18,16 +16,19 @@ from shapely.geometry import Point
 from shapely.ops import transform, shape
 import warnings
 import rasterio
+from rasterio import mask as msk
 from functools import partial
 from hashlib import sha256
 from itertools import compress
 from raw_index_calculation_composite import calculate_raw_indexes
-from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.warp import reproject, Resampling
 import pandas as pd
 import numpy as np
 from sklearn.decomposition import PCA
-
-
+import scipy.stats
+import json
+from shapely.geometry import Point, Polygon
+from rasterpoint import RasterPoint
 
 
 def get_minio():
@@ -39,16 +40,56 @@ def get_minio():
         secure=False,
     )
 
-def get_products_by_tile_and_date(tile: str, mongo_collection: Collection, start_date: datetime, end_time: datetime) -> Cursor:
-    product_metadata_cursor = mongo_collection.find({
-                    "title": {
-                        "$regex": f"_T{tile}_"
-                    },
-                    "date": {
-                        "$gte": start_date,
-                        "$lte": end_time,
-                    },
-                })
+def get_products_by_tile_and_date(tile: str, mongo_collection: Collection, start_date: datetime, end_date: datetime, cloud_percentage) -> Cursor:
+    product_metadata_cursor = mongo_collection.aggregate([
+    {
+        '$project': {
+            '_id': 1, 
+            'indexes': {
+                '$filter': {
+                    'input': '$indexes', 
+                    'as': 'index', 
+                    'cond': {
+                        '$and': [
+                            {
+                                '$eq': [
+                                    '$$index.mask', None
+                                ]
+                            }, {
+                                '$eq': [
+                                    '$$index.name', 'cover-percentage'
+                                ]
+                            }, {
+                                '$lt': [
+                                    '$$index.value', cloud_percentage
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }, 
+            'id': 1, 
+            'title': 1, 
+            'size': 1, 
+            'date': 1, 
+            'creationDate': 1, 
+            'ingestionDate': 1, 
+            'objectName': 1
+        }
+    }, {
+        '$match': {
+            'indexes.0': {
+                '$exists': True
+            }, 
+            'title': {
+                '$regex': f'_T{tile}_'
+            }, 
+            'date': {
+                '$gte': start_date, 
+                '$lte': end_date,
+            }
+        }
+    }])
 
     return product_metadata_cursor
 
@@ -108,13 +149,13 @@ def _get_mgrs_from_geometry(geometry: dict):
     This wont work for geometry bigger than a tile. A chunk of the image could not fit between the products of the 4 corners
     '''
     tiles = set() 
-    corners = _get_corners(geometry)
+    corners = _get_corners_geometry(geometry)
     for point in corners.values():
         tiles.add(MGRS().toMGRS(*point, MGRSPrecision=0))
 
     return tiles
 
-def _get_corners(geometry: dict):
+def _get_corners_geometry(geometry: dict):
     '''
     Get the coordinates of the 4 corners of the bounding box of a geometry
     '''
@@ -238,14 +279,13 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
         kwargs = band_file.meta
         destination_crs = band_file.crs
         band = band_file.read().astype(np.float32)
-    print(f"Done")
+        kwargs["dtype"] = "float32"
 
     # Just in case...
     if len(band.shape) == 2:
         band = band.reshape((kwargs['count'],*band.shape))
 
     if 'JP2' in kwargs['driver']:
-            kwargs['dtype'] = 'float32'
             kwargs['driver'] = 'GTiff'
             kwargs['nodata'] = 0
             band[band == 0] = np.nan
@@ -255,6 +295,7 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
                 path_to_disk = path_to_disk[:-3] + 'tif'
 
     if normalize_raster:
+        print(f"Normalizing band {band_name}")
         band = normalize(band)
         
     if rescale:
@@ -271,7 +312,7 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
             rescaled_raster = np.ndarray(shape=(new_kwargs["height"],new_kwargs["width"]),dtype=np.float32)
 
 
-            print(f"Rescaling raster, from: {img_resolution}m to 10.0m")
+            print(f"Rescaling raster {band_name}, from: {img_resolution}m to 10.0m")
             reproject(
                 source=band,
                 destination=rescaled_raster,
@@ -285,7 +326,6 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
             band = rescaled_raster.reshape((new_kwargs['count'],*rescaled_raster.shape))
             kwargs = new_kwargs
             # Update band metadata
-            print("Done")
 
     # Create a temporal memory file to mask the band
     # This is necessary because the band is previously read to scale its resolution
@@ -295,12 +335,12 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
         with rasterio.io.MemoryFile() as memfile:
             with memfile.open(**kwargs) as memfile_band:
                 memfile_band.write(band)
-                masked_band, _ = rasterio.mask.mask(memfile_band, shapes=[projected_geometry], crop=True, nodata=np.nan)
+                masked_band, _ = msk.mask(memfile_band, shapes=[projected_geometry], crop=True, nodata=np.nan)
                 masked_band = masked_band.astype(np.float32)
                 band = masked_band
         
         new_kwargs = kwargs.copy()
-        corners = _get_corners(mask_geometry)
+        corners = _get_corners_geometry(mask_geometry)
         top_left_corner = corners['top_left']
         top_left_corner = (top_left_corner[1],top_left_corner[0])
         project = pyproj.Transformer.from_crs(pyproj.CRS.from_epsg(4326), new_kwargs['crs'], always_xy=True).transform
@@ -309,13 +349,12 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
         new_kwargs["width"] = band.shape[2]
         new_kwargs["height"] = band.shape[1]
         kwargs = new_kwargs
-        print("Done")
     band[band == no_data_value] = np.nan
 
     if path_to_disk is not None:
         with rasterio.open(path_to_disk, "w", **kwargs) as dst_file:
             dst_file.write(band)
-
+    print(f"Band {band_name} successfully read")
     return band
 
 def normalize(matrix):
@@ -327,6 +366,25 @@ def normalize(matrix):
     except exception:
         normalized_matrix = matrix
     return normalized_matrix
+
+def download_sample_band(tile: str, minio_client: Minio, mongo_collection: Collection):
+    product_metadata = mongo_collection.find_one({
+        "title": {
+            "$regex": f"_T{tile}_"
+        }
+    })
+    product_title = product_metadata['title']
+    product_path = str(Path(settings.TMP_DIR,product_title))
+    minio_bucket_product = settings.MINIO_BUCKET_NAME_PRODUCTS
+    rasters_paths, is_band = get_product_rasters_paths(product_metadata, minio_client, minio_bucket_product)
+    sample_band_path_minio = list(compress(rasters_paths, is_band))[0]
+    sample_band_path = str(Path(product_path, get_raster_filename_from_path(sample_band_path_minio)))
+    minio_client.fget_object(
+        bucket_name=minio_bucket_product,
+        object_name=sample_band_path_minio,
+        file_path=str(sample_band_path),
+    )
+    return sample_band_path
 
 
 def composite(band_paths: Iterable[str], band_name: str, method: str = "median"):
@@ -342,7 +400,6 @@ def composite(band_paths: Iterable[str], band_name: str, method: str = "median")
         if composite_kwargs is None:
             composite_kwargs = _get_kwargs_raster(band_path)
         composite_bands.append(read_raster(band_path))
-        print(f"Removing file {str(band_path)}")
         Path.unlink(Path(band_path))
 
     shapes = [np.shape(band) for band in composite_bands] 
@@ -352,7 +409,7 @@ def composite(band_paths: Iterable[str], band_name: str, method: str = "median")
         raise ValueError(f"Not all bands have the same shape\n{shapes}")
 
     if 'SCL' in band_name:
-        composite_out =  composite_bands[0] # TODO union de los pixeles clasificados como 4
+        composite_out =  scipy.stats.mode(composite_bands,axis=0,nan_policy='omit')[0]
     elif method == "mean":
         composite_out = np.mean(composite_bands, axis=0)
     elif method == "median":
@@ -419,7 +476,8 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
             products_i_band_path = [bands_paths_product[i_band] for bands_paths_product in bands_paths_products]
             band_name = get_raster_name_from_path(products_i_band_path[0])
             band_filename = get_raster_filename_from_path(products_i_band_path[0])
-
+            if 'SCL' in band_name:
+                continue
             temp_path_composite_band = Path(temp_path_composite, band_filename)
 
             temp_path_list = []
@@ -428,7 +486,7 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
 
                 temp_dir_product = f"{settings.TMP_DIR}/{product_title}.SAFE"
                 temp_path_product_band = f"{temp_dir_product}/{band_filename}"
-                print(f"Reading raster: -> {bucket_products}:{product_i_band_path} into {temp_path_product_band}")
+                print(f"Downloading raster {band_name} from minio into {temp_path_product_band}")
                 minio_client.fget_object(
                                 bucket_name=bucket_products,
                                 object_name=product_i_band_path,
@@ -446,7 +504,6 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
             # Update kwargs to reflect change in data type.
             temp_paths_composite_bands.append(temp_path_composite_band)
             with rasterio.open(temp_path_composite_band, "w", **kwargs_composite) as file_composite:
-                print(composite_i_band.shape, kwargs_composite["count"])
                 file_composite.write(composite_i_band)
 
 
@@ -488,12 +545,9 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
 
     finally:
         for composite_band in temp_paths_composite_bands:
-            print(f"Removing file {str(composite_band)}")
             Path.unlink(Path(composite_band))
-        print(f"Removing folder {str(temp_path_composite)}")
         Path.rmdir(Path(temp_path_composite))
         for product_dir in temp_product_dirs:
-            print(f"Removing folder {str(product_dir)}")
             Path.rmdir(Path(product_dir))
 
 
@@ -556,4 +610,140 @@ def pca(data: pd.DataFrame, variance_explained: int = 75):
     col_names_list.sort()
     return col_names_list
 
+def filter_rasters_paths_by_pca(rasters_paths: List[str], pc_columns: List[str], season: str):
+    pc_raster_paths = []
+    season_pc_columns = []
+    already_read = []
+    for pc_column in pc_columns:
+        if season in pc_column:
+            season_pc_columns.append(pc_column.split('_')[-1])
+    for raster_path in rasters_paths:
+        raster_name = get_raster_name_from_path(raster_path)
+        raster_name = raster_name.split('_')[-1]
+        if any(x == raster_name for x in season_pc_columns) and (raster_name not in already_read):
+            pc_raster_paths.append(raster_path)
+            already_read.append(raster_name)
+    return pc_raster_paths
+
+def _get_bound(p1: RasterPoint, p2: RasterPoint, is_up_down: bool = False) -> Callable:
+    """
+    Given two points in plane it computes the straight line through them.
+    If we are computing the top or bottom straight lines from our polygon, Y becomes dependent on X and viceversa.
+
+    Straight line through two points equation:
+    y - y1 = ((y2 - y1) / (x2 - x1)) * (x - x1)
+
+    NOTE: (lat, lon) translated to cartesian coordinates can be seen as (y, x)
+
+    """
+    if is_up_down:
+        return (
+            lambda x: (((p2.lat - p1.lat) / (p2.lon - p1.lon)) * (x - p1.lon)) + p1.lat
+        )
+    else:
+        return (
+            lambda y: (((p2.lon - p1.lon) / (p2.lat - p1.lat)) * (y - p1.lat)) + p1.lon
+        )
+
+
+def _gps_to_latlon(gps_coords: str) -> RasterPoint:
+    """
+    Translates GPS coordinates i.e: N22E037 to their corresponding latitude and longitude.
+    """
+    # TODO: validate `gps_coords` has the appropriate format before parsing it.
+    if "W" in gps_coords:
+        latitude, longitude = gps_coords.split("W")
+        longitude = 0 - float(longitude)
+    else:
+        latitude, longitude = gps_coords.split("E")
+        longitude = float(longitude)
+
+    if "N" in latitude:
+        latitude = float(latitude[1:])
+    else:
+        latitude = 0 - float(latitude[1:])
+
+    return RasterPoint(latitude, longitude)
+
+def _get_corners_raster(band_path: Path) -> Tuple[RasterPoint, RasterPoint, RasterPoint, RasterPoint]:
+    """
+    Given a band path, it is opened with rasterio and its bounds are extracted with shapely's transform.
+
+    Returns the raster's corner latitudes and longitudes, along with the band's size.
+    """
+    final_crs = pyproj.CRS("epsg:4326")
+
+
+    band = read_raster(band_path,no_data_value=-1)
+    kwargs = _get_kwargs_raster(band_path)
+    init_crs = kwargs['crs']
+
+    project = pyproj.Transformer.from_crs(init_crs, final_crs, always_xy=True).transform
+
+    tl_lon, tl_lat = transform(project, Point(kwargs["transform"] * (0, 0))).bounds[0:2]
+
+    tr_lon, tr_lat = transform(
+        project, Point(kwargs["transform"] * (band.shape[2] - 1, 0))
+    ).bounds[0:2]
+
+    bl_lon, bl_lat = transform(
+        project, Point(kwargs["transform"] * (0, band.shape[1] - 1))
+    ).bounds[0:2]
+
+    br_lon, br_lat = transform(
+        project, Point(kwargs["transform"] * (band.shape[2] - 1, band.shape[1] - 1))
+    ).bounds[0:2]
+
+    tl = RasterPoint(tl_lat, tl_lon)
+    tr = RasterPoint(tr_lat, tr_lon)
+    bl = RasterPoint(bl_lat, bl_lon)
+    br = RasterPoint(br_lat, br_lon)
+    return (
+        tl,
+        tr,
+        bl,
+        br,
+    )
+
+def sentinel_raster_to_polygon(sentinel_raster_path: str) :
+    (
+    top_left,
+    top_right,
+    bottom_left,
+    bottom_right,
+    ) = _get_corners_raster(sentinel_raster_path)
+    sentinel_raster_polygon_json = json.loads(f'{{"coordinates": [[[{top_left.lon}, {top_left.lat}], [{top_right.lon}, {top_right.lat}], [{bottom_right.lon}, {bottom_right.lat}], [{bottom_left.lon}, {bottom_left.lat}], [{top_left.lon}, {top_left.lat}]]], "type": "Polygon"}}')
+    sentinel_raster_polygon = Polygon.from_bounds(top_left.lon,top_left.lat,bottom_right.lon, bottom_right.lat)
+    return sentinel_raster_polygon, sentinel_raster_polygon_json
+
+def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
     
+    sentinel_kwargs = _get_kwargs_raster(sentinel_path)
+    raster_kwargs = _get_kwargs_raster(raster_path)
+
+    _, sentinel_polygon = sentinel_raster_to_polygon(sentinel_path)
+
+    cropped_raster = read_raster(raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=-1)
+    cropped_raster_kwargs = raster_kwargs.copy()
+    cropped_raster_kwargs['transform'] = raster_kwargs['transform']
+    cropped_raster_kwargs['transform'] = rasterio.Affine(raster_kwargs['transform'][0], 0.0, sentinel_kwargs["transform"][2], 0.0,raster_kwargs['transform'][4] , sentinel_kwargs["transform"][5])
+    cropped_raster_kwargs.update({'width': cropped_raster.shape[1], 'height': cropped_raster.shape[1], })
+    
+    dst_kwargs = sentinel_kwargs.copy()
+    dst_kwargs['dtype'] = cropped_raster_kwargs['dtype']
+    dst_kwargs['nodata'] = cropped_raster_kwargs['nodata']
+    dst_kwargs['driver'] = cropped_raster_kwargs['driver']
+
+    with rasterio.open(raster_path, "w", **dst_kwargs) as dst:
+        reproject(
+            source=cropped_raster,
+            destination=rasterio.band(dst, 1),
+            src_transform=cropped_raster_kwargs['transform'],
+            src_crs=cropped_raster_kwargs['crs'],
+            dst_resolution=(sentinel_kwargs['width'], sentinel_kwargs['height']),
+            dst_transform=sentinel_kwargs['transform'],
+            dst_crs=sentinel_kwargs['crs'],
+            resampling=Resampling.nearest,
+        )
+    
+    return raster_path
