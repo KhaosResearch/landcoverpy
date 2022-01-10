@@ -6,15 +6,10 @@ from rasterio import merge
 from pymongo.collection import Collection
 from minio import Minio
 from rasterio.warp import calculate_default_transform, reproject, Resampling
-from itertools import compress
 from config import settings
 from rasterpoint import RasterPoint
 from utils import (
-    get_product_rasters_paths,
-    read_raster, 
     _get_kwargs_raster, 
-    get_raster_filename_from_path, 
-    sentinel_raster_to_polygon, 
     _get_corners_raster,
     _gps_to_latlon,
     _get_bound,
@@ -86,7 +81,6 @@ def _merge_dem(dem_paths: List[Path], outpath: str, minio_client: Minio) -> Path
 
         out_slope_meta = _get_kwargs_raster(slope[0])
         out_aspect_meta = _get_kwargs_raster(aspect[0])
-        print(out_slope_meta)
 
         slope, slope_transform = merge.merge(slope)
         aspect, aspect_transform = merge.merge(aspect)
@@ -150,10 +144,12 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
                 dst_crs=dst_crs,
                 resampling=Resampling.nearest,
             )
-
     return reprojected_path
 
 def get_slope_aspect_from_tile(tile: str, mongo_collection: Collection,minio_client: Minio, minio_bucket_aster: str):
+    '''
+    Create both aspect and slope rasters merging aster products and proyecting them to sentinel rasters.
+    '''
 
     sample_band_path = download_sample_band(tile, minio_client, mongo_collection)
 

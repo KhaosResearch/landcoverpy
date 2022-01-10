@@ -9,11 +9,14 @@ from sentinelsat.sentinel import read_geojson, geojson_to_wkt
 from pathlib import Path
 from tqdm import tqdm
 from mgrs import MGRS
+from zipfile import ZipFile
+import geopandas as gpd
 from config import settings
 from minio import Minio
 import pyproj
-from shapely.geometry import Point
-from shapely.ops import transform, shape
+from shapely.geometry import Point, MultiPolygon, geo
+from shapely.ops import transform
+from shapely.geometry import shape
 import warnings
 import rasterio
 from rasterio import mask as msk
@@ -32,7 +35,9 @@ from rasterpoint import RasterPoint
 
 
 def get_minio():
-   # Connect with minio
+    '''
+    Connect with minio
+    '''
     return Minio(
         settings.MINIO_HOST + ":" + str(settings.MINIO_PORT),
         access_key=settings.MINIO_ACCESS_KEY,
@@ -41,6 +46,9 @@ def get_minio():
     )
 
 def get_products_by_tile_and_date(tile: str, mongo_collection: Collection, start_date: datetime, end_date: datetime, cloud_percentage) -> Cursor:
+    '''
+    Query to mongo for obtaining products filtered by tile, date and cloud percentage
+    '''
     product_metadata_cursor = mongo_collection.aggregate([
     {
         '$project': {
@@ -95,7 +103,9 @@ def get_products_by_tile_and_date(tile: str, mongo_collection: Collection, start
 
 
 def connect_mongo_products_collection():
-    # Return a collection from Mongo DB
+    '''
+    Return a collection from Mongo DB
+    '''
     mongo_client = MongoClient(
         "mongodb://" + settings.MONGO_HOST + ":" + str(settings.MONGO_PORT) + "/",
         username=settings.MONGO_USERNAME,
@@ -105,7 +115,9 @@ def connect_mongo_products_collection():
     return mongo_client[settings.MONGO_DB][settings.MONGO_PRODUCTS_COLLECTION]
 
 def connect_mongo_composites_collection():
-    # Return a collection from Mongo DB
+    '''
+    Return a collection from Mongo DB
+    '''
     mongo_client = MongoClient(
         "mongodb://" + settings.MONGO_HOST + ":" + str(settings.MONGO_PORT) + "/",
         username=settings.MONGO_USERNAME,
@@ -114,7 +126,19 @@ def connect_mongo_composites_collection():
 
     return mongo_client[settings.MONGO_DB][settings.MONGO_COMPOSITES_COLLECTION]
 
-def group_polygons_by_tile(geojson_file: Path) -> dict:
+def kmz_to_geojson(kmz_file: str) -> str:
+    '''
+    Transform a kmz file to a geojson file
+    '''
+    gpd.io.file.fiona.drvsupport.supported_drivers['KML'] = 'rw'
+    geojson_file = kmz_file[:-4] + '.geojson'
+    with ZipFile(kmz_file, 'r') as zip_in:
+        zip_in.extractall("./databases/")
+    df = gpd.read_file(filename="./databases/doc.kml", driver='KML')
+    df.to_file(geojson_file, driver="GeoJSON")
+    return geojson_file
+
+def group_polygons_by_tile(geojson_file: str) -> dict:
     '''
     Extract all features from a GeoJSON file and group them on the tiles they intersect
     '''
@@ -124,10 +148,8 @@ def group_polygons_by_tile(geojson_file: Path) -> dict:
     print(f"Querying relevant tiles for {len(geojson['features'])} features")
     for feature in tqdm(geojson["features"]):
         small_geojson = {"type": "FeatureCollection", "features": [feature] }
-        footprint = geojson_to_wkt(small_geojson)
         geometry = small_geojson['features'][0]['geometry']
-        classification_label = small_geojson['features'][0]['properties']['Nombre']
-        cover_percent = small_geojson['features'][0]['properties']['Cobertura']
+        classification_label = geojson_file.split('_')[2]
         intersection_tiles = _get_mgrs_from_geometry(geometry)
 
         for tile in intersection_tiles:
@@ -136,10 +158,8 @@ def group_polygons_by_tile(geojson_file: Path) -> dict:
 
             tiles[tile].append({
                 "label": classification_label,
-                "cover": cover_percent,
                 "geometry": geometry,
             })
-
     return tiles
 
 def _get_mgrs_from_geometry(geometry: dict):
@@ -159,7 +179,10 @@ def _get_corners_geometry(geometry: dict):
     '''
     Get the coordinates of the 4 corners of the bounding box of a geometry
     '''
-    coordinates = geometry["coordinates"][0] # Takes only the outer ring of the polygon: https://geojson.org/geojson-spec.html#polygon
+    coordinates = geometry["coordinates"] 
+    if geometry["type"] == "MultiPolygon":
+        coordinates = coordinates[0] # TODO multiple polygons in a geometry
+    coordinates = coordinates[0] # Takes only the outer ring of the polygon: https://geojson.org/geojson-spec.html#polygon
     lon = [] 
     lat = [] 
     for coordinate in coordinates:
@@ -212,9 +235,39 @@ def _get_centroid(geometry: dict):
 
     return (Clat, Clon)
 
-def get_product_rasters_paths(product_metadata: dict, minio_client: Minio, minio_bucket: str) -> Tuple[Iterable[str], Iterable[bool]]:
+def filter_valid_products(products_metadata: List, minio_client: Minio):
+    '''
+    Check a list of products and filter those that are not valid.
+    A product is not valid if it has more than a 20% of missing pixels.
+    '''
+    is_valid = []
+    bucket_products = settings.MINIO_BUCKET_NAME_PRODUCTS
+    for product_metadata in products_metadata:
+        (rasters_paths,is_band) = get_product_rasters_paths(product_metadata, minio_client, bucket_products)
+        rasters_paths = list(compress(rasters_paths,is_band))
+        sample_band_path = rasters_paths[0]
+        sample_band_filename = get_raster_filename_from_path(sample_band_path)
+        file_path = str(Path(settings.TMP_DIR,product_metadata['title'],sample_band_filename))
+        minio_client.fget_object(
+                    bucket_name=bucket_products,
+                    object_name=sample_band_path,
+                    file_path=file_path,
+                )
+        sample_band = read_raster(file_path)
+        num_pixels = np.product(sample_band.shape)
+        num_nans = np.isnan(sample_band).sum()
+        nan_percentage = num_nans/num_pixels
+        is_valid.append(nan_percentage < 0.2)
+    products_metadata = list(compress(products_metadata,is_valid))
+    return products_metadata
 
+def get_product_rasters_paths(product_metadata: dict, minio_client: Minio, minio_bucket: str) -> Tuple[Iterable[str], Iterable[bool]]:
+    '''
+    Get the paths to all rasters of a product in minio.
+    Another list of boolean is returned, it points out if each raster is a sentinel band or not.
+    '''
     product_title = product_metadata["title"]
+    product_dir = None
 
     if minio_bucket == settings.MINIO_BUCKET_NAME_PRODUCTS:
         year = product_metadata["date"].strftime("%Y")
@@ -335,6 +388,7 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
         with rasterio.io.MemoryFile() as memfile:
             with memfile.open(**kwargs) as memfile_band:
                 memfile_band.write(band)
+                projected_geometry = convert_3D_2D(projected_geometry)
                 masked_band, _ = msk.mask(memfile_band, shapes=[projected_geometry], crop=True, nodata=np.nan)
                 masked_band = masked_band.astype(np.float32)
                 band = masked_band
@@ -358,7 +412,9 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
     return band
 
 def normalize(matrix):
-    # Normalize a numpy matrix
+    '''
+    Normalize a numpy matrix
+    '''
     try:
         matrix[matrix == -np.inf] = np.nan
         matrix[matrix == np.inf] = np.nan
@@ -368,6 +424,9 @@ def normalize(matrix):
     return normalized_matrix
 
 def download_sample_band(tile: str, minio_client: Minio, mongo_collection: Collection):
+    '''
+    Having a tile, download a sample sentinel band of any related product.
+    '''
     product_metadata = mongo_collection.find_one({
         "title": {
             "$regex": f"_T{tile}_"
@@ -389,7 +448,7 @@ def download_sample_band(tile: str, minio_client: Minio, mongo_collection: Colle
 
 def composite(band_paths: Iterable[str], band_name: str, method: str = "median"):
     """
-    Calculates de composite between a series of bands
+    Calculate the composite between a series of bands
 
     :param band_paths: List of paths to calculate the composite from.
     :param method: To calculate the composite. Values: "median", "mean".
@@ -420,12 +479,18 @@ def composite(band_paths: Iterable[str], band_name: str, method: str = "median")
     return (composite_out, composite_kwargs)
 
 def _get_id_composite(products_ids: List[str]) -> str:
+    '''
+    Calculate the id of a composite using its products' ids.
+    '''
     products_ids.sort()
     concat_ids = "".join(products_ids)
     hashed_ids = sha256(concat_ids.encode('utf-8')).hexdigest()
     return hashed_ids
 
 def _get_title_composite(products_dates: List[str], products_tiles: List[str], composite_id: str) -> str:
+    '''
+    Calculate the title of a composite.
+    '''
     if not all(product_tile==products_tiles[0] for product_tile in products_tiles):
         raise ValueError(f"Error creating composite, products have different tile: {products_tiles}")
     tile = products_tiles[0]
@@ -437,12 +502,18 @@ def _get_title_composite(products_dates: List[str], products_tiles: List[str], c
 
 # Intentar leer de mongo si existe algun composite con esos products
 def get_composite(products_metadata: Iterable[dict], mongo_collection: Collection) -> dict:
+    '''
+    Search a composite metadata in mongo.
+    '''
     products_ids = [products_metadata["id"] for products_metadata in products_metadata] 
     hashed_id_composite = _get_id_composite(products_ids)
     composite_metadata = mongo_collection.find_one({"id":hashed_id_composite})
     return composite_metadata
 
 def create_composite(products_metadata: Iterable[dict], minio_client: Minio, bucket_products: str, bucket_composites: str, mongo_composites_collection: Collection) -> None:
+    '''
+    Creates the composite of multiple products.
+    '''
 
     products_ids = [] 
     products_titles = []
@@ -552,19 +623,31 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
 
 
 def get_raster_filename_from_path(raster_path):
+    '''
+    Get a filename from a raster's path
+    '''
     return raster_path.split('/')[-1]
 
 def get_raster_name_from_path(raster_path):
+    '''
+    Get a raster's name from a raster's path
+    '''
     raster_filename = get_raster_filename_from_path(raster_path)
     return raster_filename.split('.')[0].split('_')[0]
 
 def _get_kwargs_raster(raster_path):
+    '''
+    Get a raster's metadata from a raster's path
+    '''
     with rasterio.open(raster_path) as raster_file:
         kwargs = raster_file.meta
         return kwargs
 
 def sentinel_date_to_datetime(date: str):
-    date_datetime = datetime(int(date[0:4]),int(date[4:6]),int(date[6:8]),int(date[9:11]),int(date[11:13]),int(date[13:15])) #YYYYMMDDTHHMMSS
+    '''
+    Parse a string date (YYYYMMDDTHHMMSS) to a sentinel datetime
+    '''
+    date_datetime = datetime(int(date[0:4]),int(date[4:6]),int(date[6:8]),int(date[9:11]),int(date[11:13]),int(date[13:15]))
     return date_datetime
 
 
@@ -610,7 +693,29 @@ def pca(data: pd.DataFrame, variance_explained: int = 75):
     col_names_list.sort()
     return col_names_list
 
+def convert_3D_2D(geometry):
+    '''
+    Takes a GeoSeries of 3D Multi/Polygons (has_z) and returns a list of 2D Multi/Polygons
+    '''
+    out_geo = geometry
+    if geometry.has_z:
+        if geometry.geom_type == 'Polygon':
+            lines = [xy[:2] for xy in list(geometry.exterior.coords)]
+            new_p = Polygon(lines)
+            out_geo = new_p
+        elif geometry.geom_type == 'MultiPolygon':
+            new_multi_p = []
+            for ap in geometry.geoms:
+                lines = [xy[:2] for xy in list(ap.exterior.coords)]
+                new_p = Polygon(lines)
+                new_multi_p.append(new_p)
+            out_geo = MultiPolygon(new_multi_p)
+    return out_geo
+
 def filter_rasters_paths_by_pca(rasters_paths: List[str], pc_columns: List[str], season: str):
+    '''
+    Filter a list of rasters paths by a list of raster names (obtained in a PCA).
+    '''
     pc_raster_paths = []
     season_pc_columns = []
     already_read = []
@@ -706,6 +811,9 @@ def _get_corners_raster(band_path: Path) -> Tuple[RasterPoint, RasterPoint, Rast
     )
 
 def sentinel_raster_to_polygon(sentinel_raster_path: str) :
+    '''
+    Read a raster and return its bounds as polygon. 
+    '''
     (
     top_left,
     top_right,
@@ -717,7 +825,9 @@ def sentinel_raster_to_polygon(sentinel_raster_path: str) :
     return sentinel_raster_polygon, sentinel_raster_polygon_json
 
 def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
-    
+    '''
+    Crop a raster as a sentinel one. The second raster has to be contained in the first one.
+    '''    
     sentinel_kwargs = _get_kwargs_raster(sentinel_path)
     raster_kwargs = _get_kwargs_raster(raster_path)
 

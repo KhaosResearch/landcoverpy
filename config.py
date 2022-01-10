@@ -27,6 +27,7 @@ class _Settings(BaseSettings):
     SENTINEL_PASSWORD: str = ''
 
     TMP_DIR: str = "/tmp"
+    DB_DIR:str = '/data'
 
     class Config:
         env_file = ".env"
