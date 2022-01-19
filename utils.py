@@ -1,5 +1,6 @@
 from logging import exception
 from typing import Iterable, List, Tuple, Callable
+from numpy.lib.arraysetops import isin
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.cursor import Cursor
@@ -28,7 +29,7 @@ from rasterio.warp import reproject, Resampling
 import pandas as pd
 import numpy as np
 from sklearn.decomposition import PCA
-import scipy.stats
+from scipy.ndimage import convolve
 import json
 from shapely.geometry import Point, Polygon
 from rasterpoint import RasterPoint
@@ -320,7 +321,7 @@ def _project_shape(geom, scs: str = 'epsg:4326', dcs: str = 'epsg:32630'):
 
     return transform(project, shape(geom))
 
-def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = False, no_data_value: int = 0, path_to_disk: str = None, normalize_raster: bool = False):
+def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = False, no_data_value: int = 0, path_to_disk: str = None, normalize_raster: bool = False, to_tif: bool = True):
     '''
     Reads a Sentinel band as a numpy array. It scales all bands to a 10m/pxl resolution.
     If mask_geometry is given, the resturning band is cropped to the mask
@@ -331,18 +332,18 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
         # Read file 
         kwargs = band_file.meta
         destination_crs = band_file.crs
-        band = band_file.read().astype(np.float32)
-        kwargs["dtype"] = "float32"
+        band = band_file.read()
 
     # Just in case...
     if len(band.shape) == 2:
         band = band.reshape((kwargs['count'],*band.shape))
 
-    if 'JP2' in kwargs['driver']:
+    if to_tif:
             kwargs['driver'] = 'GTiff'
             kwargs['nodata'] = 0
-            band[band == 0] = np.nan
+            kwargs["dtype"] = "float32"
             band = band.astype(np.float32)
+            band[band == 0] = np.nan
 
             if path_to_disk is not None:
                 path_to_disk = path_to_disk[:-3] + 'tif'
@@ -408,7 +409,6 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
     if path_to_disk is not None:
         with rasterio.open(path_to_disk, "w", **kwargs) as dst_file:
             dst_file.write(band)
-    print(f"Band {band_name} successfully read")
     return band
 
 def normalize(matrix):
@@ -445,34 +445,56 @@ def download_sample_band(tile: str, minio_client: Minio, mongo_collection: Colle
     )
     return sample_band_path
 
+def expand_cloud_mask(cloud_mask: np.ndarray, spatial_resolution: int):
+    kernel_side_meters = 600 # The ideal kernel area 600 x 600. Empirically tested.
+    kernel_side = int(kernel_side_meters/spatial_resolution )
+    v_kernel = np.ones((kernel_side,1)) # Apply convolution separability property to reduce computation time
+    h_kernel = np.ones((1,kernel_side))
+    convolved_mask_v = convolve(cloud_mask[0], v_kernel, mode="reflect") # Input matrices has to be 2-D
+    convolved_mask = convolve(convolved_mask_v, h_kernel, mode="reflect")
+    convolved_mask = convolved_mask[np.newaxis,:,:]
+    expanded_mask = np.where(convolved_mask >= (kernel_side*kernel_side)*0.075, 1, cloud_mask)
+    return expanded_mask
 
-def composite(band_paths: Iterable[str], band_name: str, method: str = "median"):
+
+def composite(band_paths: List[str], method: str = "median", cloud_masks_paths: List[str] = None):
     """
     Calculate the composite between a series of bands
 
     :param band_paths: List of paths to calculate the composite from.
-    :param method: To calculate the composite. Values: "median", "mean".
+    :param method: To calculate the composite. Values: "median".
     """
     composite_bands = []
     composite_kwargs = None
-    for band_path in band_paths:
+    for i in range(len(band_paths)):
+        band_path = band_paths[i]
         if composite_kwargs is None:
             composite_kwargs = _get_kwargs_raster(band_path)
-        composite_bands.append(read_raster(band_path))
+        band = read_raster(band_path).astype(np.float32)
+
+        # Remove nodata pixels
+        band = np.where(band == 0, np.nan, band)
+        if i < len(cloud_masks_paths):
+            cloud_mask_path = cloud_masks_paths[i]
+            cloud_mask = read_raster(cloud_mask_path)
+            # Binarize cloud mask
+            scl_cloud_values = [3,8,9,10,11]
+            cloud_mask = np.isin(cloud_mask,scl_cloud_values).astype(np.int_)
+            # Expand cloud mask
+            cloud_mask = expand_cloud_mask(cloud_mask, get_spatial_resolution_raster(cloud_mask_path))
+            # Remove cloud-related pixels
+            band = np.where(cloud_mask == 1, np.nan, band)
+
+        composite_bands.append(band)
         Path.unlink(Path(band_path))
 
-    shapes = [np.shape(band) for band in composite_bands] 
+    shapes = [np.shape(band) for band in composite_bands]
 
     # Check if all arrays are of the same shape 
     if not np.all(np.array(list(map(lambda x: x == shapes[0], shapes)))):  
         raise ValueError(f"Not all bands have the same shape\n{shapes}")
-
-    if 'SCL' in band_name:
-        composite_out =  scipy.stats.mode(composite_bands,axis=0,nan_policy='omit')[0]
-    elif method == "mean":
-        composite_out = np.mean(composite_bands, axis=0)
     elif method == "median":
-        composite_out = np.median(composite_bands, axis=0)
+        composite_out = np.nanmedian(composite_bands, axis=0)
     else:
         raise ValueError(f"Method '{method}' is not recognized.")
 
@@ -515,6 +537,9 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
     Creates the composite of multiple products.
     '''
 
+    products_titles = [product["title"] for product in products_metadata]
+    print("Creating composite of ", len(products_titles), " products: ", products_titles)
+
     products_ids = [] 
     products_titles = []
     products_dates = []
@@ -530,13 +555,30 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
         products_tiles.append(product_title.split("_")[5])
 
         (rasters_paths,is_band) = get_product_rasters_paths(product_metadata, minio_client, bucket_products)
-        bands_paths_products.append(list(compress(rasters_paths, is_band)))
+        bands_paths_product = list(compress(rasters_paths, is_band))
+        bands_paths_products.append(bands_paths_product)
+
+        # Download cloud masks in all different spatial resolutions
+        for band_path in bands_paths_product:
+            band_name = get_raster_name_from_path(band_path)
+            band_filename = get_raster_filename_from_path(band_path)
+            if "SCL" in band_name:
+                temp_dir_product = f"{settings.TMP_DIR}/{product_title}.SAFE"
+                temp_path_product_band = f"{temp_dir_product}/{band_filename}"
+                minio_client.fget_object(
+                            bucket_name=bucket_products,
+                            object_name=band_path,
+                            file_path=str(temp_path_product_band),
+                        ) 
+                
+                # 10m spatial resolution cloud mask raster does not exists, have to be rescaled from 20m mask
+                if "SCL_20m" in band_filename:
+                    read_raster(temp_path_product_band, rescale=True, path_to_disk=temp_path_product_band.replace("_20m.jp2","_10m.jp2"),to_tif=False)
 
     composite_id = _get_id_composite(products_ids)
     composite_title = _get_title_composite(products_dates, products_tiles, composite_id) 
     temp_path_composite = Path(settings.TMP_DIR, composite_title + '.SAFE')
 
-    print("Creating composite of ", len(products_titles), " products: ", products_titles)
     uploaded_composite_band_paths = []
     temp_paths_composite_bands = []
     temp_product_dirs = []
@@ -552,6 +594,8 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
             temp_path_composite_band = Path(temp_path_composite, band_filename)
 
             temp_path_list = []
+            cloud_mask_paths = []
+
             for product_i_band_path in products_i_band_path:
                 product_title = product_i_band_path.split('/')[2]
 
@@ -563,11 +607,14 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
                                 object_name=product_i_band_path,
                                 file_path=str(temp_path_product_band),
                             )
+                spatial_resolution = int(get_spatial_resolution_raster(temp_path_product_band))
+                
                 if temp_dir_product not in temp_product_dirs:
                     temp_product_dirs.append(temp_dir_product)
                 temp_path_list.append(temp_path_product_band)
 
-            composite_i_band, kwargs_composite = composite(temp_path_list, band_name)
+                cloud_mask_paths.append(temp_path_product_band.replace(band_filename,f"SCL_{spatial_resolution}m.jp2"))
+            composite_i_band, kwargs_composite = composite(temp_path_list, method="median", cloud_masks_paths=cloud_mask_paths)
 
             # Save raster to disk
             if not Path.is_dir(temp_path_composite):
@@ -617,9 +664,9 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
     finally:
         for composite_band in temp_paths_composite_bands:
             Path.unlink(Path(composite_band))
-        Path.rmdir(Path(temp_path_composite))
-        for product_dir in temp_product_dirs:
-            Path.rmdir(Path(product_dir))
+        #Path.rmdir(Path(temp_path_composite))
+        #for product_dir in temp_product_dirs:
+            #Path.rmdir(Path(product_dir))
 
 
 def get_raster_filename_from_path(raster_path):
@@ -634,6 +681,10 @@ def get_raster_name_from_path(raster_path):
     '''
     raster_filename = get_raster_filename_from_path(raster_path)
     return raster_filename.split('.')[0].split('_')[0]
+
+def get_spatial_resolution_raster(raster_path):
+    kwargs = _get_kwargs_raster(raster_path)
+    return kwargs["transform"][0]
 
 def _get_kwargs_raster(raster_path):
     '''

@@ -43,9 +43,12 @@ def workflow(training: bool, visualization: bool, predict: bool):
     '''
 
     # Iterate over a set of geojson/databases (the databases may not be equal)
-    for data_class in glob(join(settings.DB_DIR,"*.kmz")):
-        geojson_file = kmz_to_geojson(data_class)
+    # Model input
+    final_df = None
 
+    for data_class in glob(join(settings.DB_DIR,"*.kmz")):
+        print(f"Working with database {data_class}")
+        geojson_file = kmz_to_geojson(data_class)
         polygons_per_tile = group_polygons_by_tile(geojson_file)
 
         # Tiles related to the traininig zone
@@ -62,8 +65,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
         minio_client = get_minio()
         mongo_products_collection = connect_mongo_products_collection()
         
-        # Model input
-        final_df = None
+
 
         # Names of the bands that are not taken into account
         skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',]
@@ -74,11 +76,11 @@ def workflow(training: bool, visualization: bool, predict: bool):
         pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture', "landcover"]
 
         # Search product metadata in Mongo
-        for tile in tiles:
+        for tile in tiles: # Sample data
             tile_df = None
 
             # Mongo query for obtaining valid products
-            max_cloud_percentage=0.2
+            max_cloud_percentage=20
             product_metadata_cursor_spring = get_products_by_tile_and_date(tile, mongo_products_collection, spring_start, spring_end, max_cloud_percentage)
             product_metadata_cursor_summer = get_products_by_tile_and_date(tile, mongo_products_collection, summer_start, summer_end, max_cloud_percentage)
             product_metadata_cursor_autumn = get_products_by_tile_and_date(tile, mongo_products_collection, autumn_start, autumn_end, max_cloud_percentage)
@@ -96,7 +98,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             print(f"Working through tile {tile}")
 
             # For each geometry in tile, this loop should be removed merging all geometries in a MultiPolygon.
-            for geometry_id in [0]:
+            for geometry_id in [0]: # Sample data
                 # In prediction, the whole product is used
                 if predict:
                     geometry = None
@@ -112,11 +114,11 @@ def workflow(training: bool, visualization: bool, predict: bool):
                     bucket_products = settings.MINIO_BUCKET_NAME_PRODUCTS
                     bucket_composites = settings.MINIO_BUCKET_NAME_COMPOSITES
                     current_bucket = None
-                    products_metadata = filter_valid_products(products_metadata, minio_client)
+                    #products_metadata = filter_valid_products(products_metadata, minio_client)
 
                     if len(products_metadata) == 0:
                         print(f"Products found in tile {tile} are not valid")
-                        continue
+                        break # Next geometry
                     
                     elif len(products_metadata) == 1:
                         product_metadata = products_metadata[0]
@@ -235,6 +237,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
                                     normalize_raster=True, 
                                     path_to_disk=str(Path(settings.TMP_DIR,'visualization','aspect.tif'))
                             )
+                            
                     raster_df = pd.DataFrame({raster_name: raster.flatten()})
                     raster_df = raster_df.dropna()
                     geometry_df = pd.concat([geometry_df, raster_df], axis=1)
@@ -250,29 +253,30 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 if predict:
                     break
 
+
             if final_df is None:
                 final_df = tile_df
             else:
                 final_df = pd.concat([final_df, tile_df], axis=0)
 
-        if predict:
-            print(kwargs_10m)
-            kwargs_10m['dtype'] = 'float32'
-            kwargs_10m['driver'] = 'GTiff'
-            kwargs_10m['nodata'] = 0
-            clf = joblib.load('model.pkl')
-            predict_df = tile_df
-            predict_df.sort_index(inplace=True, axis=1)
-            predict_df.fillna(0, inplace=True)
-            print(predict_df.head())  
-            predictions = clf.predict(predict_df)
-            print(predictions)
-            predictions = np.where(predictions == 'unclassified', 0, 1)
-            print(predictions)
-            predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
+    if predict:
+        print(kwargs_10m)
+        kwargs_10m['dtype'] = 'float32'
+        kwargs_10m['driver'] = 'GTiff'
+        kwargs_10m['nodata'] = 0
+        clf = joblib.load('model.pkl')
+        predict_df = tile_df
+        predict_df.sort_index(inplace=True, axis=1)
+        predict_df.fillna(0, inplace=True)
+        print(predict_df.head())  
+        predictions = clf.predict(predict_df)
+        print(predictions)
+        predictions = np.where(predictions == 'unclassified', 0, 1)
+        print(predictions)
+        predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
 
-            with rasterio.open(str(Path(settings.TMP_DIR,'classification.tif')), "w", **kwargs_10m) as classification_file:
-                classification_file.write(predictions)
+        with rasterio.open(str(Path(settings.TMP_DIR,'classification.tif')), "w", **kwargs_10m) as classification_file:
+            classification_file.write(predictions)
         
     if not predict:
         final_df = final_df.fillna(np.nan)
