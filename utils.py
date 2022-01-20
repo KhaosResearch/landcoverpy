@@ -5,6 +5,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.cursor import Cursor
 from config import settings
+import sys
 from datetime import datetime
 from sentinelsat.sentinel import read_geojson, geojson_to_wkt
 from pathlib import Path
@@ -457,7 +458,7 @@ def expand_cloud_mask(cloud_mask: np.ndarray, spatial_resolution: int):
     return expanded_mask
 
 
-def composite(band_paths: List[str], method: str = "median", cloud_masks_paths: List[str] = None):
+def composite(band_paths: List[str], method: str = "median", cloud_masks: np.ndarray = None):
     """
     Calculate the composite between a series of bands
 
@@ -474,14 +475,8 @@ def composite(band_paths: List[str], method: str = "median", cloud_masks_paths: 
 
         # Remove nodata pixels
         band = np.where(band == 0, np.nan, band)
-        if i < len(cloud_masks_paths):
-            cloud_mask_path = cloud_masks_paths[i]
-            cloud_mask = read_raster(cloud_mask_path)
-            # Binarize cloud mask
-            scl_cloud_values = [3,8,9,10,11]
-            cloud_mask = np.isin(cloud_mask,scl_cloud_values).astype(np.int_)
-            # Expand cloud mask
-            cloud_mask = expand_cloud_mask(cloud_mask, get_spatial_resolution_raster(cloud_mask_path))
+        if i < len(cloud_masks):
+            cloud_mask= cloud_masks[i]
             # Remove cloud-related pixels
             band = np.where(cloud_mask == 1, np.nan, band)
 
@@ -545,7 +540,11 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
     products_dates = []
     products_tiles = []
     bands_paths_products = []
-
+    cloud_masks_temp_paths = []
+    cloud_masks = {"10":[],"20":[],"60":[]}
+    scl_cloud_values = [3,8,9,10,11]
+    
+    print("Downloading and reading the cloud masks needed to make the composite")
     for product_metadata in products_metadata:
 
         product_title = product_metadata["title"]
@@ -569,11 +568,23 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
                             bucket_name=bucket_products,
                             object_name=band_path,
                             file_path=str(temp_path_product_band),
-                        ) 
+                        )
+                cloud_masks_temp_paths.append(temp_path_product_band)
+                spatial_resolution = str(int(get_spatial_resolution_raster(temp_path_product_band)))
+                scl_band = read_raster(temp_path_product_band)
+                # Binarize scl band to get a cloud mask
+                cloud_mask = np.isin(scl_band,scl_cloud_values).astype(np.bool)
+                # Expand cloud mask for a more aggresive masking
+                cloud_mask = expand_cloud_mask(cloud_mask, int(spatial_resolution))
+                cloud_masks[spatial_resolution].append(cloud_mask)
                 
                 # 10m spatial resolution cloud mask raster does not exists, have to be rescaled from 20m mask
                 if "SCL_20m" in band_filename:
-                    read_raster(temp_path_product_band, rescale=True, path_to_disk=temp_path_product_band.replace("_20m.jp2","_10m.jp2"),to_tif=False)
+                    scl_band_10m_temp_path = temp_path_product_band.replace("_20m.jp2","_10m.jp2")
+                    scl_band_10m = read_raster(temp_path_product_band, rescale=True, path_to_disk=scl_band_10m_temp_path,to_tif=False)
+                    cloud_masks_temp_paths.append(scl_band_10m_temp_path)
+                    cloud_mask_10m = np.isin(scl_band_10m,scl_cloud_values).astype(np.bool)
+                    cloud_masks["10"].append(cloud_mask_10m)
 
     composite_id = _get_id_composite(products_ids)
     composite_title = _get_title_composite(products_dates, products_tiles, composite_id) 
@@ -594,7 +605,6 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
             temp_path_composite_band = Path(temp_path_composite, band_filename)
 
             temp_path_list = []
-            cloud_mask_paths = []
 
             for product_i_band_path in products_i_band_path:
                 product_title = product_i_band_path.split('/')[2]
@@ -607,14 +617,12 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
                                 object_name=product_i_band_path,
                                 file_path=str(temp_path_product_band),
                             )
-                spatial_resolution = int(get_spatial_resolution_raster(temp_path_product_band))
+                spatial_resolution = str(int(get_spatial_resolution_raster(temp_path_product_band)))
                 
                 if temp_dir_product not in temp_product_dirs:
                     temp_product_dirs.append(temp_dir_product)
                 temp_path_list.append(temp_path_product_band)
-
-                cloud_mask_paths.append(temp_path_product_band.replace(band_filename,f"SCL_{spatial_resolution}m.jp2"))
-            composite_i_band, kwargs_composite = composite(temp_path_list, method="median", cloud_masks_paths=cloud_mask_paths)
+            composite_i_band, kwargs_composite = composite(temp_path_list, method="median", cloud_masks=cloud_masks[spatial_resolution])
 
             # Save raster to disk
             if not Path.is_dir(temp_path_composite):
@@ -662,7 +670,7 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
         raise e
 
     finally:
-        for composite_band in temp_paths_composite_bands:
+        for composite_band in temp_paths_composite_bands + cloud_masks_temp_paths:
             Path.unlink(Path(composite_band))
         #Path.rmdir(Path(temp_path_composite))
         #for product_dir in temp_product_dirs:
