@@ -148,7 +148,7 @@ def group_polygons_by_tile(geojson_file: str) -> dict:
     tiles = {} 
 
     print(f"Querying relevant tiles for {len(geojson['features'])} features")
-    for feature in tqdm(geojson["features"]):
+    for feature in geojson["features"]:
         small_geojson = {"type": "FeatureCollection", "features": [feature] }
         geometry = small_geojson['features'][0]['geometry']
         classification_label = geojson_file.split('_')[2]

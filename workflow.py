@@ -68,7 +68,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
         # Names of the bands that are not taken into account
-        skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"BRI",]
+        skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri",]
         # Indexes that have to be normalized in training data
         normalizable_indexes = ['bri']
         no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-1, 'aspect':-1}
@@ -76,7 +76,8 @@ def workflow(training: bool, visualization: bool, predict: bool):
         pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture', "landcover"]
 
         # Search product metadata in Mongo
-        for tile in tiles: # Sample data
+        for i, tile in enumerate(tiles): # Sample data
+            print(f"Working in tile {tile}, {i}/{len(tiles)}")
             tile_df = None
 
             # Mongo query for obtaining valid products
