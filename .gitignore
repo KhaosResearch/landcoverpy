@@ -47,3 +47,22 @@ Thumbs.db
 *.flv
 *.mov
 *.wmv
+
+# Data
+*dataset*
+*.csv
+databases
+*.kmz
+*.geojson
+
+# Environments
+.env
+
+# Cache
+__pycache__/
+
+# Tmp files
+minio_tmp/
+
+# ML models
+*.pkl
