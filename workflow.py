@@ -68,7 +68,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
         # Names of the bands that are not taken into account
-        skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',]
+        skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"BRI",]
         # Indexes that have to be normalized in training data
         normalizable_indexes = ['bri']
         no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-1, 'aspect':-1}
