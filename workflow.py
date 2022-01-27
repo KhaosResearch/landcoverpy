@@ -23,8 +23,6 @@ from utils import(
     get_raster_name_from_path,
     filter_rasters_paths_by_pca,
     kmz_to_geojson,
-    filter_valid_products,
-    convert_3D_2D,
 )
 
 

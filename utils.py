@@ -181,15 +181,20 @@ def _get_corners_geometry(geometry: dict):
     '''
     Get the coordinates of the 4 corners of the bounding box of a geometry
     '''
+    
     coordinates = geometry["coordinates"] 
     if geometry["type"] == "MultiPolygon":
         coordinates = coordinates[0] # TODO multiple polygons in a geometry
-    coordinates = coordinates[0] # Takes only the outer ring of the polygon: https://geojson.org/geojson-spec.html#polygon
     lon = [] 
-    lat = [] 
-    for coordinate in coordinates:
-        lon.append(coordinate[0])
-        lat.append(coordinate[1])
+    lat = []
+    if geometry["type"] == "Point":
+        lon.append(coordinates[0])
+        lat.append(coordinates[1])
+    else:
+        coordinates = coordinates[0] # Takes only the outer ring of the polygon: https://geojson.org/geojson-spec.html#polygon
+        for coordinate in coordinates:
+            lon.append(coordinate[0])
+            lat.append(coordinate[1])
 
     max_lon = max(lon)
     min_lon = min(lon)
