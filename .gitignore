@@ -29,3 +29,7 @@ fix_broken_products/
 
 # Images
 *.png
+
+# Rasters
+*.tif
+*.jp2

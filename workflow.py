@@ -272,17 +272,16 @@ def workflow(training: bool, visualization: bool, predict: bool):
         predict_df.fillna(0, inplace=True)
         print(predict_df.head())  
         predictions = clf.predict(predict_df)
+        print(np.unique(predictions))
+        predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
+        mapping = {"agricola":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10}
+        encoded_predictions = [predictions[class_] for class_ in mapping]
         print(predictions)
-        le = preprocessing.LabelEncoder()
-        encoded_predictins = le.fit_transform(predictions)
-
-        encoded_predictins = np.reshape(encoded_predictins, (1, kwargs_10m['height'],kwargs_10m['width']))
+        print(encoded_predictions)
 
         with rasterio.open(str(Path(settings.TMP_DIR,'classification.jp2')), "w", **kwargs_10m) as classification_file:
-            classification_file.write(encoded_predictins)
+            classification_file.write(encoded_predictions)
 
-        mapping = dict(zip(le.classes_, range(len(le.classes_))))
-        print(mapping)
         
     if not predict:
         final_df = final_df.fillna(np.nan)
