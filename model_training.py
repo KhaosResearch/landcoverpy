@@ -12,25 +12,24 @@ from itertools import compress
 
 
 training = True
-pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture']
+pc_columns = ['autumn_B06', 'autumn_evi', 'spring_B01', 'spring_B05', 'spring_evi', 'summer_B08', 'summer_WVP', 'summer_evi']
 
 
 if training:
-    train_df = pd.read_csv("dataset_pca_full.csv")
+    train_df = pd.read_csv("dataset.csv")
+    train_df = train_df.replace([np.inf, -np.inf], np.nan)
     train_df = train_df.fillna(np.nan)
     train_df = train_df.dropna()
     # Prepare data for training
     #x_train_data = train_df.drop("class", axis=1)
-    x_train_data = train_df.drop(["spring_SCL","autumn_SCL","summer_SCL"], axis=1)
-    pc_columns = pca(x_train_data,95)
-    print(pc_columns)
+    #pc_columns = pca(x_train_data,95)
+    #print(pc_columns)
 
-    train_df = pd.read_csv("dataset.csv")
-    train_df = train_df.fillna(np.nan)
-    train_df = train_df.dropna()
+    #train_df = pd.read_csv("dataset.csv")
+    #train_df = train_df.fillna(np.nan)
+    #train_df = train_df.dropna()
     y_train_data = train_df["class"] 
     reduced_x_train_data = train_df[pc_columns]
-    y_train_data = y_train_data.mask(y_train_data != 'unclassified', 'vegetal')
     # Filter bands according to PCA, matusita etc
     reduced_x_train_data.to_csv("dataset_pca.csv",index=False)
     y_train_data.to_csv("ground_truth_pca.csv",index=False)

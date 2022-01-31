@@ -6,6 +6,7 @@ import numpy as np
 from glob import glob
 import pandas as pd
 import rasterio
+from sklearn import preprocessing
 from config import settings
 from aster import get_slope_aspect_from_tile
 from utils import(
@@ -71,7 +72,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
         normalizable_indexes = ['bri']
         no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-1, 'aspect':-1}
         # PCA resulting columns, this should come from somewhere else
-        pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture', "landcover"]
+        pc_columns = ['autumn_B06', 'autumn_evi', 'spring_B01', 'spring_B05', 'spring_evi', 'summer_B08', 'summer_WVP', 'summer_evi']
 
         # Search product metadata in Mongo
         for i, tile in enumerate(tiles): # Sample data
@@ -136,7 +137,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
                     (rasters_paths, is_band) = get_product_rasters_paths(product_metadata, minio_client, current_bucket)
                     # In predict phase, use only pca-selected rasters
                     if predict:
-                        rasters_paths = filter_rasters_paths_by_pca(rasters_paths, pc_columns, season)
+                        (rasters_paths, is_band) = filter_rasters_paths_by_pca(rasters_paths, is_band, pc_columns, season)
                     temp_product_folder = Path(settings.TMP_DIR, product_name + '.SAFE')
                     if not temp_product_folder.exists():
                         Path.mkdir(temp_product_folder)
@@ -249,8 +250,8 @@ def workflow(training: bool, visualization: bool, predict: bool):
                     tile_df = geometry_df
                 else: 
                     tile_df = pd.concat([tile_df, geometry_df], axis=0)
-                if predict:
-                    break
+            if predict:
+                break
 
 
             if final_df is None:
@@ -258,24 +259,30 @@ def workflow(training: bool, visualization: bool, predict: bool):
             else:
                 final_df = pd.concat([final_df, tile_df], axis=0)
 
+        if predict:
+            break
+
     if predict:
-        print(kwargs_10m)
-        kwargs_10m['dtype'] = 'float32'
-        kwargs_10m['driver'] = 'GTiff'
+
         kwargs_10m['nodata'] = 0
         clf = joblib.load('model.pkl')
         predict_df = tile_df
         predict_df.sort_index(inplace=True, axis=1)
+        predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
         predict_df.fillna(0, inplace=True)
         print(predict_df.head())  
         predictions = clf.predict(predict_df)
         print(predictions)
-        predictions = np.where(predictions == 'unclassified', 0, 1)
-        print(predictions)
-        predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
+        le = preprocessing.LabelEncoder()
+        encoded_predictins = le.fit_transform(predictions)
 
-        with rasterio.open(str(Path(settings.TMP_DIR,'classification.tif')), "w", **kwargs_10m) as classification_file:
-            classification_file.write(predictions)
+        encoded_predictins = np.reshape(encoded_predictins, (1, kwargs_10m['height'],kwargs_10m['width']))
+
+        with rasterio.open(str(Path(settings.TMP_DIR,'classification.jp2')), "w", **kwargs_10m) as classification_file:
+            classification_file.write(encoded_predictins)
+
+        mapping = dict(zip(le.classes_, range(len(le.classes_))))
+        print(mapping)
         
     if not predict:
         final_df = final_df.fillna(np.nan)
@@ -288,7 +295,7 @@ if __name__ == '__main__':
     import time
     start = time.time()
     print("Training")
-    workflow(training=True, visualization=True, predict=False)
+    workflow(training=False, visualization=True, predict=True)
     end1 = time.time()
     print('Training function took {:.3f} ms'.format((end1-start)*1000.0))
     # print("Testing")
