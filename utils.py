@@ -34,6 +34,7 @@ from scipy.ndimage import convolve
 import json
 from shapely.geometry import Point, Polygon
 from rasterpoint import RasterPoint
+import numpy.ma as ma
 
 
 def get_minio():
@@ -140,28 +141,30 @@ def kmz_to_geojson(kmz_file: str) -> str:
     df.to_file(geojson_file, driver="GeoJSON")
     return geojson_file
 
-def group_polygons_by_tile(geojson_file: str) -> dict:
+def group_polygons_by_tile(*geojson_files: str) -> dict:
     '''
     Extract all features from a GeoJSON file and group them on the tiles they intersect
     '''
-    geojson = read_geojson(geojson_file)
-    tiles = {} 
+    tiles = {}
 
-    print(f"Querying relevant tiles for {len(geojson['features'])} features")
-    for feature in geojson["features"]:
-        small_geojson = {"type": "FeatureCollection", "features": [feature] }
-        geometry = small_geojson['features'][0]['geometry']
-        classification_label = geojson_file.split('_')[2]
-        intersection_tiles = _get_mgrs_from_geometry(geometry)
+    for geojson_file in geojson_files:
+        geojson = read_geojson(geojson_file)
+        
+        print(f"Querying relevant tiles for {len(geojson['features'])} features")
+        for feature in geojson["features"]:
+            small_geojson = {"type": "FeatureCollection", "features": [feature] }
+            geometry = small_geojson['features'][0]['geometry']
+            classification_label = geojson_file.split('_')[2]
+            intersection_tiles = _get_mgrs_from_geometry(geometry)
 
-        for tile in intersection_tiles:
-            if tile not in tiles:
-                tiles[tile] = []
+            for tile in intersection_tiles:
+                if tile not in tiles:
+                    tiles[tile] = []
 
-            tiles[tile].append({
-                "label": classification_label,
-                "geometry": geometry,
-            })
+                tiles[tile].append({
+                    "label": classification_label,
+                    "geometry": geometry,
+                })
     return tiles
 
 def _get_mgrs_from_geometry(geometry: dict):
@@ -923,3 +926,93 @@ def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
         )
     
     return raster_path
+
+def label_neighbours(height: int, width: int, row: int, column:int , label: str, dt_labeled: np.ndarray) -> np.ndarray:
+    '''
+    Label an input dataset in an area of 3x3 pixels being the center the position (row, column).
+
+    Parameters:
+        height (int) : original raster height.
+        width (int) : original raster width.
+        row (int) : dataset row position to label.
+        column (int) : dataset column position to label.
+        label (str) : label name.
+        dt_labeled (np.ndarray) : dataset to label.
+
+    Returns:
+        dt_labeled (np.ndarray) : dataset labeled.
+    '''
+    #check the pixel is not out of bounds
+    top = 0 < row+1 < height
+    bottom = 0 < row-1 < height
+    left = 0 < column-1 < width
+    right = 0 < column+1 < width
+
+
+    dt_labeled[row, column] = label
+
+    if top:
+        dt_labeled[row-1, column] = label
+                
+        if right:
+            dt_labeled[row, column+1] = label
+            dt_labeled[row-1, column+1] = label
+
+        if left:
+            dt_labeled[row-1, column-1] = label
+            dt_labeled[row, column-1] = label
+
+                
+    if bottom:
+        dt_labeled[row+1, column] = label
+
+        if left:
+            dt_labeled[row+1, column-1] = label
+            dt_labeled[row, column-1] = label
+
+        if right:
+            dt_labeled[row, column+1] = label
+            dt_labeled[row+1, column+1] = label
+
+    return dt_labeled
+
+
+
+def mask_polygons_by_tile(band_path: str, polygons: dict, tile: str) -> Tuple[np.ndarray, np.ndarray]:
+    ''''
+    Label all the pixels in a dataset from points databases for a given tile.
+
+    Parameters:
+        band_path (str) :  Input band filename (jp2, tif). 
+        polygons (dict) : Dictionary of points to label.
+        tile (str) : Name of the tile to label.
+
+    Returns:
+        band_mask (np.ndarray) : Boolean matrix with masked labels.
+        dt_labeled (np.ndarray) : Matrix labeled.
+    
+    '''
+    
+    kwargs = _get_kwargs_raster(band_path)    
+    dt_labeled = np.zeros((kwargs['height'], kwargs['width']), dtype=object)    
+
+    #Label all the pixels in points database
+    for geometry_id in range(len(polygons[tile])):
+        #Get point and label
+        geometry_raw = polygons[tile][geometry_id]["geometry"]["coordinates"]
+        geometry = Point(geometry_raw[0], geometry_raw[1])
+        label = polygons[tile][geometry_id]["label"]
+
+        #Transform point projection to original raster pojection
+        project = pyproj.Transformer.from_crs(pyproj.CRS.from_epsg(4326), kwargs['crs'], always_xy=True).transform
+        tr_point = transform(project, geometry)
+
+        # Get matrix position from the pixel corresponding to a given point coordinates
+        row, column = rasterio.transform.rowcol(kwargs['transform'], tr_point.x, tr_point.y)
+        dt_labeled = label_neighbours(kwargs['height'], kwargs['width'], row, column, label, dt_labeled)
+        
+    #Get mask from labeled dataset.
+    band_mask = ma.masked_equal(dt_labeled, 0)
+    band_mask = ma.getmask(band_mask)  
+
+    return band_mask, dt_labeled
