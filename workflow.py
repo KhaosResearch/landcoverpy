@@ -76,9 +76,8 @@ def workflow(training: bool, visualization: bool, predict: bool):
     pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture', "landcover"]
 
     # Search product metadata in Mongo
-    for i, tile in enumerate(tiles): # Sample data
+    for i, tile in enumerate(tiles[:1]): # Sample data
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
-        tile_df = None
 
         # Mongo query for obtaining valid products
         max_cloud_percentage=20
@@ -100,7 +99,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
     
 
         # Dataframe for storing data of a tile
-        geometry_df = None
+        tile_df = None
 
         slope_path, aspect_path = get_slope_aspect_from_tile(tile,mongo_products_collection,minio_client,settings.MINIO_BUCKET_NAME_ASTER)
 
@@ -135,7 +134,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             raster_masked = np.ma.compressed(raster_masked).flatten()
             raster_df = pd.DataFrame({raster_name: raster_masked})
             raster_df = raster_df.dropna()
-            geometry_df = pd.concat([geometry_df, raster_df], axis=1)
+            tile_df = pd.concat([tile_df, raster_df], axis=1)
 
         raster_name = 'aspect'
         if (not predict) or (predict and raster_name in pc_columns):
@@ -152,7 +151,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             raster_masked = np.ma.compressed(raster_masked).flatten()
             raster_df = pd.DataFrame({raster_name: raster_masked})
             raster_df = raster_df.dropna()
-            geometry_df = pd.concat([geometry_df, raster_df], axis=1)
+            tile_df = pd.concat([tile_df, raster_df], axis=1)
 
         for season, products_metadata in product_per_season.items():
             print(season)
@@ -187,9 +186,6 @@ def workflow(training: bool, visualization: bool, predict: bool):
             if not temp_product_folder.exists():
                 Path.mkdir(temp_product_folder)
             print(f"Processing product {product_name}")
-
-            # Dataframe for storing one season data of a tile
-            one_season_df = None
 
             # Read bands and indexes.
             already_read = []
@@ -240,39 +236,27 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 raster_df = pd.DataFrame({f"{season}_{raster_name}": raster_masked})
                 raster_df = raster_df.dropna()
 
-                if one_season_df is None:
-                    one_season_df = raster_df
-                else: 
-                    one_season_df = pd.concat([one_season_df, raster_df], axis=1)
+                tile_df = pd.concat([tile_df, raster_df], axis=1)
                 if temp_path.exists() and temp_path.is_file():
                     Path.unlink(temp_path)
             
             if temp_product_folder.is_dir() and (not any(Path(temp_product_folder).iterdir())):
                 Path.rmdir(temp_product_folder)
 
-            if geometry_df is None:
-                geometry_df = one_season_df
-            else: 
-                geometry_df = pd.concat([geometry_df, one_season_df], axis=1)
+        
+                
+        if not predict:
 
-        if tile_df is None:
-            tile_df = geometry_df
-        else: 
-            tile_df = pd.concat([tile_df, geometry_df], axis=0)
-        if predict:
-            break
-        break
+            raster_masked = np.ma.masked_array(dt_labeled, mask=crop_mask)
+            raster_masked = np.ma.compressed(raster_masked).flatten()
+            raster_df = pd.DataFrame({"label": raster_masked})
+            raster_df = raster_df.dropna()
+            tile_df = pd.concat([tile_df, raster_df], axis=1)
 
-    raster_masked = np.ma.masked_array(dt_labeled, mask=crop_mask)
-    raster_masked = np.ma.compressed(raster_masked).flatten()
-    raster_df = pd.DataFrame({"label": raster_masked})
-    raster_df = raster_df.dropna()
-    tile_df = pd.concat([tile_df, raster_df], axis=1)
-
-    if final_df is None:
-        final_df = tile_df
-    else:
-        final_df = pd.concat([final_df, tile_df], axis=0)
+            if final_df is None:
+                final_df = tile_df
+            else:
+                final_df = pd.concat([final_df, tile_df], axis=0)
 
     if predict:
         print(kwargs_10m)
