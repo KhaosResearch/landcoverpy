@@ -24,5 +24,12 @@ composite_testing.py
 # ESA landcover
 landcover_ESA.py
 
+# Raster
+*.tif
+*.jp2
+
+# Images
+*.png
+
 # Other code
 fix_broken_products/
