@@ -75,8 +75,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
     # PCA resulting columns, this should come from somewhere else
     pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture', "landcover"]
 
-    # Search product metadata in Mongo
-    for i, tile in enumerate(tiles[:1]): # Sample data
+    for i, tile in enumerate(tiles):
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
 
         # Mongo query for obtaining valid products
