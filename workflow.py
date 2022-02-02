@@ -274,12 +274,15 @@ def workflow(training: bool, visualization: bool, predict: bool):
         predictions = clf.predict(predict_df)
         print(np.unique(predictions))
         predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
-        mapping = {"agricola":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10}
-        encoded_predictions = [predictions[class_] for class_ in mapping]
+        encoded_predictions = predictions.copy()
+        mapping = {"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11,}
+        for class_, value in mapping.items():
+            encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
         print(predictions)
         print(encoded_predictions)
 
-        with rasterio.open(str(Path(settings.TMP_DIR,'classification.jp2')), "w", **kwargs_10m) as classification_file:
+        kwargs_10m["driver"] = "GTiff"
+        with rasterio.open(str(Path(settings.TMP_DIR,'classification.tif')), "w", **kwargs_10m) as classification_file:
             classification_file.write(encoded_predictions)
 
         
