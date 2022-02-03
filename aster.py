@@ -88,10 +88,12 @@ def _merge_dem(dem_paths: List[Path], outpath: str, minio_client: Minio) -> Path
         out_slope_meta["height"] = slope.shape[1]
         out_slope_meta["width"] = slope.shape[2]
         out_slope_meta["transform"] = slope_transform
+        out_slope_meta["nodata"] = -99999
 
         out_aspect_meta["height"] = aspect.shape[1]
         out_aspect_meta["width"] = aspect.shape[2]
         out_aspect_meta["transform"] = aspect_transform
+        out_aspect_meta["nodata"] = -99999
 
         outpath_slope = str(Path(outpath, "slope.tif"))
         outpath_aspect = str(Path(outpath, "aspect.tif"))
@@ -131,7 +133,7 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
         )
         kwargs = src.meta.copy()
         kwargs.update(
-            {"driver": "GTiff" ,"crs": dst_crs, "transform": transform, "width": width, "height": height}
+            {"driver": "GTiff" ,"crs": dst_crs, "transform": transform, "width": width, "height": height, "nodata": -99999}
         )
 
         with rasterio.open(reprojected_path, "w", **kwargs) as dst:
@@ -140,8 +142,10 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
                 destination=rasterio.band(dst, 1),
                 src_transform=src.transform,
                 src_crs=src.crs,
+                src_nodata=-99999,
                 dst_transform=transform,
                 dst_crs=dst_crs,
+                dst_nodata=-99999,
                 resampling=Resampling.nearest,
             )
     return reprojected_path

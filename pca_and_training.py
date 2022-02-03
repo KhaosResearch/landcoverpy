@@ -3,6 +3,8 @@ import numpy as np
 from utils import pca
 import joblib
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
 
 
 # Temporal code to load premade dataset for training 
@@ -22,8 +24,14 @@ x_train_data = train_df.drop("class", axis=1)
 pc_columns = pca(x_train_data,99)
 print(pc_columns)
 reduced_x_train_data = train_df[pc_columns]
+X_train, X_test, y_train, y_test = train_test_split(reduced_x_train_data, y_train_data, test_size=0.15)
 
 # Train model 
 clf = RandomForestClassifier()
-clf.fit(reduced_x_train_data, y_train_data)
-joblib.dump(clf, 'model.pkl', compress=1)
+clf.fit(X_train, y_train)
+y_true = clf.predict(X_test)
+print(confusion_matrix(y_true, y_test))
+print(X_test.iloc[0:2,:],"\n", clf.predict(X_test.iloc[0:2,:]), y_test.iloc[0:2])
+
+
+joblib.dump(clf, 'model.joblib')

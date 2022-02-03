@@ -73,7 +73,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
     skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri",]
     # Indexes that have to be normalized in training data
     normalizable_indexes = ['bri']
-    no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-1, 'aspect':-1}
+    no_data_value = {'slope':-99999, 'aspect':-99999}
     # PCA resulting columns, this should come from somewhere else
     pc_columns = ['aspect', 'autumn_evi', 'slope', 'spring_AOT', 'spring_B02', 'spring_B04', 'spring_B07', 'spring_evi', 'summer_WVP', 'summer_evi']
 
@@ -131,13 +131,12 @@ def workflow(training: bool, visualization: bool, predict: bool):
         raster_name = 'slope'
         if (not predict) or (predict and raster_name in pc_columns):
             band_no_data_value = no_data_value.get(raster_name,0)
-
             raster = read_raster(
                             band_path=slope_path,
                             rescale=True,
                             no_data_value=band_no_data_value,
                             normalize_raster=True, 
-                            path_to_disk=str(Path(settings.TMP_DIR,'visualization','slope.tif'))
+                            path_to_disk=str(Path(settings.TMP_DIR,'visualization','slope.tif')),
                     )
             raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
             raster_masked = np.ma.compressed(raster_masked).flatten()
@@ -266,7 +265,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
         if predict:
 
             kwargs_10m['nodata'] = 0
-            clf = joblib.load('model.pkl')
+            clf = joblib.load('model.joblib')
             predict_df = tile_df
             predict_df.sort_index(inplace=True, axis=1)
             predict_df = predict_df.replace([np.inf, -np.inf], np.nan)

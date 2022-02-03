@@ -349,10 +349,10 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
 
     if to_tif:
             kwargs['driver'] = 'GTiff'
-            kwargs['nodata'] = 0
+            kwargs['nodata'] = no_data_value
             kwargs["dtype"] = "float32"
             band = band.astype(np.float32)
-            band[band == 0] = np.nan
+            band[band == no_data_value] = np.nan
 
             if path_to_disk is not None:
                 path_to_disk = path_to_disk[:-3] + 'tif'
