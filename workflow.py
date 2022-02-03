@@ -76,7 +76,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
     # PCA resulting columns, this should come from somewhere else
     pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture', "landcover"]
 
-    for i, tile in enumerate(tiles):
+    for i, tile in tqdm(enumerate(tiles)):
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
 
         # Mongo query for obtaining valid products
@@ -249,7 +249,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
             raster_masked = np.ma.masked_array(dt_labeled, mask=crop_mask)
             raster_masked = np.ma.compressed(raster_masked).flatten()
-            raster_df = pd.DataFrame({"label": raster_masked})
+            raster_df = pd.DataFrame({"class": raster_masked})
             raster_df = raster_df.dropna()
             tile_df = pd.concat([tile_df, raster_df], axis=1)
 
@@ -259,31 +259,27 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 final_df = pd.concat([final_df, tile_df], axis=0)
 
         if predict:
-            break
 
-    if predict:
+            kwargs_10m['nodata'] = 0
+            clf = joblib.load('model.pkl')
+            predict_df = tile_df
+            predict_df.sort_index(inplace=True, axis=1)
+            predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
+            predict_df.fillna(0, inplace=True)
+            print(predict_df.head())  
+            predictions = clf.predict(predict_df)
+            print(np.unique(predictions))
+            predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
+            encoded_predictions = predictions.copy()
+            mapping = {"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11,}
+            for class_, value in mapping.items():
+                encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
 
-        kwargs_10m['nodata'] = 0
-        clf = joblib.load('model.pkl')
-        predict_df = tile_df
-        predict_df.sort_index(inplace=True, axis=1)
-        predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
-        predict_df.fillna(0, inplace=True)
-        print(predict_df.head())  
-        predictions = clf.predict(predict_df)
-        print(np.unique(predictions))
-        predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
-        encoded_predictions = predictions.copy()
-        mapping = {"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11,}
-        for class_, value in mapping.items():
-            encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
-        print(predictions)
-        print(encoded_predictions)
-
-        kwargs_10m["driver"] = "GTiff"
-        with rasterio.open(str(Path(settings.TMP_DIR,'classification.tif')), "w", **kwargs_10m) as classification_file:
-            classification_file.write(encoded_predictions)
-
+            kwargs_10m["driver"] = "GTiff"
+            with rasterio.open(str(Path(settings.TMP_DIR,f'classification_{tile}.tif')), "w", **kwargs_10m) as classification_file:
+                classification_file.write(encoded_predictions)
+            print(f'classification_{tile}.tif saved'))
+            
         
     if not predict:
         final_df = final_df.fillna(np.nan)
@@ -296,11 +292,4 @@ if __name__ == '__main__':
     import time
     start = time.time()
     print("Training")
-    workflow(training=True, visualization=False, predict=False)
-    end1 = time.time()
-    print('Training function took {:.3f} ms'.format((end1-start)*1000.0))
-    # print("Testing")
-    # workflow(training=False)
-    # end2 = time.time()
-    # print('Predict function took {:.3f} ms'.format((end2-end1)*1000.0))
-    # print('Workflow in total took {:.3f} ms'.format((end2-start)*1000.0))
+    workflow(training=True, visualization=False, predict=True)
