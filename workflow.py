@@ -113,7 +113,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
         crop_mask, dt_labeled = mask_polygons_by_tile(slope_path, polygons_per_tile, tile)
 
         if predict:
-            crop_mask = np.ones_like(crop_mask)
+            crop_mask = np.zeros_like(crop_mask)
 
         #Save crop mask to tif file
         if visualization:
@@ -142,7 +142,6 @@ def workflow(training: bool, visualization: bool, predict: bool):
             raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
             raster_masked = np.ma.compressed(raster_masked).flatten()
             raster_df = pd.DataFrame({raster_name: raster_masked})
-            raster_df = raster_df.dropna()
             tile_df = pd.concat([tile_df, raster_df], axis=1)
 
         raster_name = 'aspect'
@@ -159,7 +158,6 @@ def workflow(training: bool, visualization: bool, predict: bool):
             raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
             raster_masked = np.ma.compressed(raster_masked).flatten()
             raster_df = pd.DataFrame({raster_name: raster_masked})
-            raster_df = raster_df.dropna()
             tile_df = pd.concat([tile_df, raster_df], axis=1)
 
         for season, products_metadata in product_per_season.items():
@@ -243,7 +241,6 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
                 #raster_df = pd.DataFrame({raster_name: raster_masked})
                 raster_df = pd.DataFrame({f"{season}_{raster_name}": raster_masked})
-                raster_df = raster_df.dropna()
 
                 tile_df = pd.concat([tile_df, raster_df], axis=1)
                 if temp_path.exists() and temp_path.is_file():
@@ -259,7 +256,6 @@ def workflow(training: bool, visualization: bool, predict: bool):
             raster_masked = np.ma.masked_array(dt_labeled, mask=crop_mask)
             raster_masked = np.ma.compressed(raster_masked).flatten()
             raster_df = pd.DataFrame({"class": raster_masked})
-            raster_df = raster_df.dropna()
             tile_df = pd.concat([tile_df, raster_df], axis=1)
 
             if final_df is None:

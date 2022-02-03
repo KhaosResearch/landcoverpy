@@ -1012,7 +1012,6 @@ def mask_polygons_by_tile(band_path: str, polygons: dict, tile: str) -> Tuple[np
         dt_labeled = label_neighbours(kwargs['height'], kwargs['width'], row, column, label, dt_labeled)
         
     #Get mask from labeled dataset.
-    band_mask = ma.masked_equal(dt_labeled, 0)
-    band_mask = ma.getmask(band_mask)  
+    band_mask = dt_labeled==0
 
     return band_mask, dt_labeled
