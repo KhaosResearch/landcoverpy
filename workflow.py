@@ -4,6 +4,7 @@ import joblib
 from os.path import join
 import numpy as np
 from glob import glob
+from tqdm import tqdm
 import pandas as pd
 import rasterio
 from sklearn import preprocessing
@@ -75,6 +76,11 @@ def workflow(training: bool, visualization: bool, predict: bool):
     no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-1, 'aspect':-1}
     # PCA resulting columns, this should come from somewhere else
     pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture', "landcover"]
+
+    if predict:
+        print("Predicting tiles")
+    else:
+        print("Creating dataset from tiles")
 
     for i, tile in tqdm(enumerate(tiles)):
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
@@ -278,7 +284,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             kwargs_10m["driver"] = "GTiff"
             with rasterio.open(str(Path(settings.TMP_DIR,f'classification_{tile}.tif')), "w", **kwargs_10m) as classification_file:
                 classification_file.write(encoded_predictions)
-            print(f'classification_{tile}.tif saved'))
+            print(f'classification_{tile}.tif saved')
             
         
     if not predict:
@@ -289,7 +295,4 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
 if __name__ == '__main__':
-    import time
-    start = time.time()
-    print("Training")
     workflow(training=True, visualization=False, predict=True)
