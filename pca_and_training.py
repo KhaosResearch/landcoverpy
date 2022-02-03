@@ -19,7 +19,7 @@ train_df = train_df.dropna()
 # Prepare data for training
 y_train_data = train_df["class"] 
 x_train_data = train_df.drop("class", axis=1)
-pc_columns = pca(x_train_data,98)
+pc_columns = pca(x_train_data,99)
 print(pc_columns)
 reduced_x_train_data = train_df[pc_columns]
 

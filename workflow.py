@@ -75,14 +75,14 @@ def workflow(training: bool, visualization: bool, predict: bool):
     normalizable_indexes = ['bri']
     no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-1, 'aspect':-1}
     # PCA resulting columns, this should come from somewhere else
-    pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture', "landcover"]
+    pc_columns = ['aspect', 'autumn_evi', 'slope', 'spring_AOT', 'spring_B02', 'spring_B04', 'spring_B07', 'spring_evi', 'summer_WVP', 'summer_evi']
 
     if predict:
         print("Predicting tiles")
     else:
         print("Creating dataset from tiles")
 
-    for i, tile in tqdm(enumerate(tiles)):
+    for i, tile in enumerate(tiles):
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
 
         # Mongo query for obtaining valid products
@@ -111,6 +111,9 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
         #Get crop mask and dataset labeled with database points in tile
         crop_mask, dt_labeled = mask_polygons_by_tile(slope_path, polygons_per_tile, tile)
+
+        if predict:
+            crop_mask = np.ones_like(crop_mask)
 
         #Save crop mask to tif file
         if visualization:
@@ -272,9 +275,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             predict_df.sort_index(inplace=True, axis=1)
             predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
             predict_df.fillna(0, inplace=True)
-            print(predict_df.head())  
             predictions = clf.predict(predict_df)
-            print(np.unique(predictions))
             predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
             encoded_predictions = predictions.copy()
             mapping = {"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11,}
