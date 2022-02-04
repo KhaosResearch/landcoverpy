@@ -978,12 +978,11 @@ def label_neighbours(height: int, width: int, row: int, column:int , label: str,
 
 
 
-def mask_polygons_by_tile(band_path: str, polygons: dict, tile: str) -> Tuple[np.ndarray, np.ndarray]:
+def mask_polygons_by_tile(polygons: dict, tile: str) -> Tuple[np.ndarray, np.ndarray]:
     ''''
     Label all the pixels in a dataset from points databases for a given tile.
 
     Parameters:
-        band_path (str) :  Input band filename (jp2, tif). 
         polygons (dict) : Dictionary of points to label.
         tile (str) : Name of the tile to label.
 
@@ -992,7 +991,11 @@ def mask_polygons_by_tile(band_path: str, polygons: dict, tile: str) -> Tuple[np
         dt_labeled (np.ndarray) : Matrix labeled.
     
     '''
-    
+    #Get band path for a given tile
+    minio_client = get_minio()
+    mongo_products_collection = connect_mongo_products_collection()
+    band_path = download_sample_band(tile, minio_client, mongo_products_collection)
+
     kwargs = _get_kwargs_raster(band_path)    
     dt_labeled = np.zeros((kwargs['height'], kwargs['width']), dtype=object)    
 
@@ -1012,6 +1015,6 @@ def mask_polygons_by_tile(band_path: str, polygons: dict, tile: str) -> Tuple[np
         dt_labeled = label_neighbours(kwargs['height'], kwargs['width'], row, column, label, dt_labeled)
         
     #Get mask from labeled dataset.
-    band_mask = dt_labeled==0
+    band_mask = dt_labeled==0 
 
     return band_mask, dt_labeled

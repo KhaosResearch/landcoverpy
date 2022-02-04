@@ -4,12 +4,10 @@ import joblib
 from os.path import join
 import numpy as np
 from glob import glob
-from tqdm import tqdm
 import pandas as pd
 import rasterio
-from sklearn import preprocessing
 from config import settings
-from aster import get_slope_aspect_from_tile
+from aster import get_dem_from_tile
 from utils import(
     _get_kwargs_raster,
     get_products_by_tile_and_date,
@@ -107,10 +105,8 @@ def workflow(training: bool, visualization: bool, predict: bool):
         # Dataframe for storing data of a tile
         tile_df = None
 
-        slope_path, aspect_path = get_slope_aspect_from_tile(tile,mongo_products_collection,minio_client,settings.MINIO_BUCKET_NAME_ASTER)
-
         #Get crop mask and dataset labeled with database points in tile
-        crop_mask, dt_labeled = mask_polygons_by_tile(slope_path, polygons_per_tile, tile)
+        crop_mask, dt_labeled = mask_polygons_by_tile(polygons_per_tile, tile)
 
         if predict:
             crop_mask = np.zeros_like(crop_mask)
@@ -126,38 +122,23 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 mask_file.write(crop_mask_save.astype(int))
         
 
-
-        # Add slope and aspect data
-        raster_name = 'slope'
-        if (not predict) or (predict and raster_name in pc_columns):
-            band_no_data_value = no_data_value.get(raster_name,0)
-            raster = read_raster(
-                            band_path=slope_path,
-                            rescale=True,
-                            no_data_value=band_no_data_value,
-                            normalize_raster=True, 
-                            path_to_disk=str(Path(settings.TMP_DIR,'visualization','slope.tif')),
-                    )
-            raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
-            raster_masked = np.ma.compressed(raster_masked).flatten()
-            raster_df = pd.DataFrame({raster_name: raster_masked})
-            tile_df = pd.concat([tile_df, raster_df], axis=1)
-
-        raster_name = 'aspect'
-        if (not predict) or (predict and raster_name in pc_columns):
-            band_no_data_value = no_data_value.get(raster_name,0)
-            raster = read_raster(
-                            band_path=aspect_path,
-                            rescale=True,
-                            no_data_value=band_no_data_value,
-                            normalize_raster=True, 
-                            path_to_disk=str(Path(settings.TMP_DIR,'visualization','aspect.tif'))
-                    )
-                    
-            raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
-            raster_masked = np.ma.compressed(raster_masked).flatten()
-            raster_df = pd.DataFrame({raster_name: raster_masked})
-            tile_df = pd.concat([tile_df, raster_df], axis=1)
+        dems_raster_names = ["slope", "aspect", "dem",]
+        for dem_name in dems_raster_names:
+            # Add slope and aspect data
+            if (not predict) or (predict and dem_name in pc_columns):
+                slope_path = get_dem_from_tile(tile,mongo_products_collection,minio_client,settings.MINIO_BUCKET_NAME_ASTER, dem_name)
+                band_no_data_value = no_data_value.get(dem_name,-99999)
+                raster = read_raster(
+                                band_path=slope_path,
+                                rescale=True,
+                                no_data_value=band_no_data_value,
+                                normalize_raster=True, 
+                                path_to_disk=str(Path(settings.TMP_DIR,'visualization',f'{dem_name}.tif')),
+                        )
+                raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
+                raster_masked = np.ma.compressed(raster_masked).flatten()
+                raster_df = pd.DataFrame({dem_name: raster_masked})
+                tile_df = pd.concat([tile_df, raster_df], axis=1)
 
         for season, products_metadata in product_per_season.items():
             print(season)

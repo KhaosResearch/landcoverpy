@@ -27,7 +27,7 @@ reduced_x_train_data = train_df[pc_columns]
 X_train, X_test, y_train, y_test = train_test_split(reduced_x_train_data, y_train_data, test_size=0.15)
 
 # Train model 
-clf = RandomForestClassifier()
+clf = RandomForestClassifier(n_jobs=32)
 clf.fit(X_train, y_train)
 y_true = clf.predict(X_test)
 print(confusion_matrix(y_true, y_test))
