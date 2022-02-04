@@ -81,8 +81,6 @@ def workflow(training: bool, visualization: bool, predict: bool):
         print("Creating dataset from tiles")
 
     for i, tile in enumerate(tiles):
-        if(tile != "30SUF"):
-            continue
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
 
         # Mongo query for obtaining valid products
