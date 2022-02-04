@@ -17,6 +17,12 @@ from utils import (
     download_sample_band,
 )
 
+def _get_bucket_by_name(dem_name: str) -> str:
+    if dem_name == 'dem':
+        bucket = settings.MINIO_BUCKET_NAME_DEM
+    else:
+        bucket = settings.MINIO_BUCKET_NAME_ASTER
+    return bucket
 
 def _gather_aster(
     minio_client: Minio, 
@@ -64,28 +70,30 @@ def _merge_dem(dem_paths: List[Path], outpath: str, minio_client: Minio, dem_nam
     Returns the path to the merged DEM.
     """
     dem = []
+    bucket = _get_bucket_by_name(dem_name)
     if not len(dem_paths) == 0:
         for dem_path in dem_paths:
-            for file in minio_client.list_objects(settings.MINIO_BUCKET_NAME_ASTER, prefix=dem_path, recursive=True):
+            for file in minio_client.list_objects(bucket, prefix=dem_path, recursive=True):
                 file_object = file.object_name
                 minio_client.fget_object(
-                    bucket_name=settings.MINIO_BUCKET_NAME_ASTER,
+                    bucket_name=bucket,
                     object_name=file_object,
                     file_path=str(Path(outpath, file_object))
                 )
-                if f"{dem_name}.tif" == file_object.split('/')[-1]:
+                if file_object.endswith(f"{dem_name}.tif"):
                     dem.append(str(Path(outpath, file_object)))
 
         out_dem_meta = _get_kwargs_raster(dem[0])
-
         dem, dem_transform = merge.merge(dem)
-
+        out_dem_meta["driver"] = "GTiff" 
+        out_dem_meta['dtype'] = "float32"
         out_dem_meta["height"] = dem.shape[1]
         out_dem_meta["width"] = dem.shape[2]
         out_dem_meta["transform"] = dem_transform
         out_dem_meta["nodata"] = -99999
 
-        outpath_dem = str(Path(outpath, "{dem_name}.tif"))
+
+        outpath_dem = str(Path(outpath, f"{dem_name}.tif"))
 
         if not os.path.exists(os.path.dirname(outpath_dem)):
             try:
@@ -131,10 +139,11 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
             )
     return reprojected_path
 
-def get_dem_from_tile(tile: str, mongo_collection: Collection,minio_client: Minio, minio_bucket_aster: str, dem_name: str):
+def get_dem_from_tile(tile: str, mongo_collection: Collection,minio_client: Minio, dem_name: str):
     '''
     Create both aspect and slope rasters merging aster products and proyecting them to sentinel rasters.
     '''
+    bucket = _get_bucket_by_name(dem_name)
 
     sample_band_path = download_sample_band(tile, minio_client, mongo_collection)
 
@@ -151,10 +160,10 @@ def get_dem_from_tile(tile: str, mongo_collection: Collection,minio_client: Mini
     lower_bound = _get_bound(bottom_left, bottom_right, is_up_down=True)
 
     overlapping_dem = _gather_aster(
-        minio_client, minio_bucket_aster, left_bound, right_bound, upper_bound, lower_bound
+        minio_client, bucket, left_bound, right_bound, upper_bound, lower_bound
     )
     
-    print(f"Obtaining dem data of tile {tile} using {overlapping_dem} aster products")
+    print(f"Obtaining {dem_name} data of tile {tile} using {overlapping_dem} aster products")
     dem_path = _merge_dem(
         dem_paths=overlapping_dem,
         outpath= str(Path(settings.TMP_DIR)),

@@ -349,10 +349,9 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
 
     if to_tif:
             kwargs['driver'] = 'GTiff'
-            kwargs['nodata'] = no_data_value
+            kwargs['nodata'] = np.nan
             kwargs["dtype"] = "float32"
             band = band.astype(np.float32)
-            band[band == no_data_value] = np.nan
 
             if path_to_disk is not None:
                 path_to_disk = path_to_disk[:-3] + 'tif'
@@ -413,7 +412,6 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
         new_kwargs["width"] = band.shape[2]
         new_kwargs["height"] = band.shape[1]
         kwargs = new_kwargs
-    band[band == no_data_value] = np.nan
 
     if path_to_disk is not None:
         with rasterio.open(path_to_disk, "w", **kwargs) as dst_file:
@@ -848,7 +846,7 @@ def _get_corners_raster(band_path: Path) -> Tuple[RasterPoint, RasterPoint, Rast
     final_crs = pyproj.CRS("epsg:4326")
 
 
-    band = read_raster(band_path,no_data_value=-1)
+    band = read_raster(band_path,no_data_value=-99999)
     kwargs = _get_kwargs_raster(band_path)
     init_crs = kwargs['crs']
 
@@ -901,8 +899,7 @@ def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
     raster_kwargs = _get_kwargs_raster(raster_path)
 
     _, sentinel_polygon = sentinel_raster_to_polygon(sentinel_path)
-
-    cropped_raster = read_raster(raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=-1)
+    cropped_raster = read_raster(raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=-99999)
     cropped_raster_kwargs = raster_kwargs.copy()
     cropped_raster_kwargs['transform'] = raster_kwargs['transform']
     cropped_raster_kwargs['transform'] = rasterio.Affine(raster_kwargs['transform'][0], 0.0, sentinel_kwargs["transform"][2], 0.0,raster_kwargs['transform'][4] , sentinel_kwargs["transform"][5])

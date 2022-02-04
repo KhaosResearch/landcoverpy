@@ -68,10 +68,10 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
     # Names of the bands that are not taken into account
-    skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri",]
+    skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri","WVP"]
     # Indexes that have to be normalized in training data
-    normalizable_indexes = ['bri']
-    no_data_value = {'slope':-99999, 'aspect':-99999}
+    normalizable_indexes = []
+    no_data_value = {'slope':-99999, 'aspect':-99999, "ndvi":-99999, "osavi":-99999, "osavi":-99999, "ndre":-99999, "ndbg":-99999, "moisture":-99999, "mndwi":-99999, "evi2":-99999, "evi":-99999}
     # PCA resulting columns, this should come from somewhere else
     pc_columns = ['aspect', 'autumn_evi', 'slope', 'spring_AOT', 'spring_B02', 'spring_B04', 'spring_B07', 'spring_evi', 'summer_WVP', 'summer_evi']
 
@@ -81,6 +81,8 @@ def workflow(training: bool, visualization: bool, predict: bool):
         print("Creating dataset from tiles")
 
     for i, tile in enumerate(tiles):
+        if(tile != "30SUF"):
+            continue
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
 
         # Mongo query for obtaining valid products
@@ -95,7 +97,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 "summer": list(product_metadata_cursor_summer),
             }
     
-        if len(product_per_season["spring"]) == 0 or len(product_per_season["autumn"]) == 0 or len(product_per_season["spring"]) == 0:
+        if len(product_per_season["spring"]) == 0 or len(product_per_season["autumn"]) == 0 or len(product_per_season["summer"]) == 0:
             print(f"There is no valid data for tile {tile}. Skipping it...")
             continue
 
@@ -110,26 +112,16 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
         if predict:
             crop_mask = np.zeros_like(crop_mask)
-
-        #Save crop mask to tif file
-        if visualization:
-            crop_kwargs =  _get_kwargs_raster(str(slope_path))   
-            crop_mask_save = np.reshape(crop_mask, (crop_kwargs['count'],*np.shape(crop_mask)))            
-            crop_kwargs['dtype'] = 'int16'
-            crop_kwargs['driver'] = 'GTiff'
-            crop_kwargs['nodata'] =  0
-            with rasterio.open(str(Path(settings.TMP_DIR,'mask.tif')), "w", **crop_kwargs) as mask_file:
-                mask_file.write(crop_mask_save.astype(int))
         
 
         dems_raster_names = ["slope", "aspect", "dem",]
         for dem_name in dems_raster_names:
-            # Add slope and aspect data
+            # Add dem and aspect data
             if (not predict) or (predict and dem_name in pc_columns):
-                slope_path = get_dem_from_tile(tile,mongo_products_collection,minio_client,settings.MINIO_BUCKET_NAME_ASTER, dem_name)
+                dem_path = get_dem_from_tile(tile,mongo_products_collection,minio_client, dem_name)
                 band_no_data_value = no_data_value.get(dem_name,-99999)
                 raster = read_raster(
-                                band_path=slope_path,
+                                band_path=dem_path,
                                 rescale=True,
                                 no_data_value=band_no_data_value,
                                 normalize_raster=True, 
@@ -272,4 +264,4 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=False, predict=True)
+    workflow(training=True, visualization=True, predict=False)
