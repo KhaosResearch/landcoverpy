@@ -18,6 +18,7 @@ class _Settings(BaseSettings):
     MINIO_BUCKET_NAME_PRODUCTS: str = None
     MINIO_BUCKET_NAME_COMPOSITES: str = None
     MINIO_BUCKET_NAME_ASTER: str = None
+    MINIO_BUCKET_NAME_DEM: str = None
     MINIO_ACCESS_KEY: str = "minio"
     MINIO_SECRET_KEY: str = "minio"
 
