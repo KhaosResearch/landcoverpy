@@ -17,6 +17,12 @@ from utils import (
     download_sample_band,
 )
 
+def _get_bucket_by_name(dem_name: str) -> str:
+    if dem_name == 'dem':
+        bucket = settings.MINIO_BUCKET_NAME_DEM
+    else:
+        bucket = settings.MINIO_BUCKET_NAME_ASTER
+    return bucket
 
 def _gather_aster(
     minio_client: Minio, 
@@ -57,63 +63,48 @@ def _gather_aster(
     return overlapping_dem
 
 
-def _merge_dem(dem_paths: List[Path], outpath: str, minio_client: Minio) -> Path:
+def _merge_dem(dem_paths: List[Path], outpath: str, minio_client: Minio, dem_name: str) -> Path:
     """
     Given a list of DEM paths and the corresponding product's geometry, merges them into a single raster.
 
     Returns the path to the merged DEM.
     """
-    slope = []
-    aspect = []
+    dem = []
+    bucket = _get_bucket_by_name(dem_name)
     if not len(dem_paths) == 0:
         for dem_path in dem_paths:
-            for file in minio_client.list_objects(settings.MINIO_BUCKET_NAME_ASTER, prefix=dem_path, recursive=True):
+            for file in minio_client.list_objects(bucket, prefix=dem_path, recursive=True):
                 file_object = file.object_name
                 minio_client.fget_object(
-                    bucket_name=settings.MINIO_BUCKET_NAME_ASTER,
+                    bucket_name=bucket,
                     object_name=file_object,
                     file_path=str(Path(outpath, file_object))
                 )
-                if "slope.tif" == file_object.split('/')[-1]:
-                    slope.append(str(Path(outpath, file_object)))
-                elif "aspect.tif" == file_object.split('/')[-1]:
-                    aspect.append(str(Path(outpath, file_object)))
+                if file_object.endswith(f"{dem_name}.tif"):
+                    dem.append(str(Path(outpath, file_object)))
 
-        out_slope_meta = _get_kwargs_raster(slope[0])
-        out_aspect_meta = _get_kwargs_raster(aspect[0])
+        out_dem_meta = _get_kwargs_raster(dem[0])
+        dem, dem_transform = merge.merge(dem)
+        out_dem_meta["driver"] = "GTiff" 
+        out_dem_meta['dtype'] = "float32"
+        out_dem_meta["height"] = dem.shape[1]
+        out_dem_meta["width"] = dem.shape[2]
+        out_dem_meta["transform"] = dem_transform
+        out_dem_meta["nodata"] = -99999
 
-        slope, slope_transform = merge.merge(slope)
-        aspect, aspect_transform = merge.merge(aspect)
 
-        out_slope_meta["height"] = slope.shape[1]
-        out_slope_meta["width"] = slope.shape[2]
-        out_slope_meta["transform"] = slope_transform
+        outpath_dem = str(Path(outpath, f"{dem_name}.tif"))
 
-        out_aspect_meta["height"] = aspect.shape[1]
-        out_aspect_meta["width"] = aspect.shape[2]
-        out_aspect_meta["transform"] = aspect_transform
-
-        outpath_slope = str(Path(outpath, "slope.tif"))
-        outpath_aspect = str(Path(outpath, "aspect.tif"))
-
-        if not os.path.exists(os.path.dirname(outpath_slope)):
+        if not os.path.exists(os.path.dirname(outpath_dem)):
             try:
-                os.makedirs(os.path.dirname(outpath_slope))
+                os.makedirs(os.path.dirname(outpath_dem))
             except OSError as err:  # Guard against race condition
                 print("Could not create merged DEM file path: ", err)
 
-        if not os.path.exists(os.path.dirname(outpath_aspect)):
-            try:
-                os.makedirs(os.path.dirname(outpath_aspect))
-            except OSError as err:  # Guard against race condition
-                print("Could not create merged DEM file path: ", err)
+        with rasterio.open(outpath_dem, "w", **out_dem_meta) as dm:
+            dm.write(dem)
 
-        with rasterio.open(outpath_slope, "w", **out_slope_meta) as dm:
-            dm.write(slope)
-        with rasterio.open(outpath_aspect, "w", **out_aspect_meta) as dm:
-            dm.write(aspect)
-
-        return outpath_slope, outpath_aspect
+        return outpath_dem
     else:
         print("Any dem found for this product")
 
@@ -131,7 +122,7 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
         )
         kwargs = src.meta.copy()
         kwargs.update(
-            {"driver": "GTiff" ,"crs": dst_crs, "transform": transform, "width": width, "height": height}
+            {"driver": "GTiff" ,"crs": dst_crs, "transform": transform, "width": width, "height": height, "nodata": -99999}
         )
 
         with rasterio.open(reprojected_path, "w", **kwargs) as dst:
@@ -140,16 +131,19 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
                 destination=rasterio.band(dst, 1),
                 src_transform=src.transform,
                 src_crs=src.crs,
+                src_nodata=-99999,
                 dst_transform=transform,
                 dst_crs=dst_crs,
+                dst_nodata=-99999,
                 resampling=Resampling.nearest,
             )
     return reprojected_path
 
-def get_slope_aspect_from_tile(tile: str, mongo_collection: Collection,minio_client: Minio, minio_bucket_aster: str):
+def get_dem_from_tile(tile: str, mongo_collection: Collection,minio_client: Minio, dem_name: str):
     '''
     Create both aspect and slope rasters merging aster products and proyecting them to sentinel rasters.
     '''
+    bucket = _get_bucket_by_name(dem_name)
 
     sample_band_path = download_sample_band(tile, minio_client, mongo_collection)
 
@@ -166,22 +160,21 @@ def get_slope_aspect_from_tile(tile: str, mongo_collection: Collection,minio_cli
     lower_bound = _get_bound(bottom_left, bottom_right, is_up_down=True)
 
     overlapping_dem = _gather_aster(
-        minio_client, minio_bucket_aster, left_bound, right_bound, upper_bound, lower_bound
+        minio_client, bucket, left_bound, right_bound, upper_bound, lower_bound
     )
     
-    print(f"Obtaining slope and aspect data of tile {tile} using {overlapping_dem} aster products")
-    slope_path, aspect_path = _merge_dem(
+    print(f"Obtaining {dem_name} data of tile {tile} using {overlapping_dem} aster products")
+    dem_path = _merge_dem(
         dem_paths=overlapping_dem,
         outpath= str(Path(settings.TMP_DIR)),
-        minio_client=minio_client
+        minio_client=minio_client,
+        dem_name=dem_name
     )
 
     kwargs = _get_kwargs_raster(sample_band_path)
-    r_slope_path = _reproject_dem(slope_path, str(kwargs['crs']))
-    r_aspect_path = _reproject_dem(aspect_path, str(kwargs['crs']))
+    r_dem_path = _reproject_dem(dem_path, str(kwargs['crs']))
 
-    r_slope_path = crop_as_sentinel_raster(r_slope_path, sample_band_path)
-    r_aspect_path = crop_as_sentinel_raster(r_aspect_path, sample_band_path)
+    r_dem_path = crop_as_sentinel_raster(r_dem_path, sample_band_path)
 
 
-    return r_slope_path , r_aspect_path
+    return r_dem_path

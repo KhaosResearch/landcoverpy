@@ -349,10 +349,9 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
 
     if to_tif:
             kwargs['driver'] = 'GTiff'
-            kwargs['nodata'] = 0
+            kwargs['nodata'] = np.nan
             kwargs["dtype"] = "float32"
             band = band.astype(np.float32)
-            band[band == 0] = np.nan
 
             if path_to_disk is not None:
                 path_to_disk = path_to_disk[:-3] + 'tif'
@@ -413,7 +412,6 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
         new_kwargs["width"] = band.shape[2]
         new_kwargs["height"] = band.shape[1]
         kwargs = new_kwargs
-    band[band == no_data_value] = np.nan
 
     if path_to_disk is not None:
         with rasterio.open(path_to_disk, "w", **kwargs) as dst_file:
@@ -779,23 +777,25 @@ def convert_3D_2D(geometry):
             out_geo = MultiPolygon(new_multi_p)
     return out_geo
 
-def filter_rasters_paths_by_pca(rasters_paths: List[str], pc_columns: List[str], season: str):
+def filter_rasters_paths_by_pca(rasters_paths: List[str], is_band: List[bool], pc_columns: List[str], season: str) -> Tuple[Iterable[str], Iterable[bool]]:
     '''
     Filter a list of rasters paths by a list of raster names (obtained in a PCA).
     '''
     pc_raster_paths = []
     season_pc_columns = []
     already_read = []
+    is_band_pca = []
     for pc_column in pc_columns:
         if season in pc_column:
             season_pc_columns.append(pc_column.split('_')[-1])
-    for raster_path in rasters_paths:
+    for i, raster_path in enumerate(rasters_paths):
         raster_name = get_raster_name_from_path(raster_path)
         raster_name = raster_name.split('_')[-1]
         if any(x == raster_name for x in season_pc_columns) and (raster_name not in already_read):
             pc_raster_paths.append(raster_path)
+            is_band_pca.append(is_band[i])
             already_read.append(raster_name)
-    return pc_raster_paths
+    return (pc_raster_paths, is_band_pca)
 
 def _get_bound(p1: RasterPoint, p2: RasterPoint, is_up_down: bool = False) -> Callable:
     """
@@ -846,7 +846,7 @@ def _get_corners_raster(band_path: Path) -> Tuple[RasterPoint, RasterPoint, Rast
     final_crs = pyproj.CRS("epsg:4326")
 
 
-    band = read_raster(band_path,no_data_value=-1)
+    band = read_raster(band_path,no_data_value=-99999)
     kwargs = _get_kwargs_raster(band_path)
     init_crs = kwargs['crs']
 
@@ -899,8 +899,7 @@ def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
     raster_kwargs = _get_kwargs_raster(raster_path)
 
     _, sentinel_polygon = sentinel_raster_to_polygon(sentinel_path)
-
-    cropped_raster = read_raster(raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=-1)
+    cropped_raster = read_raster(raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=-99999)
     cropped_raster_kwargs = raster_kwargs.copy()
     cropped_raster_kwargs['transform'] = raster_kwargs['transform']
     cropped_raster_kwargs['transform'] = rasterio.Affine(raster_kwargs['transform'][0], 0.0, sentinel_kwargs["transform"][2], 0.0,raster_kwargs['transform'][4] , sentinel_kwargs["transform"][5])
@@ -976,12 +975,11 @@ def label_neighbours(height: int, width: int, row: int, column:int , label: str,
 
 
 
-def mask_polygons_by_tile(band_path: str, polygons: dict, tile: str) -> Tuple[np.ndarray, np.ndarray]:
+def mask_polygons_by_tile(polygons: dict, tile: str) -> Tuple[np.ndarray, np.ndarray]:
     ''''
     Label all the pixels in a dataset from points databases for a given tile.
 
     Parameters:
-        band_path (str) :  Input band filename (jp2, tif). 
         polygons (dict) : Dictionary of points to label.
         tile (str) : Name of the tile to label.
 
@@ -990,7 +988,11 @@ def mask_polygons_by_tile(band_path: str, polygons: dict, tile: str) -> Tuple[np
         dt_labeled (np.ndarray) : Matrix labeled.
     
     '''
-    
+    #Get band path for a given tile
+    minio_client = get_minio()
+    mongo_products_collection = connect_mongo_products_collection()
+    band_path = download_sample_band(tile, minio_client, mongo_products_collection)
+
     kwargs = _get_kwargs_raster(band_path)    
     dt_labeled = np.zeros((kwargs['height'], kwargs['width']), dtype=object)    
 
@@ -1010,7 +1012,6 @@ def mask_polygons_by_tile(band_path: str, polygons: dict, tile: str) -> Tuple[np
         dt_labeled = label_neighbours(kwargs['height'], kwargs['width'], row, column, label, dt_labeled)
         
     #Get mask from labeled dataset.
-    band_mask = ma.masked_equal(dt_labeled, 0)
-    band_mask = ma.getmask(band_mask)  
+    band_mask = dt_labeled==0 
 
     return band_mask, dt_labeled

@@ -7,7 +7,7 @@ from glob import glob
 import pandas as pd
 import rasterio
 from config import settings
-from aster import get_slope_aspect_from_tile
+from aster import get_dem_from_tile
 from utils import(
     _get_kwargs_raster,
     get_products_by_tile_and_date,
@@ -68,12 +68,17 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
     # Names of the bands that are not taken into account
-    skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri",]
+    skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri","WVP"]
     # Indexes that have to be normalized in training data
-    normalizable_indexes = ['bri']
-    no_data_value = {'cover-percentage':-1, 'ndsi':-1, 'slope':-1, 'aspect':-1}
+    normalizable_indexes = []
+    no_data_value = {'slope':-99999, 'aspect':-99999, "ndvi":-99999, "osavi":-99999, "osavi":-99999, "ndre":-99999, "ndbg":-99999, "moisture":-99999, "mndwi":-99999, "evi2":-99999, "evi":-99999}
     # PCA resulting columns, this should come from somewhere else
-    pc_columns = ['aspect', 'autumn_B01', 'autumn_evi', 'spring_AOT', 'spring_B01', 'spring_WVP', 'spring_evi', 'summer_B01', 'summer_B02', 'summer_evi', 'summer_moisture', "landcover"]
+    pc_columns = ['aspect', 'autumn_evi', 'slope', 'spring_AOT', 'spring_B02', 'spring_B04', 'spring_B07', 'spring_evi', 'summer_WVP', 'summer_evi']
+
+    if predict:
+        print("Predicting tiles")
+    else:
+        print("Creating dataset from tiles")
 
     for i, tile in enumerate(tiles):
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
@@ -90,7 +95,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 "summer": list(product_metadata_cursor_summer),
             }
     
-        if len(product_per_season["spring"]) == 0 or len(product_per_season["autumn"]) == 0 or len(product_per_season["spring"]) == 0:
+        if len(product_per_season["spring"]) == 0 or len(product_per_season["autumn"]) == 0 or len(product_per_season["summer"]) == 0:
             print(f"There is no valid data for tile {tile}. Skipping it...")
             continue
 
@@ -100,57 +105,30 @@ def workflow(training: bool, visualization: bool, predict: bool):
         # Dataframe for storing data of a tile
         tile_df = None
 
-        slope_path, aspect_path = get_slope_aspect_from_tile(tile,mongo_products_collection,minio_client,settings.MINIO_BUCKET_NAME_ASTER)
-
         #Get crop mask and dataset labeled with database points in tile
-        crop_mask, dt_labeled = mask_polygons_by_tile(slope_path, polygons_per_tile, tile)
+        crop_mask, dt_labeled = mask_polygons_by_tile(polygons_per_tile, tile)
 
-        #Save crop mask to tif file
-        if visualization:
-            crop_kwargs =  _get_kwargs_raster(str(slope_path))   
-            crop_mask_save = np.reshape(crop_mask, (crop_kwargs['count'],*np.shape(crop_mask)))            
-            crop_kwargs['dtype'] = 'int16'
-            crop_kwargs['driver'] = 'GTiff'
-            crop_kwargs['nodata'] =  0
-            with rasterio.open(str(Path(settings.TMP_DIR,'mask.tif')), "w", **crop_kwargs) as mask_file:
-                mask_file.write(crop_mask_save.astype(int))
+        if predict:
+            crop_mask = np.zeros_like(crop_mask)
         
 
-
-        # Add slope and aspect data
-        raster_name = 'slope'
-        if (not predict) or (predict and raster_name in pc_columns):
-            band_no_data_value = no_data_value.get(raster_name,0)
-
-            raster = read_raster(
-                            band_path=slope_path,
-                            rescale=True,
-                            no_data_value=band_no_data_value,
-                            normalize_raster=True, 
-                            path_to_disk=str(Path(settings.TMP_DIR,'visualization','slope.tif'))
-                    )
-            raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
-            raster_masked = np.ma.compressed(raster_masked).flatten()
-            raster_df = pd.DataFrame({raster_name: raster_masked})
-            raster_df = raster_df.dropna()
-            tile_df = pd.concat([tile_df, raster_df], axis=1)
-
-        raster_name = 'aspect'
-        if (not predict) or (predict and raster_name in pc_columns):
-            band_no_data_value = no_data_value.get(raster_name,0)
-            raster = read_raster(
-                            band_path=aspect_path,
-                            rescale=True,
-                            no_data_value=band_no_data_value,
-                            normalize_raster=True, 
-                            path_to_disk=str(Path(settings.TMP_DIR,'visualization','aspect.tif'))
-                    )
-                    
-            raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
-            raster_masked = np.ma.compressed(raster_masked).flatten()
-            raster_df = pd.DataFrame({raster_name: raster_masked})
-            raster_df = raster_df.dropna()
-            tile_df = pd.concat([tile_df, raster_df], axis=1)
+        dems_raster_names = ["slope", "aspect", "dem",]
+        for dem_name in dems_raster_names:
+            # Add dem and aspect data
+            if (not predict) or (predict and dem_name in pc_columns):
+                dem_path = get_dem_from_tile(tile,mongo_products_collection,minio_client, dem_name)
+                band_no_data_value = no_data_value.get(dem_name,-99999)
+                raster = read_raster(
+                                band_path=dem_path,
+                                rescale=True,
+                                no_data_value=band_no_data_value,
+                                normalize_raster=True, 
+                                path_to_disk=str(Path(settings.TMP_DIR,'visualization',f'{dem_name}.tif')),
+                        )
+                raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
+                raster_masked = np.ma.compressed(raster_masked).flatten()
+                raster_df = pd.DataFrame({dem_name: raster_masked})
+                tile_df = pd.concat([tile_df, raster_df], axis=1)
 
         for season, products_metadata in product_per_season.items():
             print(season)
@@ -180,7 +158,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             (rasters_paths, is_band) = get_product_rasters_paths(product_metadata, minio_client, current_bucket)
             # In predict phase, use only pca-selected rasters
             if predict:
-                rasters_paths = filter_rasters_paths_by_pca(rasters_paths, pc_columns, season)
+                (rasters_paths, is_band) = filter_rasters_paths_by_pca(rasters_paths, is_band, pc_columns, season)
             temp_product_folder = Path(settings.TMP_DIR, product_name + '.SAFE')
             if not temp_product_folder.exists():
                 Path.mkdir(temp_product_folder)
@@ -233,7 +211,6 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
                 #raster_df = pd.DataFrame({raster_name: raster_masked})
                 raster_df = pd.DataFrame({f"{season}_{raster_name}": raster_masked})
-                raster_df = raster_df.dropna()
 
                 tile_df = pd.concat([tile_df, raster_df], axis=1)
                 if temp_path.exists() and temp_path.is_file():
@@ -248,8 +225,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
             raster_masked = np.ma.masked_array(dt_labeled, mask=crop_mask)
             raster_masked = np.ma.compressed(raster_masked).flatten()
-            raster_df = pd.DataFrame({"label": raster_masked})
-            raster_df = raster_df.dropna()
+            raster_df = pd.DataFrame({"class": raster_masked})
             tile_df = pd.concat([tile_df, raster_df], axis=1)
 
             if final_df is None:
@@ -257,24 +233,26 @@ def workflow(training: bool, visualization: bool, predict: bool):
             else:
                 final_df = pd.concat([final_df, tile_df], axis=0)
 
-    if predict:
-        print(kwargs_10m)
-        kwargs_10m['dtype'] = 'float32'
-        kwargs_10m['driver'] = 'GTiff'
-        kwargs_10m['nodata'] = 0
-        clf = joblib.load('model.pkl')
-        predict_df = tile_df
-        predict_df.sort_index(inplace=True, axis=1)
-        predict_df.fillna(0, inplace=True)
-        print(predict_df.head())  
-        predictions = clf.predict(predict_df)
-        print(predictions)
-        predictions = np.where(predictions == 'unclassified', 0, 1)
-        print(predictions)
-        predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
+        if predict:
 
-        with rasterio.open(str(Path(settings.TMP_DIR,'classification.tif')), "w", **kwargs_10m) as classification_file:
-            classification_file.write(predictions)
+            kwargs_10m['nodata'] = 0
+            clf = joblib.load('model.joblib')
+            predict_df = tile_df
+            predict_df.sort_index(inplace=True, axis=1)
+            predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
+            predict_df.fillna(0, inplace=True)
+            predictions = clf.predict(predict_df)
+            predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
+            encoded_predictions = predictions.copy()
+            mapping = {"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11,}
+            for class_, value in mapping.items():
+                encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
+
+            kwargs_10m["driver"] = "GTiff"
+            with rasterio.open(str(Path(settings.TMP_DIR,f'classification_{tile}.tif')), "w", **kwargs_10m) as classification_file:
+                classification_file.write(encoded_predictions)
+            print(f'classification_{tile}.tif saved')
+            
         
     if not predict:
         final_df = final_df.fillna(np.nan)
@@ -284,14 +262,4 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
 if __name__ == '__main__':
-    import time
-    start = time.time()
-    print("Training")
-    workflow(training=True, visualization=False, predict=False)
-    end1 = time.time()
-    print('Training function took {:.3f} ms'.format((end1-start)*1000.0))
-    # print("Testing")
-    # workflow(training=False)
-    # end2 = time.time()
-    # print('Predict function took {:.3f} ms'.format((end2-end1)*1000.0))
-    # print('Workflow in total took {:.3f} ms'.format((end2-start)*1000.0))
+    workflow(training=True, visualization=True, predict=False)

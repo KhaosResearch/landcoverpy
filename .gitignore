@@ -16,6 +16,7 @@ minio_tmp/
 
 # ML models
 *.pkl
+*.joblib
 
 # Testing
 times_convolution.py
@@ -24,12 +25,12 @@ composite_testing.py
 # ESA landcover
 landcover_ESA.py
 
-# Raster
-*.tif
-*.jp2
+# Other code
+fix_broken_products/
 
 # Images
 *.png
 
-# Other code
-fix_broken_products/
+# Rasters
+*.tif
+*.jp2
