@@ -11,7 +11,6 @@ from sklearn.metrics import confusion_matrix
 
 
 training = True
-pc_columns = ['autumn_B06', 'autumn_evi', 'spring_B01', 'spring_B05', 'spring_evi', 'summer_B08', 'summer_WVP', 'summer_evi']
 
 train_df = pd.read_csv("dataset.csv")
 train_df = train_df.replace([np.inf, -np.inf], np.nan)
@@ -27,7 +26,7 @@ reduced_x_train_data = train_df[pc_columns]
 X_train, X_test, y_train, y_test = train_test_split(reduced_x_train_data, y_train_data, test_size=0.15)
 
 # Train model 
-clf = RandomForestClassifier(n_jobs=32)
+clf = RandomForestClassifier(n_jobs=10)
 clf.fit(X_train, y_train)
 y_true = clf.predict(X_test)
 print(confusion_matrix(y_true, y_test))
