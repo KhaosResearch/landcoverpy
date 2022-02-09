@@ -480,7 +480,15 @@ def composite(band_paths: List[str], method: str = "median", cloud_masks: np.nda
         band_path = band_paths[i]
         if composite_kwargs is None:
             composite_kwargs = _get_kwargs_raster(band_path)
-        band = read_raster(band_path).astype(np.float32)
+
+        if composite_kwargs['driver'] == 'JP2OpenJPEG':   
+            composite_kwargs["dtype"] = "float32"
+            composite_kwargs['nodata'] = np.nan
+            composite_kwargs['driver'] = 'GTiff'
+
+        band = read_raster(band_path)
+
+      
 
         # Remove nodata pixels
         band = np.where(band == 0, np.nan, band)
@@ -636,19 +644,28 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
             # Save raster to disk
             if not Path.is_dir(temp_path_composite):
                 Path.mkdir(temp_path_composite)
-            # Update kwargs to reflect change in data type.
+            
+            temp_path_composite_band = str(temp_path_composite_band)
+            if temp_path_composite_band.endswith(".jp2"):
+                temp_path_composite_band = temp_path_composite_band[:-3] + 'tif'
+
+            temp_path_composite_band = Path(temp_path_composite_band)
+
             temp_paths_composite_bands.append(temp_path_composite_band)
+           
+            
             with rasterio.open(temp_path_composite_band, "w", **kwargs_composite) as file_composite:
                 file_composite.write(composite_i_band)
 
 
             # Upload raster to minio
+            band_filename = band_filename[:-3] + 'tif'
             minio_band_path = f"{composite_title}/raw/{band_filename}"
             minio_client.fput_object(
                 bucket_name = bucket_composites,
                 object_name =  minio_band_path,
                 file_path=temp_path_composite_band,
-                content_type="image/jp2"
+                content_type="image/tif"
             )
             uploaded_composite_band_paths.append(minio_band_path)
             print(f"Uploaded raster: -> {temp_path_composite_band} into {bucket_composites}:{minio_band_path}") 

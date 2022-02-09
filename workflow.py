@@ -243,6 +243,9 @@ def workflow(training: bool, visualization: bool, predict: bool):
             raster_masked = np.ma.compressed(raster_masked).flatten()
             raster_df = pd.DataFrame({"latitude": raster_masked})
             tile_df = pd.concat([tile_df, raster_df], axis=1)
+            
+ 
+            tile_df.to_csv(f"./tiles_datasets/dataset_{tile}.csv", index=False)
 
             if final_df is None:
                 final_df = tile_df
@@ -278,4 +281,4 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=True, predict=False)
+    workflow(training=True, visualization=False, predict=False)
