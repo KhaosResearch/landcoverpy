@@ -6,6 +6,7 @@ from pymongo.collection import Collection
 from pymongo.cursor import Cursor
 from config import settings
 import sys
+import traceback
 from datetime import datetime
 from sentinelsat.sentinel import read_geojson, geojson_to_wkt
 from pathlib import Path
@@ -686,6 +687,7 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
 
     except (Exception,KeyboardInterrupt) as e:
         print("Removing uncompleted composite from minio")
+        traceback.print_exc()
         for composite_band in uploaded_composite_band_paths:
             minio_client.remove_object(
                 bucket_name=bucket_composites,

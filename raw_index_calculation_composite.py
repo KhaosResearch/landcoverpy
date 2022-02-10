@@ -60,7 +60,7 @@ def calculate_raw_indexes(uid: str):
         :param pattern: A pattern to match.
         :return: A Path object pointing to the first found image.
         """
-        return ([f for f in Path(unzip_folder).glob("*" + pattern + ".jp2")]
+        return ([f for f in Path(unzip_folder).glob("*" + pattern + ".tif")]
         )[0]
 
     # Connect with minio
@@ -179,7 +179,7 @@ def calculate_raw_indexes(uid: str):
 
         band = dict()
         for k, v in bands_dict.items():
-            band[k] = band_meta_minio_path + v + ".jp2"
+            band[k] = band_meta_minio_path + v + ".tif"
 
         index_dict = dict(
             name=index_name,
