@@ -6,6 +6,7 @@ from pymongo.collection import Collection
 from pymongo.cursor import Cursor
 from config import settings
 import sys
+import traceback
 from datetime import datetime
 from sentinelsat.sentinel import read_geojson, geojson_to_wkt
 from pathlib import Path
@@ -347,11 +348,14 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
     if len(band.shape) == 2:
         band = band.reshape((kwargs['count'],*band.shape))
 
+    # to_float may be better
     if to_tif:
-            kwargs['driver'] = 'GTiff'
-            kwargs['nodata'] = np.nan
+        if kwargs['driver'] == 'JP2OpenJPEG':
+            band = band.astype(np.float32)    
             kwargs["dtype"] = "float32"
-            band = band.astype(np.float32)
+            band = np.where(band==0,np.nan,band)
+            kwargs['nodata'] = np.nan
+            kwargs['driver'] = 'GTiff'
 
             if path_to_disk is not None:
                 path_to_disk = path_to_disk[:-3] + 'tif'
@@ -477,7 +481,15 @@ def composite(band_paths: List[str], method: str = "median", cloud_masks: np.nda
         band_path = band_paths[i]
         if composite_kwargs is None:
             composite_kwargs = _get_kwargs_raster(band_path)
-        band = read_raster(band_path).astype(np.float32)
+
+        if composite_kwargs['driver'] == 'JP2OpenJPEG':   
+            composite_kwargs["dtype"] = "float32"
+            composite_kwargs['nodata'] = np.nan
+            composite_kwargs['driver'] = 'GTiff'
+
+        band = read_raster(band_path)
+
+      
 
         # Remove nodata pixels
         band = np.where(band == 0, np.nan, band)
@@ -633,19 +645,28 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
             # Save raster to disk
             if not Path.is_dir(temp_path_composite):
                 Path.mkdir(temp_path_composite)
-            # Update kwargs to reflect change in data type.
+            
+            temp_path_composite_band = str(temp_path_composite_band)
+            if temp_path_composite_band.endswith(".jp2"):
+                temp_path_composite_band = temp_path_composite_band[:-3] + 'tif'
+
+            temp_path_composite_band = Path(temp_path_composite_band)
+
             temp_paths_composite_bands.append(temp_path_composite_band)
+           
+            
             with rasterio.open(temp_path_composite_band, "w", **kwargs_composite) as file_composite:
                 file_composite.write(composite_i_band)
 
 
             # Upload raster to minio
+            band_filename = band_filename[:-3] + 'tif'
             minio_band_path = f"{composite_title}/raw/{band_filename}"
             minio_client.fput_object(
                 bucket_name = bucket_composites,
                 object_name =  minio_band_path,
                 file_path=temp_path_composite_band,
-                content_type="image/jp2"
+                content_type="image/tif"
             )
             uploaded_composite_band_paths.append(minio_band_path)
             print(f"Uploaded raster: -> {temp_path_composite_band} into {bucket_composites}:{minio_band_path}") 
@@ -666,6 +687,7 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
 
     except (Exception,KeyboardInterrupt) as e:
         print("Removing uncompleted composite from minio")
+        traceback.print_exc()
         for composite_band in uploaded_composite_band_paths:
             minio_client.remove_object(
                 bucket_name=bucket_composites,
@@ -924,7 +946,7 @@ def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
     
     return raster_path
 
-def label_neighbours(height: int, width: int, row: int, column:int , label: str, dt_labeled: np.ndarray) -> np.ndarray:
+def label_neighbours(height: int, width: int, row: int, column:int , coordinates: Tuple[int, int],  label: str, label_lon_lat: np.ndarray) -> np.ndarray:
     '''
     Label an input dataset in an area of 3x3 pixels being the center the position (row, column).
 
@@ -933,11 +955,16 @@ def label_neighbours(height: int, width: int, row: int, column:int , label: str,
         width (int) : original raster width.
         row (int) : dataset row position to label.
         column (int) : dataset column position to label.
+        coordinates (Tuple[int, int]) : latitude and longitude of the point
         label (str) : label name.
-        dt_labeled (np.ndarray) : dataset to label.
+        label_lon_lat (np.ndarray) : empty array of size (height, width, 3)
 
     Returns:
-        dt_labeled (np.ndarray) : dataset labeled.
+        label_lon_lat (np.ndarray) : 3D array containing the label and coordinates (lat and lon) of the point. 
+                                     It can be indexed as label_lon_lat[pixel_row, pixel_col, i]. 
+                                     `i` = 0 refers to the label of the pixel,
+                                     `i` = 1 refers to the longitude of the pixel,
+                                     `i` = 2 refers to the latitude of the pixel,
     '''
     #check the pixel is not out of bounds
     top = 0 < row+1 < height
@@ -946,32 +973,32 @@ def label_neighbours(height: int, width: int, row: int, column:int , label: str,
     right = 0 < column+1 < width
 
 
-    dt_labeled[row, column] = label
+    label_lon_lat[row, column, :] = label, coordinates[0], coordinates[1]
 
     if top:
-        dt_labeled[row-1, column] = label
+        label_lon_lat[row-1, column, :] = label, coordinates[0], coordinates[1]
                 
         if right:
-            dt_labeled[row, column+1] = label
-            dt_labeled[row-1, column+1] = label
+            label_lon_lat[row, column+1, :] = label, coordinates[0], coordinates[1]
+            label_lon_lat[row-1, column+1, :] = label, coordinates[0], coordinates[1]
 
         if left:
-            dt_labeled[row-1, column-1] = label
-            dt_labeled[row, column-1] = label
+            label_lon_lat[row-1, column-1, :] = label, coordinates[0], coordinates[1]
+            label_lon_lat[row, column-1, :] = label, coordinates[0], coordinates[1]
 
                 
     if bottom:
-        dt_labeled[row+1, column] = label
+        label_lon_lat[row+1, column, :] = label, coordinates[0], coordinates[1]
 
         if left:
-            dt_labeled[row+1, column-1] = label
-            dt_labeled[row, column-1] = label
+            label_lon_lat[row+1, column-1, :] = label, coordinates[0], coordinates[1]
+            label_lon_lat[row, column-1, :] = label, coordinates[0], coordinates[1]
 
         if right:
-            dt_labeled[row, column+1] = label
-            dt_labeled[row+1, column+1] = label
+            label_lon_lat[row, column+1, :] = label, coordinates[0], coordinates[1]
+            label_lon_lat[row+1, column+1, :] = label, coordinates[0], coordinates[1]
 
-    return dt_labeled
+    return label_lon_lat
 
 
 
@@ -985,7 +1012,11 @@ def mask_polygons_by_tile(polygons: dict, tile: str) -> Tuple[np.ndarray, np.nda
 
     Returns:
         band_mask (np.ndarray) : Boolean matrix with masked labels.
-        dt_labeled (np.ndarray) : Matrix labeled.
+        label_lon_lat (np.ndarray) : 3D array containing the label and coordinates (lat and lon) of the point. 
+                                     It can be indexed as label_lon_lat[pixel_row, pixel_col, i]. 
+                                     `i` = 0 refers to the label of the pixel,
+                                     `i` = 1 refers to the longitude of the pixel,
+                                     `i` = 2 refers to the latitude of the pixel,
     
     '''
     #Get band path for a given tile
@@ -994,7 +1025,7 @@ def mask_polygons_by_tile(polygons: dict, tile: str) -> Tuple[np.ndarray, np.nda
     band_path = download_sample_band(tile, minio_client, mongo_products_collection)
 
     kwargs = _get_kwargs_raster(band_path)    
-    dt_labeled = np.zeros((kwargs['height'], kwargs['width']), dtype=object)    
+    label_lon_lat = np.zeros((kwargs['height'], kwargs['width'], 3), dtype=object)    
 
     #Label all the pixels in points database
     for geometry_id in range(len(polygons[tile])):
@@ -1009,9 +1040,9 @@ def mask_polygons_by_tile(polygons: dict, tile: str) -> Tuple[np.ndarray, np.nda
 
         # Get matrix position from the pixel corresponding to a given point coordinates
         row, column = rasterio.transform.rowcol(kwargs['transform'], tr_point.x, tr_point.y)
-        dt_labeled = label_neighbours(kwargs['height'], kwargs['width'], row, column, label, dt_labeled)
+        label_lon_lat = label_neighbours(kwargs['height'], kwargs['width'], row, column, geometry_raw, label, label_lon_lat)
         
     #Get mask from labeled dataset.
-    band_mask = dt_labeled==0 
+    band_mask = label_lon_lat[:,:,0] == 0 
 
-    return band_mask, dt_labeled
+    return band_mask, label_lon_lat

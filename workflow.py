@@ -106,7 +106,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
         tile_df = None
 
         #Get crop mask and dataset labeled with database points in tile
-        crop_mask, dt_labeled = mask_polygons_by_tile(polygons_per_tile, tile)
+        crop_mask, label_lon_lat = mask_polygons_by_tile(polygons_per_tile, tile)
 
         if predict:
             crop_mask = np.zeros_like(crop_mask)
@@ -155,6 +155,12 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 current_bucket = bucket_composites
 
             product_name = product_metadata["title"]
+
+            # (Optional) For validate dataset geometries, the product name is added.
+            raster_product_name = np.full_like(raster_masked, product_name, dtype=object)
+            raster_df = pd.DataFrame({f"{season}_product_name": raster_product_name})
+            tile_df = pd.concat([tile_df, raster_df], axis=1)
+
             (rasters_paths, is_band) = get_product_rasters_paths(product_metadata, minio_client, current_bucket)
             # In predict phase, use only pca-selected rasters
             if predict:
@@ -223,10 +229,23 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 
         if not predict:
 
-            raster_masked = np.ma.masked_array(dt_labeled, mask=crop_mask)
+            raster_masked = np.ma.masked_array(label_lon_lat[:,:,0], mask=crop_mask)
             raster_masked = np.ma.compressed(raster_masked).flatten()
             raster_df = pd.DataFrame({"class": raster_masked})
             tile_df = pd.concat([tile_df, raster_df], axis=1)
+
+            raster_masked = np.ma.masked_array(label_lon_lat[:,:,1], mask=crop_mask)
+            raster_masked = np.ma.compressed(raster_masked).flatten()
+            raster_df = pd.DataFrame({"longitude": raster_masked})
+            tile_df = pd.concat([tile_df, raster_df], axis=1)
+
+            raster_masked = np.ma.masked_array(label_lon_lat[:,:,2], mask=crop_mask)
+            raster_masked = np.ma.compressed(raster_masked).flatten()
+            raster_df = pd.DataFrame({"latitude": raster_masked})
+            tile_df = pd.concat([tile_df, raster_df], axis=1)
+            
+ 
+            tile_df.to_csv(f"./tiles_datasets/dataset_{tile}.csv", index=False)
 
             if final_df is None:
                 final_df = tile_df
@@ -240,11 +259,13 @@ def workflow(training: bool, visualization: bool, predict: bool):
             predict_df = tile_df
             predict_df.sort_index(inplace=True, axis=1)
             predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
+            nodata_rows = np.isnan(predict_df).any(axis=1)
             predict_df.fillna(0, inplace=True)
             predictions = clf.predict(predict_df)
+            predictions[nodata_rows] = "nodata"
             predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
             encoded_predictions = predictions.copy()
-            mapping = {"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11,}
+            mapping = {"nodata":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11}
             for class_, value in mapping.items():
                 encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
 
@@ -255,11 +276,9 @@ def workflow(training: bool, visualization: bool, predict: bool):
             
         
     if not predict:
-        final_df = final_df.fillna(np.nan)
-        final_df = final_df.dropna()
         print(final_df.head())  
         final_df.to_csv("dataset.csv", index=False)
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=True, predict=False)
+    workflow(training=True, visualization=False, predict=False)
