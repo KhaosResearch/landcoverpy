@@ -418,14 +418,27 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
             dst_file.write(band)
     return band
 
-def normalize(matrix):
+def normalize(matrix, value1, value2):
     '''
-    Normalize a numpy matrix
+    Normalize a numpy matrix with linear function using a range for the normalization.
+    Parameters:
+        matrix (np.ndarray) : Matrix to normalize.
+        value1 (float) : Start range value.
+        value2 (float) : Finish range value.
+
+    Returns:
+        normalized_matrix (np.ndarray) : Matrix normalized.
+
     '''
+    p1 = (value1, -1)
+    p2 = (value2, 1)
     try:
         matrix[matrix == -np.inf] = np.nan
         matrix[matrix == np.inf] = np.nan
-        normalized_matrix = (matrix.astype(dtype=np.float32) - np.nanmean(matrix)) / np.nanstd(matrix)
+        #calculate linear function
+        m = (p2[1] - p2[0])/(p1[1] - p1[0])
+        n = (p2[0], p2[1]) - m * matrix.astype(dtype=np.float32)
+        normalized_matrix = m * matrix.astype(dtype=np.float32) + n
     except exception:
         normalized_matrix = matrix
     return normalized_matrix
