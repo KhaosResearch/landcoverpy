@@ -69,11 +69,11 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
     # Names of the bands that are not taken into account
     skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri","WVP"]
-    # Indexes that have to be normalized in training data
-    normalizable_indexes = []
     no_data_value = {'slope':-99999, 'aspect':-99999, "ndvi":-99999, "osavi":-99999, "osavi":-99999, "ndre":-99999, "ndbg":-99999, "moisture":-99999, "mndwi":-99999, "evi2":-99999, "evi":-99999}
     # PCA resulting columns, this should come from somewhere else
     pc_columns = ['aspect', 'autumn_evi', 'slope', 'spring_AOT', 'spring_B02', 'spring_B04', 'spring_B07', 'spring_evi', 'summer_WVP', 'summer_evi']
+    # Ranges for normalization of each raster
+    normalize_range = {"slope":(0,70), "aspect":(0,360), "dem":(0,2000)}
 
     if predict:
         print("Predicting tiles")
@@ -118,11 +118,12 @@ def workflow(training: bool, visualization: bool, predict: bool):
             if (not predict) or (predict and dem_name in pc_columns):
                 dem_path = get_dem_from_tile(tile,mongo_products_collection,minio_client, dem_name)
                 band_no_data_value = no_data_value.get(dem_name,-99999)
+                band_normalize_range = normalize_range.get(dem_name,None)
                 raster = read_raster(
                                 band_path=dem_path,
                                 rescale=True,
                                 no_data_value=band_no_data_value,
-                                normalize_raster=True, 
+                                normalize_range=band_normalize_range, 
                                 path_to_disk=str(Path(settings.TMP_DIR,'visualization',f'{dem_name}.tif')),
                         )
                 raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
@@ -196,11 +197,10 @@ def workflow(training: bool, visualization: bool, predict: bool):
                     kwargs_10m = kwargs
 
                 band_no_data_value = no_data_value.get(raster_name,0)
+                band_normalize_range = normalize_range.get(raster_name,None)
+                if is_band[i] and (band_normalize_range is None):
+                    band_normalize_range = (0,7000)
 
-                normalize = is_band[i]
-                # All bands are normalized, along with indexes that are not implicitly normalized
-                if (not normalize) and any(x in raster_name for x in normalizable_indexes):
-                    normalize = True
                 path_to_disk = None
                 if visualization:
                     path_to_disk = str(Path(settings.TMP_DIR,'visualization',raster_filename))
@@ -209,7 +209,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
                             rescale=True, 
                             no_data_value=band_no_data_value,
                             path_to_disk=path_to_disk,
-                            normalize_raster=normalize,
+                            normalize_range=band_normalize_range,
                         )
                 raster_masked = np.ma.masked_array(raster[0], mask=crop_mask)                    
                 raster_masked = np.ma.compressed(raster_masked)
