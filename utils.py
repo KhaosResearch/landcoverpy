@@ -331,7 +331,7 @@ def _project_shape(geom, scs: str = 'epsg:4326', dcs: str = 'epsg:32630'):
 
     return transform(project, shape(geom))
 
-def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = False, no_data_value: int = 0, path_to_disk: str = None, normalize_raster: bool = False, to_tif: bool = True):
+def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = False, no_data_value: int = 0, path_to_disk: str = None, normalize_range: Tuple[float,float] = None, to_tif: bool = True):
     '''
     Reads a Sentinel band as a numpy array. It scales all bands to a 10m/pxl resolution.
     If mask_geometry is given, the resturning band is cropped to the mask
@@ -360,9 +360,10 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
             if path_to_disk is not None:
                 path_to_disk = path_to_disk[:-3] + 'tif'
 
-    if normalize_raster:
+    if normalize_range is not None:
         print(f"Normalizing band {band_name}")
-        band = normalize(band)
+        value1 , value2 = normalize_range
+        band = normalize(band, value1, value2)
         
     if rescale:
         img_resolution = kwargs["transform"][0]
@@ -422,14 +423,26 @@ def read_raster(band_path: str, mask_geometry: dict = None, rescale: bool = Fals
             dst_file.write(band)
     return band
 
-def normalize(matrix):
+def normalize(matrix, value1, value2):
     '''
-    Normalize a numpy matrix
+    Normalize a numpy matrix with linear function using a range for the normalization.
+    Parameters:
+        matrix (np.ndarray) : Matrix to normalize.
+        value1 (float) : Value mapped to -1 in normalization.
+        value2 (float) : Value mapped to 1 in normalization.
+
+    Returns:
+        normalized_matrix (np.ndarray) : Matrix normalized.
+
     '''
     try:
+        matrix = matrix.astype(dtype=np.float32)
         matrix[matrix == -np.inf] = np.nan
         matrix[matrix == np.inf] = np.nan
-        normalized_matrix = (matrix.astype(dtype=np.float32) - np.nanmean(matrix)) / np.nanstd(matrix)
+        #calculate linear function
+        m = 2.0 / (value2-value1)
+        n = 1.0 - m * value2
+        normalized_matrix = m * matrix + n
     except exception:
         normalized_matrix = matrix
     return normalized_matrix
