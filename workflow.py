@@ -71,7 +71,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
     skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri","WVP"]
     no_data_value = {'slope':-99999, 'aspect':-99999, "ndvi":-99999, "osavi":-99999, "osavi":-99999, "ndre":-99999, "ndbg":-99999, "moisture":-99999, "mndwi":-99999, "evi2":-99999, "evi":-99999}
     # PCA resulting columns, this should come from somewhere else
-    pc_columns = ['aspect', 'autumn_evi', 'slope', 'spring_AOT', 'spring_B02', 'spring_B04', 'spring_B07', 'spring_evi', 'summer_WVP', 'summer_evi']
+    pc_columns = ['aspect', 'autumn_AOT', 'autumn_B01', 'autumn_B02', 'autumn_B03', 'autumn_B04', 'autumn_B05', 'autumn_B06', 'autumn_B07', 'autumn_B08', 'autumn_B09', 'autumn_B11', 'autumn_B12', 'autumn_B8A', 'autumn_evi', 'autumn_evi2', 'autumn_mndwi', 'autumn_moisture', 'autumn_ndbg', 'autumn_ndre', 'autumn_ndvi', 'autumn_osavi', 'dem', 'slope', 'spring_AOT', 'spring_B01', 'spring_B02', 'spring_B03', 'spring_B04', 'spring_B05', 'spring_B06', 'spring_B07', 'spring_B08', 'spring_B09', 'spring_B11', 'spring_B12', 'spring_B8A', 'spring_evi', 'spring_evi2', 'spring_mndwi', 'spring_moisture', 'spring_ndbg', 'spring_ndre', 'spring_ndvi', 'spring_osavi', 'summer_AOT', 'summer_B01', 'summer_B02', 'summer_B03', 'summer_B04', 'summer_B05', 'summer_B06', 'summer_B07', 'summer_B08', 'summer_B09', 'summer_B11', 'summer_B12', 'summer_B8A', 'summer_evi', 'summer_evi2', 'summer_mndwi', 'summer_moisture', 'summer_ndbg', 'summer_ndre', 'summer_ndvi', 'summer_osavi']
     # Ranges for normalization of each raster
     normalize_range = {"slope":(0,70), "aspect":(0,360), "dem":(0,2000)}
 
@@ -158,9 +158,10 @@ def workflow(training: bool, visualization: bool, predict: bool):
             product_name = product_metadata["title"]
 
             # (Optional) For validate dataset geometries, the product name is added.
-            raster_product_name = np.full_like(raster_masked, product_name, dtype=object)
-            raster_df = pd.DataFrame({f"{season}_product_name": raster_product_name})
-            tile_df = pd.concat([tile_df, raster_df], axis=1)
+            if not predict:
+                raster_product_name = np.full_like(raster_masked, product_name, dtype=object)
+                raster_df = pd.DataFrame({f"{season}_product_name": raster_product_name})
+                tile_df = pd.concat([tile_df, raster_df], axis=1)
 
             (rasters_paths, is_band) = get_product_rasters_paths(product_metadata, minio_client, current_bucket)
             # In predict phase, use only pca-selected rasters
@@ -265,7 +266,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             predictions[nodata_rows] = "nodata"
             predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
             encoded_predictions = predictions.copy()
-            mapping = {"nodata":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11}
+            mapping = {"nodata":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11, "bosque":12}
             for class_, value in mapping.items():
                 encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
 
@@ -281,4 +282,4 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=False, predict=False)
+    workflow(training=True, visualization=False, predict=True)
