@@ -69,11 +69,11 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
     # Names of the bands that are not taken into account
     skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri","WVP"]
-    # Indexes that have to be normalized in training data
-    normalizable_indexes = []
     no_data_value = {'slope':-99999, 'aspect':-99999, "ndvi":-99999, "osavi":-99999, "osavi":-99999, "ndre":-99999, "ndbg":-99999, "moisture":-99999, "mndwi":-99999, "evi2":-99999, "evi":-99999}
     # PCA resulting columns, this should come from somewhere else
-    pc_columns = ['aspect', 'autumn_evi', 'slope', 'spring_AOT', 'spring_B02', 'spring_B04', 'spring_B07', 'spring_evi', 'summer_WVP', 'summer_evi']
+    pc_columns = ['aspect', 'autumn_AOT', 'autumn_B01', 'autumn_B02', 'autumn_B03', 'autumn_B04', 'autumn_B05', 'autumn_B06', 'autumn_B07', 'autumn_B08', 'autumn_B09', 'autumn_B11', 'autumn_B12', 'autumn_B8A', 'autumn_evi', 'autumn_evi2', 'autumn_mndwi', 'autumn_moisture', 'autumn_ndbg', 'autumn_ndre', 'autumn_ndvi', 'autumn_osavi', 'dem', 'slope', 'spring_AOT', 'spring_B01', 'spring_B02', 'spring_B03', 'spring_B04', 'spring_B05', 'spring_B06', 'spring_B07', 'spring_B08', 'spring_B09', 'spring_B11', 'spring_B12', 'spring_B8A', 'spring_evi', 'spring_evi2', 'spring_mndwi', 'spring_moisture', 'spring_ndbg', 'spring_ndre', 'spring_ndvi', 'spring_osavi', 'summer_AOT', 'summer_B01', 'summer_B02', 'summer_B03', 'summer_B04', 'summer_B05', 'summer_B06', 'summer_B07', 'summer_B08', 'summer_B09', 'summer_B11', 'summer_B12', 'summer_B8A', 'summer_evi', 'summer_evi2', 'summer_mndwi', 'summer_moisture', 'summer_ndbg', 'summer_ndre', 'summer_ndvi', 'summer_osavi']
+    # Ranges for normalization of each raster
+    normalize_range = {"slope":(0,70), "aspect":(0,360), "dem":(0,2000)}
 
     if predict:
         print("Predicting tiles")
@@ -118,11 +118,12 @@ def workflow(training: bool, visualization: bool, predict: bool):
             if (not predict) or (predict and dem_name in pc_columns):
                 dem_path = get_dem_from_tile(tile,mongo_products_collection,minio_client, dem_name)
                 band_no_data_value = no_data_value.get(dem_name,-99999)
+                band_normalize_range = normalize_range.get(dem_name,None)
                 raster = read_raster(
                                 band_path=dem_path,
                                 rescale=True,
                                 no_data_value=band_no_data_value,
-                                normalize_raster=True, 
+                                normalize_range=band_normalize_range, 
                                 path_to_disk=str(Path(settings.TMP_DIR,'visualization',f'{dem_name}.tif')),
                         )
                 raster_masked = np.ma.masked_array(raster, mask=crop_mask)                    
@@ -157,9 +158,10 @@ def workflow(training: bool, visualization: bool, predict: bool):
             product_name = product_metadata["title"]
 
             # (Optional) For validate dataset geometries, the product name is added.
-            raster_product_name = np.full_like(raster_masked, product_name, dtype=object)
-            raster_df = pd.DataFrame({f"{season}_product_name": raster_product_name})
-            tile_df = pd.concat([tile_df, raster_df], axis=1)
+            if not predict:
+                raster_product_name = np.full_like(raster_masked, product_name, dtype=object)
+                raster_df = pd.DataFrame({f"{season}_product_name": raster_product_name})
+                tile_df = pd.concat([tile_df, raster_df], axis=1)
 
             (rasters_paths, is_band) = get_product_rasters_paths(product_metadata, minio_client, current_bucket)
             # In predict phase, use only pca-selected rasters
@@ -196,11 +198,10 @@ def workflow(training: bool, visualization: bool, predict: bool):
                     kwargs_10m = kwargs
 
                 band_no_data_value = no_data_value.get(raster_name,0)
+                band_normalize_range = normalize_range.get(raster_name,None)
+                if is_band[i] and (band_normalize_range is None):
+                    band_normalize_range = (0,7000)
 
-                normalize = is_band[i]
-                # All bands are normalized, along with indexes that are not implicitly normalized
-                if (not normalize) and any(x in raster_name for x in normalizable_indexes):
-                    normalize = True
                 path_to_disk = None
                 if visualization:
                     path_to_disk = str(Path(settings.TMP_DIR,'visualization',raster_filename))
@@ -209,7 +210,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
                             rescale=True, 
                             no_data_value=band_no_data_value,
                             path_to_disk=path_to_disk,
-                            normalize_raster=normalize,
+                            normalize_range=band_normalize_range,
                         )
                 raster_masked = np.ma.masked_array(raster[0], mask=crop_mask)                    
                 raster_masked = np.ma.compressed(raster_masked)
@@ -265,7 +266,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             predictions[nodata_rows] = "nodata"
             predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
             encoded_predictions = predictions.copy()
-            mapping = {"nodata":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11}
+            mapping = {"nodata":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11, "bosque":12}
             for class_, value in mapping.items():
                 encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
 
@@ -281,4 +282,4 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=False, predict=False)
+    workflow(training=True, visualization=False, predict=True)
