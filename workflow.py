@@ -90,9 +90,9 @@ def workflow(training: bool, visualization: bool, predict: bool):
         product_metadata_cursor_autumn = get_products_by_tile_and_date(tile, mongo_products_collection, autumn_start, autumn_end, max_cloud_percentage)
 
         product_per_season = {
-                "spring": list(product_metadata_cursor_spring),
-                "autumn": list(product_metadata_cursor_autumn),
-                "summer": list(product_metadata_cursor_summer),
+                "spring": list(product_metadata_cursor_spring)[:5],
+                "autumn": list(product_metadata_cursor_autumn)[:5],
+                "summer": list(product_metadata_cursor_summer)[:5],
             }
     
         if len(product_per_season["spring"]) == 0 or len(product_per_season["autumn"]) == 0 or len(product_per_season["summer"]) == 0:
