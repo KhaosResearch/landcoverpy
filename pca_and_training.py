@@ -1,10 +1,15 @@
+from matplotlib.colors import LinearSegmentedColormap
 import pandas as pd
 import numpy as np
-from utils import pca
+from utils import normalize, pca
 import joblib
+import matplotlib.pyplot as plt 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
+
+from sklearn.metrics import plot_confusion_matrix
+from visualize_confusion_matrix import visualize_confusion_matrix
 
 
 # Temporal code to load premade dataset for training 
@@ -30,7 +35,10 @@ X_train, X_test, y_train, y_test = train_test_split(reduced_x_train_data, y_trai
 clf = RandomForestClassifier(n_jobs=3)
 clf.fit(X_train, y_train)
 y_true = clf.predict(X_test)
-print(confusion_matrix(y_true, y_test, labels=["beaches","bosqueRibera","cities","dehesas","matorral","pastos","plantacion","rocks","water","wetland","agricola", "bosque"]))
+
+labels=["agricola","beaches", "bosque", "bosqueRibera","cities","dehesas","matorral","pastos","plantacion","rocks","water","wetland"]
+visualize_confusion_matrix(y_true, y_test, labels)
+
 print(X_test.iloc[0:2,:],"\n", clf.predict(X_test.iloc[0:2,:]), y_test.iloc[0:2])
 
 
