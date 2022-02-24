@@ -928,13 +928,23 @@ def sentinel_raster_to_polygon(sentinel_raster_path: str) :
 
 def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
     '''
-    Crop a raster as a sentinel one. The second raster has to be contained in the first one.
-    '''    
+    Crop a raster merge as a sentinel tile. The resulting image can be smaller than a sentinel tile.
+    
+    Since aster products don't exist for areas that don't include any land (tiles with only water),
+    the merge of aster products for that area is smaller than the sentinel tile in at least one dimension (missing tile on North and/or  West).
+    In the following example the merge product of all the intersecting aster (`+` sign) is smaller in one dimension to the sentinel one (`.` sign):
+
+                                     This 4x4 matrix represents a sentinel tile (center) and the area of the Aster dems needed to cover it.
+              |----|                 Legend                        
+              |-..-|                  . = Represent a Sentinel tile
+              |+..+|                  + = Merge of several Aster
+              |++++|                  - = Missing asters (tile of an area with only of water)
+
+    In the above case, the top left corner of the crop will start on the 3rd row instead of the 2nd, because there is no available aster data to cover it.
+    ''' 
     sentinel_kwargs = _get_kwargs_raster(sentinel_path)
     raster_kwargs = _get_kwargs_raster(raster_path)
 
-    # When aster products include only water, they don't exist
-    # This causes that the merge product of all the intersecting aster is smaller in one or more directions to the sentinel one
     # This needs to be corrected on the traslation of the transform matrix
     x_raster, y_raster = raster_kwargs["transform"][2] ,  raster_kwargs["transform"][5]
     x_sentinel, y_sentinel = sentinel_kwargs["transform"][2], sentinel_kwargs["transform"][5]
