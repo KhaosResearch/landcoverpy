@@ -69,7 +69,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
     # Names of the bands that are not taken into account
     skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri","WVP"]
-    no_data_value = {'slope':-99999, 'aspect':-99999, "ndvi":-99999, "osavi":-99999, "osavi":-99999, "ndre":-99999, "ndbg":-99999, "moisture":-99999, "mndwi":-99999, "evi2":-99999, "evi":-99999}
+    no_data_value = {"ndvi":np.nan, "osavi":np.nan, "osavi":np.nan, "ndre":np.nan, "ndbg":np.nan, "moisture":np.nan, "mndwi":np.nan, "evi2":np.nan, "evi":np.nan}
     # PCA resulting columns, this should come from somewhere else
     pc_columns = ['aspect', 'autumn_AOT', 'autumn_B01', 'autumn_B02', 'autumn_B03', 'autumn_B04', 'autumn_B05', 'autumn_B06', 'autumn_B07', 'autumn_B08', 'autumn_B09', 'autumn_B11', 'autumn_B12', 'autumn_B8A', 'autumn_evi', 'autumn_evi2', 'autumn_mndwi', 'autumn_moisture', 'autumn_ndbg', 'autumn_ndre', 'autumn_ndvi', 'autumn_osavi', 'dem', 'slope', 'spring_AOT', 'spring_B01', 'spring_B02', 'spring_B03', 'spring_B04', 'spring_B05', 'spring_B06', 'spring_B07', 'spring_B08', 'spring_B09', 'spring_B11', 'spring_B12', 'spring_B8A', 'spring_evi', 'spring_evi2', 'spring_mndwi', 'spring_moisture', 'spring_ndbg', 'spring_ndre', 'spring_ndvi', 'spring_osavi', 'summer_AOT', 'summer_B01', 'summer_B02', 'summer_B03', 'summer_B04', 'summer_B05', 'summer_B06', 'summer_B07', 'summer_B08', 'summer_B09', 'summer_B11', 'summer_B12', 'summer_B8A', 'summer_evi', 'summer_evi2', 'summer_mndwi', 'summer_moisture', 'summer_ndbg', 'summer_ndre', 'summer_ndvi', 'summer_osavi']
     # Ranges for normalization of each raster
@@ -117,7 +117,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             # Add dem and aspect data
             if (not predict) or (predict and dem_name in pc_columns):
                 dem_path = get_dem_from_tile(tile,mongo_products_collection,minio_client, dem_name)
-                band_no_data_value = no_data_value.get(dem_name,-99999)
+                band_no_data_value = no_data_value.get(dem_name,np.nan)
                 band_normalize_range = normalize_range.get(dem_name,None)
                 raster = read_raster(
                                 band_path=dem_path,
@@ -282,4 +282,4 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=False, predict=True)
+    workflow(training=True, visualization=False, predict=False)

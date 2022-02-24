@@ -881,7 +881,7 @@ def _get_corners_raster(band_path: Path) -> Tuple[RasterPoint, RasterPoint, Rast
     final_crs = pyproj.CRS("epsg:4326")
 
 
-    band = read_raster(band_path,no_data_value=-99999)
+    band = read_raster(band_path,no_data_value=np.nan)
     kwargs = _get_kwargs_raster(band_path)
     init_crs = kwargs['crs']
 
@@ -933,17 +933,27 @@ def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
     sentinel_kwargs = _get_kwargs_raster(sentinel_path)
     raster_kwargs = _get_kwargs_raster(raster_path)
 
+    # When aster products include only water, they don't exist
+    # This causes that the merge product of all the intersecting aster is smaller in one or more directions to the sentinel one
+    # This needs to be corrected on the traslation of the transform matrix
+    x_raster, y_raster = raster_kwargs["transform"][2] ,  raster_kwargs["transform"][5]
+    x_sentinel, y_sentinel = sentinel_kwargs["transform"][2], sentinel_kwargs["transform"][5]
+    # Use the smaller value (the one to the bottom in the used CRS) for the transform, to reproject to the intersection
+    y_transform_position = raster_kwargs["transform"][5] if y_raster < y_sentinel else sentinel_kwargs["transform"][5]
+    # Use the bigger value (the one to the right in the used CRS) for the transform, to reproject to the intersection
+    x_transform_position = raster_kwargs["transform"][2] if x_raster > x_sentinel else sentinel_kwargs["transform"][2]
+
     _, sentinel_polygon = sentinel_raster_to_polygon(sentinel_path)
-    cropped_raster = read_raster(raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=-99999)
+    cropped_raster = read_raster(raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=np.nan)
     cropped_raster_kwargs = raster_kwargs.copy()
-    cropped_raster_kwargs['transform'] = raster_kwargs['transform']
-    cropped_raster_kwargs['transform'] = rasterio.Affine(raster_kwargs['transform'][0], 0.0, sentinel_kwargs["transform"][2], 0.0,raster_kwargs['transform'][4] , sentinel_kwargs["transform"][5])
-    cropped_raster_kwargs.update({'width': cropped_raster.shape[1], 'height': cropped_raster.shape[1], })
+    cropped_raster_kwargs['transform'] = rasterio.Affine(raster_kwargs['transform'][0], 0.0, x_transform_position, 0.0,raster_kwargs['transform'][4] , y_transform_position)
+    cropped_raster_kwargs.update({'width': cropped_raster.shape[2], 'height': cropped_raster.shape[1], })
     
     dst_kwargs = sentinel_kwargs.copy()
     dst_kwargs['dtype'] = cropped_raster_kwargs['dtype']
     dst_kwargs['nodata'] = cropped_raster_kwargs['nodata']
     dst_kwargs['driver'] = cropped_raster_kwargs['driver']
+    dst_kwargs['transform'] = rasterio.Affine(sentinel_kwargs['transform'][0], 0.0, x_transform_position, 0.0,sentinel_kwargs['transform'][4] , y_transform_position)
 
     with rasterio.open(raster_path, "w", **dst_kwargs) as dst:
         reproject(
@@ -951,8 +961,7 @@ def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
             destination=rasterio.band(dst, 1),
             src_transform=cropped_raster_kwargs['transform'],
             src_crs=cropped_raster_kwargs['crs'],
-            dst_resolution=(sentinel_kwargs['width'], sentinel_kwargs['height']),
-            dst_transform=sentinel_kwargs['transform'],
+            dst_transform=dst_kwargs['transform'],
             dst_crs=sentinel_kwargs['crs'],
             resampling=Resampling.nearest,
         )
