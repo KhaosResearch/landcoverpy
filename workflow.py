@@ -111,7 +111,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
             if (not predict) or (predict and dem_name in pc_columns):
                 dem_path = get_dem_from_tile(tile,mongo_products_collection,minio_client, dem_name)
 
-                # Predict for doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
+                # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
                 if predict:
                     crop_mask = np.zeros_like(crop_mask)
                 else:
