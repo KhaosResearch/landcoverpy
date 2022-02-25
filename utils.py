@@ -1034,7 +1034,7 @@ def label_neighbours(height: int, width: int, row: int, column:int , coordinates
 
 
 
-def mask_polygons_by_tile(polygons: dict, tile: str) -> Tuple[np.ndarray, np.ndarray]:
+def mask_polygons_by_tile(polygons: dict, tile: str, kwargs: dict) -> Tuple[np.ndarray, np.ndarray]:
     ''''
     Label all the pixels in a dataset from points databases for a given tile.
 
@@ -1051,12 +1051,6 @@ def mask_polygons_by_tile(polygons: dict, tile: str) -> Tuple[np.ndarray, np.nda
                                      `i` = 2 refers to the latitude of the pixel,
     
     '''
-    #Get band path for a given tile
-    minio_client = get_minio()
-    mongo_products_collection = connect_mongo_products_collection()
-    band_path = download_sample_band(tile, minio_client, mongo_products_collection)
-
-    kwargs = _get_kwargs_raster(band_path)    
     label_lon_lat = np.zeros((kwargs['height'], kwargs['width'], 3), dtype=object)    
 
     #Label all the pixels in points database

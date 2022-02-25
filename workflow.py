@@ -24,6 +24,7 @@ from utils import(
     get_raster_name_from_path,
     filter_rasters_paths_by_pca,
     kmz_to_geojson,
+    download_sample_band,
 )
 
 
@@ -102,20 +103,21 @@ def workflow(training: bool, visualization: bool, predict: bool):
     
 
         # Dataframe for storing data of a tile
-        tile_df = None
-
-        #Get crop mask and dataset labeled with database points in tile
-        crop_mask, label_lon_lat = mask_polygons_by_tile(polygons_per_tile, tile)
-
-        if predict:
-            crop_mask = np.zeros_like(crop_mask)
-        
+        tile_df = None    
 
         dems_raster_names = ["slope", "aspect", "dem",]
         for dem_name in dems_raster_names:
             # Add dem and aspect data
             if (not predict) or (predict and dem_name in pc_columns):
                 dem_path = get_dem_from_tile(tile,mongo_products_collection,minio_client, dem_name)
+
+                # Predict for doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
+                if predict:
+                    crop_mask = np.zeros_like(crop_mask)
+                else:
+                    kwargs = _get_kwargs_raster(dem_path)    
+                    crop_mask, label_lon_lat = mask_polygons_by_tile(polygons_per_tile, tile, kwargs)
+
                 band_no_data_value = no_data_value.get(dem_name,np.nan)
                 band_normalize_range = normalize_range.get(dem_name,None)
                 raster = read_raster(
@@ -129,6 +131,14 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 raster_masked = np.ma.compressed(raster_masked).flatten()
                 raster_df = pd.DataFrame({dem_name: raster_masked})
                 tile_df = pd.concat([tile_df, raster_df], axis=1)
+
+        #Get crop mask for sentinel rasters and dataset labeled with database points in tile
+        band_path = download_sample_band(tile, minio_client, mongo_products_collection)
+        kwargs = _get_kwargs_raster(band_path)    
+        crop_mask, label_lon_lat = mask_polygons_by_tile(polygons_per_tile, tile, kwargs)
+
+        if predict:
+            crop_mask = np.zeros_like(crop_mask)
 
         for season, products_metadata in product_per_season.items():
             print(season)
