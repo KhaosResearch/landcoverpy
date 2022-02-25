@@ -103,7 +103,6 @@ def _merge_dem(dem_paths: List[Path], outpath: str, minio_client: Minio, dem_nam
                 print("Could not create merged DEM file path: ", err)
 
         with rasterio.open(outpath_dem, "w", **out_dem_meta) as dm:
-            print(outpath_dem)
             dm.write(dem)
 
         return outpath_dem

@@ -82,7 +82,6 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
     for i, tile in enumerate(tiles):
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
-
         # Mongo query for obtaining valid products
         max_cloud_percentage=20
         product_metadata_cursor_spring = get_products_by_tile_and_date(tile, mongo_products_collection, spring_start, spring_end, max_cloud_percentage)
@@ -282,4 +281,4 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=False, predict=False)
+    workflow(training=True, visualization=True, predict=True)
