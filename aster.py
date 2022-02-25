@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Callable, List
 import rasterio
+import numpy as np
 from rasterio import merge
 from pymongo.collection import Collection
 from minio import Minio
@@ -90,7 +91,7 @@ def _merge_dem(dem_paths: List[Path], outpath: str, minio_client: Minio, dem_nam
         out_dem_meta["height"] = dem.shape[1]
         out_dem_meta["width"] = dem.shape[2]
         out_dem_meta["transform"] = dem_transform
-        out_dem_meta["nodata"] = -99999
+        out_dem_meta["nodata"] = np.nan
 
 
         outpath_dem = str(Path(outpath, f"{dem_name}.tif"))
@@ -122,7 +123,7 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
         )
         kwargs = src.meta.copy()
         kwargs.update(
-            {"driver": "GTiff" ,"crs": dst_crs, "transform": transform, "width": width, "height": height, "nodata": -99999}
+            {"driver": "GTiff" ,"crs": dst_crs, "transform": transform, "width": width, "height": height, "nodata": np.nan}
         )
 
         with rasterio.open(reprojected_path, "w", **kwargs) as dst:
@@ -131,10 +132,10 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
                 destination=rasterio.band(dst, 1),
                 src_transform=src.transform,
                 src_crs=src.crs,
-                src_nodata=-99999,
+                src_nodata=np.nan,
                 dst_transform=transform,
                 dst_crs=dst_crs,
-                dst_nodata=-99999,
+                dst_nodata=np.nan,
                 resampling=Resampling.nearest,
             )
     return reprojected_path

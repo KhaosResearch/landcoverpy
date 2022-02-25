@@ -10,7 +10,8 @@ def plot_dataset(dataset:pd.DataFrame):
     fig.get_figure().savefig("out.png") 
 
 if __name__ == "__main__":
-    df = pd.read_csv("dataset.csv")
+    df = pd.read_csv("minio_tmp/dataset_30TUP.csv")
+    df = df.drop(["latitude", "longitude", "spring_product_name", "autumn_product_name", "summer_product_name"], axis=1)
     df = df[df.columns.drop(list(df.filter(regex='bri')))]
     df = df.replace([np.inf, -np.inf], np.nan).dropna(axis=0)
     means = df.groupby("class").mean()
@@ -21,5 +22,4 @@ if __name__ == "__main__":
     means = pd.melt(means, id_vars="class", value_name="mean", var_name="raster")
     stds = stds["std"]
     df = means.join(stds)
-    print(df)
     plot_dataset(df)

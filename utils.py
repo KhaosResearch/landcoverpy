@@ -881,7 +881,7 @@ def _get_corners_raster(band_path: Path) -> Tuple[RasterPoint, RasterPoint, Rast
     final_crs = pyproj.CRS("epsg:4326")
 
 
-    band = read_raster(band_path,no_data_value=-99999)
+    band = read_raster(band_path,no_data_value=np.nan)
     kwargs = _get_kwargs_raster(band_path)
     init_crs = kwargs['crs']
 
@@ -928,22 +928,42 @@ def sentinel_raster_to_polygon(sentinel_raster_path: str) :
 
 def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
     '''
-    Crop a raster as a sentinel one. The second raster has to be contained in the first one.
-    '''    
+    Crop a raster merge as a sentinel tile. The resulting image can be smaller than a sentinel tile.
+    
+    Since aster products don't exist for areas that don't include any land (tiles with only water),
+    the merge of aster products for that area is smaller than the sentinel tile in at least one dimension (missing tile on North and/or  West).
+    In the following example the merge product of all the intersecting aster (`+` sign) is smaller in one dimension to the sentinel one (`.` sign):
+
+                                     This 4x4 matrix represents a sentinel tile (center) and the area of the Aster dems needed to cover it.
+              |----|                 Legend                        
+              |-..-|                  . = Represent a Sentinel tile
+              |+..+|                  + = Merge of several Aster
+              |++++|                  - = Missing asters (tile of an area with only of water)
+
+    In the above case, the top left corner of the crop will start on the 3rd row instead of the 2nd, because there is no available aster data to cover it.
+    ''' 
     sentinel_kwargs = _get_kwargs_raster(sentinel_path)
     raster_kwargs = _get_kwargs_raster(raster_path)
 
+    # This needs to be corrected on the traslation of the transform matrix
+    x_raster, y_raster = raster_kwargs["transform"][2] ,  raster_kwargs["transform"][5]
+    x_sentinel, y_sentinel = sentinel_kwargs["transform"][2], sentinel_kwargs["transform"][5]
+    # Use the smaller value (the one to the bottom in the used CRS) for the transform, to reproject to the intersection
+    y_transform_position = raster_kwargs["transform"][5] if y_raster < y_sentinel else sentinel_kwargs["transform"][5]
+    # Use the bigger value (the one to the right in the used CRS) for the transform, to reproject to the intersection
+    x_transform_position = raster_kwargs["transform"][2] if x_raster > x_sentinel else sentinel_kwargs["transform"][2]
+
     _, sentinel_polygon = sentinel_raster_to_polygon(sentinel_path)
-    cropped_raster = read_raster(raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=-99999)
+    cropped_raster = read_raster(raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=np.nan)
     cropped_raster_kwargs = raster_kwargs.copy()
-    cropped_raster_kwargs['transform'] = raster_kwargs['transform']
-    cropped_raster_kwargs['transform'] = rasterio.Affine(raster_kwargs['transform'][0], 0.0, sentinel_kwargs["transform"][2], 0.0,raster_kwargs['transform'][4] , sentinel_kwargs["transform"][5])
-    cropped_raster_kwargs.update({'width': cropped_raster.shape[1], 'height': cropped_raster.shape[1], })
+    cropped_raster_kwargs['transform'] = rasterio.Affine(raster_kwargs['transform'][0], 0.0, x_transform_position, 0.0,raster_kwargs['transform'][4] , y_transform_position)
+    cropped_raster_kwargs.update({'width': cropped_raster.shape[2], 'height': cropped_raster.shape[1], })
     
     dst_kwargs = sentinel_kwargs.copy()
     dst_kwargs['dtype'] = cropped_raster_kwargs['dtype']
     dst_kwargs['nodata'] = cropped_raster_kwargs['nodata']
     dst_kwargs['driver'] = cropped_raster_kwargs['driver']
+    dst_kwargs['transform'] = rasterio.Affine(sentinel_kwargs['transform'][0], 0.0, x_transform_position, 0.0,sentinel_kwargs['transform'][4] , y_transform_position)
 
     with rasterio.open(raster_path, "w", **dst_kwargs) as dst:
         reproject(
@@ -951,8 +971,7 @@ def crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
             destination=rasterio.band(dst, 1),
             src_transform=cropped_raster_kwargs['transform'],
             src_crs=cropped_raster_kwargs['crs'],
-            dst_resolution=(sentinel_kwargs['width'], sentinel_kwargs['height']),
-            dst_transform=sentinel_kwargs['transform'],
+            dst_transform=dst_kwargs['transform'],
             dst_crs=sentinel_kwargs['crs'],
             resampling=Resampling.nearest,
         )
@@ -1015,7 +1034,7 @@ def label_neighbours(height: int, width: int, row: int, column:int , coordinates
 
 
 
-def mask_polygons_by_tile(polygons: dict, tile: str) -> Tuple[np.ndarray, np.ndarray]:
+def mask_polygons_by_tile(polygons: dict, tile: str, kwargs: dict) -> Tuple[np.ndarray, np.ndarray]:
     ''''
     Label all the pixels in a dataset from points databases for a given tile.
 
@@ -1032,12 +1051,6 @@ def mask_polygons_by_tile(polygons: dict, tile: str) -> Tuple[np.ndarray, np.nda
                                      `i` = 2 refers to the latitude of the pixel,
     
     '''
-    #Get band path for a given tile
-    minio_client = get_minio()
-    mongo_products_collection = connect_mongo_products_collection()
-    band_path = download_sample_band(tile, minio_client, mongo_products_collection)
-
-    kwargs = _get_kwargs_raster(band_path)    
     label_lon_lat = np.zeros((kwargs['height'], kwargs['width'], 3), dtype=object)    
 
     #Label all the pixels in points database
