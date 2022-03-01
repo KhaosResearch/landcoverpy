@@ -56,11 +56,11 @@ def workflow(training: bool, visualization: bool, predict: bool):
     tiles = polygons_per_tile.keys() 
     # This parameters should be coming from somewhere else
     spring_start = datetime(2021, 3, 1)
-    spring_end = datetime(2021, 5, 30)
-    summer_start = datetime(2021, 7, 1)
-    summer_end = datetime(2021, 9, 30)
-    autumn_start = datetime(2021, 10, 1)
-    autumn_end = datetime(2021, 12, 30)
+    spring_end = datetime(2021, 3, 31)
+    summer_start = datetime(2021, 6, 1)
+    summer_end = datetime(2021, 6, 30)
+    autumn_start = datetime(2021, 11, 1)
+    autumn_end = datetime(2021, 11, 30)
     
     # Step 1 
     minio_client = get_minio()
@@ -72,7 +72,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
     skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri","WVP"]
     no_data_value = {"ndvi":np.nan, "osavi":np.nan, "osavi":np.nan, "ndre":np.nan, "ndbg":np.nan, "moisture":np.nan, "mndwi":np.nan, "evi2":np.nan, "evi":np.nan}
     # PCA resulting columns, this should come from somewhere else
-    pc_columns = ['aspect', 'autumn_AOT', 'autumn_B01', 'autumn_B02', 'autumn_B03', 'autumn_B04', 'autumn_B05', 'autumn_B06', 'autumn_B07', 'autumn_B08', 'autumn_B09', 'autumn_B11', 'autumn_B12', 'autumn_B8A', 'autumn_evi', 'autumn_evi2', 'autumn_mndwi', 'autumn_moisture', 'autumn_ndbg', 'autumn_ndre', 'autumn_ndvi', 'autumn_osavi', 'dem', 'slope', 'spring_AOT', 'spring_B01', 'spring_B02', 'spring_B03', 'spring_B04', 'spring_B05', 'spring_B06', 'spring_B07', 'spring_B08', 'spring_B09', 'spring_B11', 'spring_B12', 'spring_B8A', 'spring_evi', 'spring_evi2', 'spring_mndwi', 'spring_moisture', 'spring_ndbg', 'spring_ndre', 'spring_ndvi', 'spring_osavi', 'summer_AOT', 'summer_B01', 'summer_B02', 'summer_B03', 'summer_B04', 'summer_B05', 'summer_B06', 'summer_B07', 'summer_B08', 'summer_B09', 'summer_B11', 'summer_B12', 'summer_B8A', 'summer_evi', 'summer_evi2', 'summer_mndwi', 'summer_moisture', 'summer_ndbg', 'summer_ndre', 'summer_ndvi', 'summer_osavi']
+    pc_columns = ['aspect', 'autumn_AOT', 'autumn_B01', 'autumn_B02', 'autumn_B03', 'autumn_B04', 'autumn_B05', 'autumn_B06', 'autumn_B07', 'autumn_B08', 'autumn_B09', 'autumn_B11', 'autumn_B12', 'autumn_B8A', 'autumn_evi2', 'autumn_mndwi', 'autumn_moisture', 'autumn_ndbg', 'autumn_ndre', 'autumn_ndvi', 'autumn_osavi', 'dem', 'slope', 'spring_AOT', 'spring_B01', 'spring_B02', 'spring_B03', 'spring_B04', 'spring_B05', 'spring_B06', 'spring_B07', 'spring_B08', 'spring_B09', 'spring_B11', 'spring_B12', 'spring_B8A', 'spring_evi2', 'spring_mndwi', 'spring_moisture', 'spring_ndbg', 'spring_ndre', 'spring_ndvi', 'spring_osavi', 'summer_AOT', 'summer_B01', 'summer_B02', 'summer_B03', 'summer_B04', 'summer_B05', 'summer_B06', 'summer_B07', 'summer_B08', 'summer_B09', 'summer_B11', 'summer_B12', 'summer_B8A', 'summer_evi2', 'summer_mndwi', 'summer_moisture', 'summer_ndbg', 'summer_ndre', 'summer_ndvi', 'summer_osavi']
     # Ranges for normalization of each raster
     normalize_range = {"slope":(0,70), "aspect":(0,360), "dem":(0,2000)}
 
