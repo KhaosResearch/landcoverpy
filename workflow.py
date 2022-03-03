@@ -188,7 +188,7 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 raster_name = get_raster_name_from_path(raster_path)
                 temp_path = Path(temp_product_folder,raster_filename)
 
-                if any(x in raster_name for x in skip_bands):
+                if any(x in raster_name.upper() for x in list(map(lambda y: y.upper(),skip_bands))):
                     continue
                 # Read only the first band to avoid duplication of different spatial resolution
                 if raster_name in str(already_read):
