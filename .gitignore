@@ -17,6 +17,7 @@ minio_tmp/
 # ML models
 *.pkl
 *.joblib
+models_tf/
 
 # Testing
 times_convolution.py

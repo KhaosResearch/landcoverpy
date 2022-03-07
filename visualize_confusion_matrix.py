@@ -222,6 +222,7 @@ def print_matrix(
     ax.set_ylabel(ylbl)
     plt.tight_layout()  # set layout slim
     plt.show()
+    plt.savefig("confussion_matrix.png")
 
 def get_cmap():
     colors = [(1, 1, 1), (1, 1, 1), (1, 1, 1)] 

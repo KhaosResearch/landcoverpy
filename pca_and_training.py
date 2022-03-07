@@ -17,7 +17,7 @@ from visualize_confusion_matrix import visualize_confusion_matrix
 
 training = True
 
-train_df = pd.read_csv("dataset.csv")
+train_df = pd.read_csv("dataset_postprocessed.csv")
 train_df = train_df.replace([np.inf, -np.inf], np.nan)
 train_df = train_df.fillna(np.nan)
 train_df = train_df.dropna()
@@ -36,7 +36,7 @@ clf = RandomForestClassifier(n_jobs=3)
 clf.fit(X_train, y_train)
 y_true = clf.predict(X_test)
 
-labels=["agricola","beaches", "bosque", "bosqueRibera","cities","dehesas","matorral","pastos","plantacion","rocks","water","wetland"]
+labels=["agricola","beaches", "bosque","cities","dehesas","matorral","rocks","water","wetland"]
 visualize_confusion_matrix(y_true, y_test, labels)
 
 print(X_test.iloc[0:2,:],"\n", clf.predict(X_test.iloc[0:2,:]), y_test.iloc[0:2])
