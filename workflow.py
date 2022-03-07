@@ -270,17 +270,13 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
         if predict:
 
             kwargs_10m['nodata'] = 0
-            model = keras.models.load_model("models_tf/testing/1/")
-            with open('le.pkl', 'rb') as pkl_file:
-                le = pickle.load(pkl_file)    
+            clf = joblib.load('model.joblib')    
             predict_df = tile_df
             predict_df.sort_index(inplace=True, axis=1)
             predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
             nodata_rows = np.isnan(predict_df).any(axis=1)
             predict_df.fillna(0, inplace=True)
-            prediction_probs = model.predict(predict_df)
-            predictions = prediction_probs.argmax(axis=-1)
-            predictions = le.inverse_transform(predictions)
+            predictions = clf.predict(predict_df)
             predictions[nodata_rows] = "nodata"
             predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
             encoded_predictions = predictions.copy()
