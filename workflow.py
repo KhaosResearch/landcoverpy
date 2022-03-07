@@ -112,11 +112,10 @@ def workflow(training: bool, visualization: bool, predict: bool):
                 dem_path = get_dem_from_tile(tile,mongo_products_collection,minio_client, dem_name)
 
                 # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
+                kwargs = _get_kwargs_raster(dem_path)    
+                crop_mask, label_lon_lat = mask_polygons_by_tile(polygons_per_tile, tile, kwargs)
                 if predict:
                     crop_mask = np.zeros_like(crop_mask)
-                else:
-                    kwargs = _get_kwargs_raster(dem_path)    
-                    crop_mask, label_lon_lat = mask_polygons_by_tile(polygons_per_tile, tile, kwargs)
 
                 band_no_data_value = no_data_value.get(dem_name,np.nan)
                 band_normalize_range = normalize_range.get(dem_name,None)
