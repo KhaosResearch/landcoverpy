@@ -6,6 +6,8 @@ import numpy as np
 from glob import glob
 import pandas as pd
 import rasterio
+import pickle
+from typing import List
 from config import settings
 from aster import get_dem_from_tile
 from utils import(
@@ -29,7 +31,7 @@ from utils import(
 
 
 
-def workflow(training: bool, visualization: bool, predict: bool):
+def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predict: List[str] = None):
     '''
         Step 1: Load Sentinel-2 imagery
         (Skip (?))Step 2: Load pre-processed ASTER DEM
@@ -52,8 +54,6 @@ def workflow(training: bool, visualization: bool, predict: bool):
         geojson_files.append(kmz_to_geojson(data_class))
     polygons_per_tile = group_polygons_by_tile(*geojson_files)
 
-    # Tiles related to the traininig zone
-    tiles = polygons_per_tile.keys() 
     # This parameters should be coming from somewhere else
     spring_start = datetime(2021, 3, 1)
     spring_end = datetime(2021, 3, 31)
@@ -76,10 +76,16 @@ def workflow(training: bool, visualization: bool, predict: bool):
     # Ranges for normalization of each raster
     normalize_range = {"slope":(0,70), "aspect":(0,360), "dem":(0,2000)}
 
-    if predict:
+    if predict and (tiles_to_predict is not None):
         print("Predicting tiles")
+        polygons_per_tile = {}
+        for tile_to_predict in tiles_to_predict:
+            polygons_per_tile[tile_to_predict] = []
     else:
         print("Creating dataset from tiles")
+
+    # Tiles related to the traininig zone
+    tiles = polygons_per_tile.keys() 
 
     for i, tile in enumerate(tiles):
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
@@ -264,13 +270,17 @@ def workflow(training: bool, visualization: bool, predict: bool):
         if predict:
 
             kwargs_10m['nodata'] = 0
-            clf = joblib.load('model.joblib')
+            model = keras.models.load_model("models_tf/testing/1/")
+            with open('le.pkl', 'rb') as pkl_file:
+                le = pickle.load(pkl_file)    
             predict_df = tile_df
             predict_df.sort_index(inplace=True, axis=1)
             predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
             nodata_rows = np.isnan(predict_df).any(axis=1)
             predict_df.fillna(0, inplace=True)
-            predictions = clf.predict(predict_df)
+            prediction_probs = model.predict(predict_df)
+            predictions = prediction_probs.argmax(axis=-1)
+            predictions = le.inverse_transform(predictions)
             predictions[nodata_rows] = "nodata"
             predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
             encoded_predictions = predictions.copy()
@@ -290,4 +300,4 @@ def workflow(training: bool, visualization: bool, predict: bool):
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=True, predict=True)
+    workflow(training=True, visualization=True, predict=True, tiles_to_predict=["29SPC", "29SQC", "30STH", "30SUH", "30SVH", "30SWH", "30SXH", "30SYH", "30SXG", "30SWG", "30SVG", "30SUG", "30STG", "29SQB" ,"29SPB", "30SQA", "30STF", "30SUF", "30SVF", "30SWF"])
