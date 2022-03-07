@@ -19,6 +19,10 @@ class _Settings(BaseSettings):
     MINIO_BUCKET_NAME_COMPOSITES: str = None
     MINIO_BUCKET_NAME_ASTER: str = None
     MINIO_BUCKET_NAME_DEM: str = None
+    MINIO_BUCKET_DATASETS: str = None
+    MINIO_BUCKET_MODELS: str = None
+    MINIO_BUCKET_CLASSIFICATIONS: str = None
+    MINIO_DATA_FOLDER_NAME: str = None
     MINIO_ACCESS_KEY: str = "minio"
     MINIO_SECRET_KEY: str = "minio"
 

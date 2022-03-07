@@ -285,14 +285,29 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
                 encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
 
             kwargs_10m["driver"] = "GTiff"
-            with rasterio.open(str(Path(settings.TMP_DIR,f'classification_{tile}.tif')), "w", **kwargs_10m) as classification_file:
+            classification_name = f"classification_{tile}.tif"
+            classification_path = str(Path(settings.TMP_DIR,classification_name))
+            with rasterio.open(classification_path, "w", **kwargs_10m) as classification_file:
                 classification_file.write(encoded_predictions)
-            print(f'classification_{tile}.tif saved')
+            print(f"{classification_name} saved")
+            minio_client.fput_object(
+                    bucket_name = settings.MINIO_BUCKET_CLASSIFICATIONS,
+                    object_name =  f"{settings.MINIO_DATA_FOLDER_NAME}/{classification_name}",
+                    file_path=classification_path,
+                    content_type="image/tif"
+                )
             
         
     if not predict:
-        print(final_df.head())  
-        final_df.to_csv("dataset.csv", index=False)
+        print(final_df.head()) 
+        file_name =  "dataset.csv"
+        final_df.to_csv(file_name, index=False)
+        minio_client.fput_object(
+                bucket_name = settings.MINIO_BUCKET_DATASETS,
+                object_name =  f"{settings.MINIO_DATA_FOLDER_NAME}/{file_name}",
+                file_path=file_name,
+                content_type="text/csv"
+            )
 
 
 if __name__ == '__main__':
