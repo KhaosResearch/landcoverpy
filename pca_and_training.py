@@ -37,7 +37,7 @@ clf = RandomForestClassifier(n_jobs=3)
 clf.fit(X_train, y_train)
 y_true = clf.predict(X_test)
 
-labels=["agricola","beaches", "bosque","cities","dehesas","matorral","rocks","water","wetland"]
+labels=y_train_data.unique()
 visualize_confusion_matrix(y_true, y_test, labels)
 
 print(X_test.iloc[0:2,:],"\n", clf.predict(X_test.iloc[0:2,:]), y_test.iloc[0:2])

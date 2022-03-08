@@ -280,7 +280,7 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
             predictions[nodata_rows] = "nodata"
             predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
             encoded_predictions = predictions.copy()
-            mapping = {"nodata":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11, "bosque":12}
+            mapping = {"nodata":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11, "bosque":12, "bosqueAbierto": 13}
             for class_, value in mapping.items():
                 encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
 
@@ -311,4 +311,4 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=True, predict=True, tiles_to_predict=["29SPC", "29SQC", "30STH", "30SUH", "30SVH", "30SWH", "30SXH", "30SYH", "30SXG", "30SWG", "30SVG", "30SUG", "30STG", "29SQB" ,"29SPB", "30SQA", "30STF", "30SUF", "30SVF", "30SWF"])
+    workflow(training=True, visualization=False, predict=False, tiles_to_predict=[])
