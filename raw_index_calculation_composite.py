@@ -173,9 +173,9 @@ def calculate_raw_indexes(uid: str):
 
         safe_minio_execute(
             func = client.fput_object,
-            minio_bucket_name,
-            tif_minio_path,
-            indexes_folder + "/" + index_name + ".tif",
+            bucket_name = minio_bucket_name,
+            object_name = tif_minio_path,
+            file_path = indexes_folder + "/" + index_name + ".tif",
             content_type="image/tif"
         )
 
