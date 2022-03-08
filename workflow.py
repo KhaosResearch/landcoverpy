@@ -27,6 +27,7 @@ from utils import(
     filter_rasters_paths_by_pca,
     kmz_to_geojson,
     download_sample_band,
+    safe_minio_execute,
 )
 
 
@@ -201,7 +202,8 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
                 already_read.append(raster_name)
 
                 print(f"Downloading raster {raster_name} from minio into {temp_path}")
-                minio_client.fget_object(
+                safe_minio_execute(
+                    func = minio_client.fget_object,
                     bucket_name=current_bucket,
                     object_name=raster_path,
                     file_path=str(temp_path),
@@ -290,19 +292,21 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
             with rasterio.open(classification_path, "w", **kwargs_10m) as classification_file:
                 classification_file.write(encoded_predictions)
             print(f"{classification_name} saved")
-            minio_client.fput_object(
+            safe_minio_execute(
+                    func = minio_client.fput_object,
                     bucket_name = settings.MINIO_BUCKET_CLASSIFICATIONS,
                     object_name =  f"{settings.MINIO_DATA_FOLDER_NAME}/{classification_name}",
                     file_path=classification_path,
                     content_type="image/tif"
-                )
+            )
             
         
     if not predict:
         print(final_df.head()) 
         file_name =  "dataset.csv"
         final_df.to_csv(file_name, index=False)
-        minio_client.fput_object(
+        safe_minio_execute(
+                func = minio_client.fput_object,
                 bucket_name = settings.MINIO_BUCKET_DATASETS,
                 object_name =  f"{settings.MINIO_DATA_FOLDER_NAME}/{file_name}",
                 file_path=file_name,

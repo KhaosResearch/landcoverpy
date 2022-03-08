@@ -1,7 +1,7 @@
 from matplotlib.colors import LinearSegmentedColormap
 import pandas as pd
 import numpy as np
-from utils import get_minio
+from utils import get_minio, safe_minio_execute
 import joblib
 import matplotlib.pyplot as plt 
 from sklearn.ensemble import RandomForestClassifier
@@ -46,7 +46,8 @@ model_name = 'model.joblib'
 joblib.dump(clf, model_name)
 
 minio_client = get_minio()
-minio_client.fput_object(
+safe_minio_execute(
+        func = minio_client.fput_object,
         bucket_name = settings.MINIO_BUCKET_MODELS,
         object_name =  f"{settings.MINIO_DATA_FOLDER_NAME}/{model_name}",
         file_path=model_name,

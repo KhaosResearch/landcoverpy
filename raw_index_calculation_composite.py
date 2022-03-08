@@ -10,6 +10,7 @@ from greensenti.cli.compute_index import *
 from minio import Minio
 from pymongo import MongoClient
 from config import settings
+from utils import safe_minio_execute
 
 load_dotenv()
 
@@ -170,7 +171,8 @@ def calculate_raw_indexes(uid: str):
         tif_meta_minio_path = metadata_path + tif_minio_path
         band_meta_minio_path = "minio://" + minio_bucket_name + "/" + bands_dir
 
-        client.fput_object(
+        safe_minio_execute(
+            func = client.fput_object,
             minio_bucket_name,
             tif_minio_path,
             indexes_folder + "/" + index_name + ".tif",
