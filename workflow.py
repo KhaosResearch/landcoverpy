@@ -315,4 +315,4 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=False, predict=False, tiles_to_predict=[])
+    workflow(training=True, visualization=False, predict=True, tiles_to_predict=None)

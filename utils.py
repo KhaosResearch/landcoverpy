@@ -20,6 +20,8 @@ from minio import Minio
 import pyproj
 from shapely.geometry import Point, MultiPolygon, geo
 from shapely.ops import transform
+import errno
+from socket import error as SocketError
 from shapely.geometry import shape
 import warnings
 import rasterio
