@@ -77,11 +77,12 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
     # Ranges for normalization of each raster
     normalize_range = {"slope":(0,70), "aspect":(0,360), "dem":(0,2000)}
 
-    if predict and (tiles_to_predict is not None):
+    if predict:
         print("Predicting tiles")
-        polygons_per_tile = {}
-        for tile_to_predict in tiles_to_predict:
-            polygons_per_tile[tile_to_predict] = []
+        if tiles_to_predict is not None:
+            polygons_per_tile = {}
+            for tile_to_predict in tiles_to_predict:
+                polygons_per_tile[tile_to_predict] = []
     else:
         print("Creating dataset from tiles")
 
