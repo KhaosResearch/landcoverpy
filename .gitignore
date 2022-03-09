@@ -28,6 +28,7 @@ landcover_ESA.py
 
 # Other code
 fix_broken_products/
+sentinel2-downloads/
 
 # Images
 *.png

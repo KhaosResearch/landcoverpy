@@ -27,6 +27,7 @@ from utils import(
     filter_rasters_paths_by_pca,
     kmz_to_geojson,
     download_sample_band,
+    safe_minio_execute,
 )
 
 
@@ -201,7 +202,8 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
                 already_read.append(raster_name)
 
                 print(f"Downloading raster {raster_name} from minio into {temp_path}")
-                minio_client.fget_object(
+                safe_minio_execute(
+                    func = minio_client.fget_object,
                     bucket_name=current_bucket,
                     object_name=raster_path,
                     file_path=str(temp_path),
@@ -280,20 +282,37 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
             predictions[nodata_rows] = "nodata"
             predictions = np.reshape(predictions, (1, kwargs_10m['height'],kwargs_10m['width']))
             encoded_predictions = predictions.copy()
-            mapping = {"nodata":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11, "bosque":12}
+            mapping = {"nodata":0,"beaches":1,"bosqueRibera":2,"cities":3,"dehesas":4,"matorral":5,"pastos":6,"plantacion":7,"rocks":8,"water":9,"wetland":10,"agricola":11, "bosque":12, "bosqueAbierto": 13}
             for class_, value in mapping.items():
                 encoded_predictions = np.where(encoded_predictions == class_, value, encoded_predictions)
 
             kwargs_10m["driver"] = "GTiff"
-            with rasterio.open(str(Path(settings.TMP_DIR,f'classification_{tile}.tif')), "w", **kwargs_10m) as classification_file:
+            classification_name = f"classification_{tile}.tif"
+            classification_path = str(Path(settings.TMP_DIR,classification_name))
+            with rasterio.open(classification_path, "w", **kwargs_10m) as classification_file:
                 classification_file.write(encoded_predictions)
-            print(f'classification_{tile}.tif saved')
+            print(f"{classification_name} saved")
+            safe_minio_execute(
+                    func = minio_client.fput_object,
+                    bucket_name = settings.MINIO_BUCKET_CLASSIFICATIONS,
+                    object_name =  f"{settings.MINIO_DATA_FOLDER_NAME}/{classification_name}",
+                    file_path=classification_path,
+                    content_type="image/tif"
+            )
             
         
     if not predict:
-        print(final_df.head())  
-        final_df.to_csv("dataset.csv", index=False)
+        print(final_df.head()) 
+        file_name =  "dataset.csv"
+        final_df.to_csv(file_name, index=False)
+        safe_minio_execute(
+                func = minio_client.fput_object,
+                bucket_name = settings.MINIO_BUCKET_DATASETS,
+                object_name =  f"{settings.MINIO_DATA_FOLDER_NAME}/{file_name}",
+                file_path=file_name,
+                content_type="text/csv"
+            )
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=True, predict=True, tiles_to_predict=["29SPC", "29SQC", "30STH", "30SUH", "30SVH", "30SWH", "30SXH", "30SYH", "30SXG", "30SWG", "30SVG", "30SUG", "30STG", "29SQB" ,"29SPB", "30SQA", "30STF", "30SUF", "30SVF", "30SWF"])
+    workflow(training=True, visualization=False, predict=True, tiles_to_predict=None)

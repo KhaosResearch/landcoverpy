@@ -1,10 +1,11 @@
 from matplotlib.colors import LinearSegmentedColormap
 import pandas as pd
 import numpy as np
-from utils import normalize, pca
+from utils import get_minio, safe_minio_execute
 import joblib
 import matplotlib.pyplot as plt 
 from sklearn.ensemble import RandomForestClassifier
+from config import settings
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 
@@ -36,10 +37,19 @@ clf = RandomForestClassifier(n_jobs=3)
 clf.fit(X_train, y_train)
 y_true = clf.predict(X_test)
 
-labels=["agricola","beaches", "bosque","cities","dehesas","matorral","rocks","water","wetland"]
+labels=y_train_data.unique()
 visualize_confusion_matrix(y_true, y_test, labels)
 
 print(X_test.iloc[0:2,:],"\n", clf.predict(X_test.iloc[0:2,:]), y_test.iloc[0:2])
 
+model_name = 'model.joblib'
+joblib.dump(clf, model_name)
 
-joblib.dump(clf, 'model.joblib')
+minio_client = get_minio()
+safe_minio_execute(
+        func = minio_client.fput_object,
+        bucket_name = settings.MINIO_BUCKET_MODELS,
+        object_name =  f"{settings.MINIO_DATA_FOLDER_NAME}/{model_name}",
+        file_path=model_name,
+        content_type="mlmodel/randomforest"
+    )

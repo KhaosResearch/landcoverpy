@@ -16,6 +16,7 @@ from utils import (
     _get_bound,
     crop_as_sentinel_raster,
     download_sample_band,
+    safe_minio_execute,
 )
 
 def _get_bucket_by_name(dem_name: str) -> str:
@@ -76,7 +77,8 @@ def _merge_dem(dem_paths: List[Path], outpath: str, minio_client: Minio, dem_nam
         for dem_path in dem_paths:
             for file in minio_client.list_objects(bucket, prefix=dem_path, recursive=True):
                 file_object = file.object_name
-                minio_client.fget_object(
+                safe_minio_execute(
+                    func = minio_client.fget_object,
                     bucket_name=bucket,
                     object_name=file_object,
                     file_path=str(Path(outpath, file_object))
