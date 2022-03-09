@@ -24,7 +24,7 @@ indexes_bands = dict(
     osavi={"b4": "B04_10m", "b8": "B08_10m"},
     evi2={"b4": "B04_10m", "b8": "B08_10m"},
     ndre={"b5": "B05_60m", "b9": "B09_60m"},
-    ndbg={"b2": "B02_10m", "b3": "B03_10m"},
+    ndyi={"b2": "B02_10m", "b3": "B03_10m"},
     mndwi={"b3": "B03_20m", "b11": "B11_20m"},
     bri={"b3": "B03_10m", "b5": "B05_20m", "b8": "B08_10m"},
 )
@@ -32,7 +32,7 @@ indexes_bands = dict(
 
 def calculate_raw_indexes(uid: str):
 
-    index = ["Moisture", "NDVI", "NDWI", "NDSI", "EVI", "Cover-Percentage", "OSAVI", "EVI2", "NDRE", "NDBG", "MNDWI", "BRI"]
+    index = ["Moisture", "NDVI", "NDWI", "NDSI", "EVI", "Cover-Percentage", "OSAVI", "EVI2", "NDRE", "NDYI", "MNDWI", "BRI"]
 
     minio_bucket_name = settings.MINIO_BUCKET_NAME_COMPOSITES
 
@@ -141,8 +141,8 @@ def calculate_raw_indexes(uid: str):
                     b9=find_product_image(bands_dict["b9"]),
                     output=output,
                 )
-            elif index_name == "ndbg":
-                index_value = ndbg(
+            elif index_name == "ndyi":
+                index_value = ndyi(
                     b2=find_product_image(bands_dict["b2"]),
                     b3=find_product_image(bands_dict["b3"]),
                     output=output,
