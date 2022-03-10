@@ -1,15 +1,10 @@
-from matplotlib.colors import LinearSegmentedColormap
 import pandas as pd
 import numpy as np
 from utils import get_minio, safe_minio_execute
 import joblib
-import matplotlib.pyplot as plt 
 from sklearn.ensemble import RandomForestClassifier
 from config import settings
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix
-
-from sklearn.metrics import plot_confusion_matrix
 from visualize_confusion_matrix import visualize_confusion_matrix
 
 

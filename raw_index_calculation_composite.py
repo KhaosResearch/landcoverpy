@@ -1,10 +1,6 @@
-import os
 import shutil
-from enum import Enum
 from pathlib import Path
-from typing import List, Optional
 
-import typer
 from dotenv import load_dotenv
 from greensenti.cli.compute_index import *
 from minio import Minio
