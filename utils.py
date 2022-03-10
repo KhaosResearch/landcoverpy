@@ -6,6 +6,8 @@ from pymongo.collection import Collection
 from pymongo.cursor import Cursor
 from config import settings
 import sys
+import errno
+from socket import error as SocketError
 import time
 import traceback
 from datetime import datetime
