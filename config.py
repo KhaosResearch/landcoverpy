@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import AnyUrl, BaseModel, BaseSettings, SecretStr
+from pydantic import BaseSettings
 
 class _Settings(BaseSettings):
     # mongo settings
