@@ -6,7 +6,6 @@ import numpy as np
 from glob import glob
 import pandas as pd
 import rasterio
-import pickle
 from typing import List
 from config import settings
 from aster import get_dem_from_tile
@@ -32,7 +31,7 @@ from utils import(
 
 
 
-def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predict: List[str] = None):
+def workflow(visualization: bool, predict: bool, tiles_to_predict: List[str] = None):
     '''
         Step 1: Load Sentinel-2 imagery
         (Skip (?))Step 2: Load pre-processed ASTER DEM
@@ -97,9 +96,9 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
         product_metadata_cursor_autumn = get_products_by_tile_and_date(tile, mongo_products_collection, autumn_start, autumn_end, max_cloud_percentage)
 
         product_per_season = {
+                "summer": list(product_metadata_cursor_summer)[:5],
                 "spring": list(product_metadata_cursor_spring)[:5],
                 "autumn": list(product_metadata_cursor_autumn)[:5],
-                "summer": list(product_metadata_cursor_summer)[:5],
             }
     
         if len(product_per_season["spring"]) == 0 or len(product_per_season["autumn"]) == 0 or len(product_per_season["summer"]) == 0:
@@ -315,4 +314,4 @@ def workflow(training: bool, visualization: bool, predict: bool, tiles_to_predic
 
 
 if __name__ == '__main__':
-    workflow(training=True, visualization=False, predict=False, tiles_to_predict=[])
+    workflow(visualization=False, predict=True, tiles_to_predict=None)
