@@ -1,29 +1,25 @@
 from logging import exception
 from typing import Iterable, List, Tuple, Callable
-from numpy.lib.arraysetops import isin
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.cursor import Cursor
 from config import settings
-import sys
 import errno
 from socket import error as SocketError
 import time
 import traceback
 from datetime import datetime
-from sentinelsat.sentinel import read_geojson, geojson_to_wkt
+from sentinelsat.sentinel import read_geojson
 from pathlib import Path
-from tqdm import tqdm
 from mgrs import MGRS
 from zipfile import ZipFile
 import geopandas as gpd
 from config import settings
 from minio import Minio
 import pyproj
-from shapely.geometry import Point, MultiPolygon, geo
+from shapely.geometry import Point, MultiPolygon
 from shapely.ops import transform
 import errno
-from socket import error as SocketError
 from shapely.geometry import shape
 import warnings
 import rasterio
@@ -31,7 +27,7 @@ from rasterio import mask as msk
 from functools import partial
 from hashlib import sha256
 from itertools import compress
-from raw_index_calculation_composite import calculate_raw_indexes
+import raw_index_calculation_composite
 from rasterio.warp import reproject, Resampling
 import pandas as pd
 import numpy as np
@@ -40,8 +36,13 @@ from scipy.ndimage import convolve
 import json
 from shapely.geometry import Point, Polygon
 from rasterpoint import RasterPoint
-import numpy.ma as ma
+import signal
 
+def timeout_handler(signum, frame):
+    raise Exception
+
+# Change the behavior of SIGALRM
+signal.signal(signal.SIGALRM, timeout_handler)
 
 def get_minio():
     '''
@@ -706,7 +707,7 @@ def create_composite(products_metadata: Iterable[dict], minio_client: Minio, buc
         print("Inserted data in mongo, id: ", result.inserted_id)
 
         # Compute indexes
-        calculate_raw_indexes(_get_id_composite([products_metadata["id"] for products_metadata in products_metadata]))
+        raw_index_calculation_composite.calculate_raw_indexes(_get_id_composite([products_metadata["id"] for products_metadata in products_metadata]))
 
     except (Exception,KeyboardInterrupt) as e:
         print("Removing uncompleted composite from minio")
@@ -1085,12 +1086,13 @@ def mask_polygons_by_tile(polygons: dict, tile: str, kwargs: dict) -> Tuple[np.n
 
 def safe_minio_execute(func: Callable, n_retries: int=100, *args, **kwargs):
     for i in range(n_retries):
+        signal.alarm(250) # 250s for downloading a raster from minio should be more than enough
         try:
             func(*args, **kwargs)
-        except SocketError as e:
-            if e.errno != errno.ECONNRESET:
-                raise
-            print("Connection reset by peer, retrying in one minute...")
+        except Exception as e:
+            print(e)
+            print("Error related with MinIO. Retrying in one minute...")
+            signal.alarm(0)
             time.sleep(60)
             continue
         break
