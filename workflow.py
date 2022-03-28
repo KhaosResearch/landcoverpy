@@ -68,9 +68,10 @@ def workflow(visualization: bool, predict: bool, tiles_to_predict: List[str] = N
     
 
 
-    # Names of the bands that are not taken into account
-    skip_bands = ['TCI','cover-percentage','ndsi','SCL','classifier',"bri","WVP"]
-    no_data_value = {"ndvi":np.nan, "osavi":np.nan, "osavi":np.nan, "ndre":np.nan, "ndyi":np.nan, "moisture":np.nan, "mndwi":np.nan, "evi2":np.nan, "evi":np.nan}
+    # Names of the indexes that are taken into account
+    indexes_used = ["cri1","ri","evi2","mndwi","moisture","ndyi","ndre","ndvi","osavi"]
+    # Name of the sentinel bands that are ignored
+    skip_bands = ["tci"]
     # PCA resulting columns, this should come from somewhere else
     pc_columns = sorted(["slope","aspect","dem","spring_cri1","spring_ri","spring_evi2","spring_mndwi","spring_moisture","spring_ndyi","spring_ndre","spring_ndvi","spring_osavi","spring_AOT","spring_B01","spring_B02","spring_B03","spring_B04","spring_B05","spring_B06","spring_B07","spring_B08","spring_B09","spring_B11","spring_B12","spring_B8A","summer_cri1","summer_ri","summer_evi2","summer_mndwi","summer_moisture","summer_ndyi","summer_ndre","summer_ndvi","summer_osavi","summer_AOT","summer_B01","summer_B02","summer_B03","summer_B04","summer_B05","summer_B06","summer_B07","summer_B08","summer_B09","summer_B11","summer_B12","summer_B8A","autumn_cri1","autumn_ri","autumn_evi2","autumn_mndwi","autumn_moisture","autumn_ndyi","autumn_ndre","autumn_ndvi","autumn_osavi","autumn_AOT","autumn_B01","autumn_B02","autumn_B03","autumn_B04","autumn_B05","autumn_B06","autumn_B07","autumn_B08","autumn_B09","autumn_B11","autumn_B12","autumn_B8A"])
     # Ranges for normalization of each raster
@@ -124,12 +125,10 @@ def workflow(visualization: bool, predict: bool, tiles_to_predict: List[str] = N
                 if predict:
                     crop_mask = np.zeros_like(crop_mask)
 
-                band_no_data_value = no_data_value.get(dem_name,np.nan)
                 band_normalize_range = normalize_range.get(dem_name,None)
                 raster = read_raster(
                                 band_path=dem_path,
                                 rescale=True,
-                                no_data_value=band_no_data_value,
                                 normalize_range=band_normalize_range, 
                                 path_to_disk=str(Path(settings.TMP_DIR,'visualization',f'{dem_name}.tif')),
                         )
@@ -194,10 +193,14 @@ def workflow(visualization: bool, predict: bool, tiles_to_predict: List[str] = N
                 raster_name = get_raster_name_from_path(raster_path)
                 temp_path = Path(temp_product_folder,raster_filename)
 
-                if any(x in raster_name.upper() for x in list(map(lambda y: y.upper(),skip_bands))):
+                # Only keep bands and indexes in indexes_used
+                if (not is_band[i]) and (not any(raster_name.upper() == index_used.upper() for index_used in indexes_used)):
+                    continue
+                # Skip bands in skip_bands
+                if is_band[i] and any(raster_name.upper() == band_skipped.upper() for band_skipped in skip_bands):
                     continue
                 # Read only the first band to avoid duplication of different spatial resolution
-                if raster_name in str(already_read):
+                if any(raster_name.upper() == read_raster.upper() for read_raster in already_read):
                     continue
                 already_read.append(raster_name)
 
@@ -213,7 +216,6 @@ def workflow(visualization: bool, predict: bool, tiles_to_predict: List[str] = N
                 if spatial_resolution == 10:
                     kwargs_10m = kwargs
 
-                band_no_data_value = no_data_value.get(raster_name,0)
                 band_normalize_range = normalize_range.get(raster_name,None)
                 if is_band[i] and (band_normalize_range is None):
                     band_normalize_range = (0,7000)
@@ -223,8 +225,7 @@ def workflow(visualization: bool, predict: bool, tiles_to_predict: List[str] = N
                     path_to_disk = str(Path(settings.TMP_DIR,'visualization',raster_filename))
                 raster = read_raster(
                             band_path=temp_path, 
-                            rescale=True, 
-                            no_data_value=band_no_data_value,
+                            rescale=True,
                             path_to_disk=path_to_disk,
                             normalize_range=band_normalize_range,
                         )
@@ -315,4 +316,4 @@ def workflow(visualization: bool, predict: bool, tiles_to_predict: List[str] = N
 
 
 if __name__ == '__main__':
-    workflow(visualization=False, predict=True, tiles_to_predict=None)
+    workflow(visualization=False, predict=False, tiles_to_predict=None)
