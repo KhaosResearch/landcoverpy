@@ -4,6 +4,7 @@ import joblib
 from os.path import join
 import numpy as np
 from glob import glob
+from tqdm import tqdm
 import pandas as pd
 import rasterio
 from typing import List
@@ -71,7 +72,7 @@ def workflow(visualization: bool, predict: bool, tiles_to_predict: List[str] = N
     # Names of the indexes that are taken into account
     indexes_used = ["cri1","ri","evi2","mndwi","moisture","ndyi","ndre","ndvi","osavi"]
     # Name of the sentinel bands that are ignored
-    skip_bands = ["tci"]
+    skip_bands = ["tci","scl"]
     # PCA resulting columns, this should come from somewhere else
     pc_columns = sorted(["slope","aspect","dem","spring_cri1","spring_ri","spring_evi2","spring_mndwi","spring_moisture","spring_ndyi","spring_ndre","spring_ndvi","spring_osavi","spring_AOT","spring_B01","spring_B02","spring_B03","spring_B04","spring_B05","spring_B06","spring_B07","spring_B08","spring_B09","spring_B11","spring_B12","spring_B8A","summer_cri1","summer_ri","summer_evi2","summer_mndwi","summer_moisture","summer_ndyi","summer_ndre","summer_ndvi","summer_osavi","summer_AOT","summer_B01","summer_B02","summer_B03","summer_B04","summer_B05","summer_B06","summer_B07","summer_B08","summer_B09","summer_B11","summer_B12","summer_B8A","autumn_cri1","autumn_ri","autumn_evi2","autumn_mndwi","autumn_moisture","autumn_ndyi","autumn_ndre","autumn_ndvi","autumn_osavi","autumn_AOT","autumn_B01","autumn_B02","autumn_B03","autumn_B04","autumn_B05","autumn_B06","autumn_B07","autumn_B08","autumn_B09","autumn_B11","autumn_B12","autumn_B8A"])
     # Ranges for normalization of each raster
@@ -89,7 +90,7 @@ def workflow(visualization: bool, predict: bool, tiles_to_predict: List[str] = N
     # Tiles related to the traininig zone
     tiles = polygons_per_tile.keys() 
 
-    for i, tile in enumerate(tiles):
+    for i, tile in tqdm(enumerate(tiles)):
         print(f"Working in tile {tile}, {i}/{len(tiles)}")
         # Mongo query for obtaining valid products
         max_cloud_percentage=20
