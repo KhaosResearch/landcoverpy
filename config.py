@@ -34,8 +34,14 @@ class _Settings(BaseSettings):
     TMP_DIR: str = "/tmp"
     DB_DIR:str = '/data'
 
+    NFS_CLIENT: str = "/"
+    NFS_SERVER: str = "/"
+
+    DASK_CLUSTER_IP: str = '0.0.0.0.0:0000'
+
+
     class Config:
-        env_file = ".env"
+        env_file = "/data/.env"
         file_path = Path(env_file)
         if not file_path.is_file():
             print("⚠️ `.env` not found in current directory")

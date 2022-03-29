@@ -56,13 +56,16 @@ def workflow(client: Client, predict: bool, tiles_to_predict: List[str] = None, 
 
     futures = []
     for tile in tiles:
-        future = client.submit(process_tile, tile, predict, polygons_per_tile[tile], columns_predict)
+        future = client.submit(process_tile, tile, predict, polygons_per_tile[tile], columns_predict, resources={"Memory": 100})
         futures.append(future)
     client.gather(futures)
     
 
 
 def process_tile(tile, predict, polygons_in_tile, columns_predict=None):
+
+    if not Path(settings.TMP_DIR).exists():
+        Path.mkdir(Path(settings.TMP_DIR))
 
     spring_start = datetime(2021, 3, 1)
     spring_end = datetime(2021, 3, 31)
@@ -142,7 +145,7 @@ def process_tile(tile, predict, polygons_in_tile, columns_predict=None):
 
         if len(products_metadata) == 0:
             print(f"Products found in tile {tile} are not valid")
-            break # Next geometry
+            break
         
         elif len(products_metadata) == 1:
             product_metadata = products_metadata[0]
@@ -166,7 +169,7 @@ def process_tile(tile, predict, polygons_in_tile, columns_predict=None):
             tile_df = pd.concat([tile_df, raster_df], axis=1)
 
         (rasters_paths, is_band) = get_product_rasters_paths(product_metadata, minio_client, current_bucket)
-        # In predict phase, use only pca-selected rasters
+
         if predict:
             (rasters_paths, is_band) = filter_rasters_paths_by_pca(rasters_paths, is_band, columns_predict, season)
         temp_product_folder = Path(settings.TMP_DIR, product_name + '.SAFE')
@@ -237,13 +240,17 @@ def process_tile(tile, predict, polygons_in_tile, columns_predict=None):
         raster_df = pd.DataFrame({"latitude": raster_masked})
         tile_df = pd.concat([tile_df, raster_df], axis=1)
         
+        tile_df_name = f"dataset_{tile}.csv"
+        tile_df_path = Path(settings.TMP_DIR, tile_df_name)
+        tile_df.to_csv(str(tile_df_path), index=False)
 
-        tile_df.to_csv(f"./tiles_datasets/dataset_{tile}.csv", index=False)
-
-        if final_df is None:
-            final_df = tile_df
-        else:
-            final_df = pd.concat([final_df, tile_df], axis=0)
+        safe_minio_execute(
+                func = minio_client.fput_object,
+                bucket_name = settings.MINIO_BUCKET_DATASETS,
+                object_name =  f"{settings.MINIO_DATA_FOLDER_NAME}/tiles_datasets/{tile_df_name}",
+                file_path=tile_df_path,
+                content_type="image/tif"
+        )
 
     if predict:
 
@@ -268,7 +275,7 @@ def process_tile(tile, predict, polygons_in_tile, columns_predict=None):
         with rasterio.open(classification_path, "w", **kwargs_10m) as classification_file:
             classification_file.write(encoded_predictions)
         print(f"{classification_name} saved")
-        '''
+
         safe_minio_execute(
                 func = minio_client.fput_object,
                 bucket_name = settings.MINIO_BUCKET_CLASSIFICATIONS,
@@ -276,7 +283,6 @@ def process_tile(tile, predict, polygons_in_tile, columns_predict=None):
                 file_path=classification_path,
                 content_type="image/tif"
         )
-        '''
 
 
 if __name__ == '__main__':
@@ -284,5 +290,13 @@ if __name__ == '__main__':
     # PCA resulting columns, this should come from somewhere else
     pc_columns = sorted(["slope","aspect","dem","spring_cri1","spring_ri","spring_evi2","spring_mndwi","spring_moisture","spring_ndyi","spring_ndre","spring_ndvi","spring_osavi","spring_AOT","spring_B01","spring_B02","spring_B03","spring_B04","spring_B05","spring_B06","spring_B07","spring_B08","spring_B09","spring_B11","spring_B12","spring_B8A","summer_cri1","summer_ri","summer_evi2","summer_mndwi","summer_moisture","summer_ndyi","summer_ndre","summer_ndvi","summer_osavi","summer_AOT","summer_B01","summer_B02","summer_B03","summer_B04","summer_B05","summer_B06","summer_B07","summer_B08","summer_B09","summer_B11","summer_B12","summer_B8A","autumn_cri1","autumn_ri","autumn_evi2","autumn_mndwi","autumn_moisture","autumn_ndyi","autumn_ndre","autumn_ndvi","autumn_osavi","autumn_AOT","autumn_B01","autumn_B02","autumn_B03","autumn_B04","autumn_B05","autumn_B06","autumn_B07","autumn_B08","autumn_B09","autumn_B11","autumn_B12","autumn_B8A"])
     
-    client = Client(processes=False)
-    workflow(client=client, predict=True, tiles_to_predict=None, columns_predict=pc_columns)
+    with Client(address=settings.DASK_CLUSTER_IP) as client:
+        client.wait_for_workers(2)
+        client.upload_file("./aster.py")
+        client.upload_file("./config.py")
+        client.upload_file("./pca_and_training.py")
+        client.upload_file("./rasterpoint.py")
+        client.upload_file("./raw_index_calculation_composite.py")
+        client.upload_file("./utils.py")
+        client.upload_file("./visualize_confusion_matrix.py")
+        workflow(client=client, predict=False, tiles_to_predict=None, columns_predict=pc_columns)
