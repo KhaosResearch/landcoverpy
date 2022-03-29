@@ -1045,12 +1045,12 @@ def label_neighbours(height: int, width: int, row: int, column:int , coordinates
 
 
 
-def mask_polygons_by_tile(polygons: dict, tile: str, kwargs: dict) -> Tuple[np.ndarray, np.ndarray]:
+def mask_polygons_by_tile(polygons_in_tile: dict, kwargs: dict) -> Tuple[np.ndarray, np.ndarray]:
     ''''
     Label all the pixels in a dataset from points databases for a given tile.
 
     Parameters:
-        polygons (dict) : Dictionary of points to label.
+        polygons_in_tile (dict) : Dictionary of points to label.
         tile (str) : Name of the tile to label.
 
     Returns:
@@ -1065,11 +1065,11 @@ def mask_polygons_by_tile(polygons: dict, tile: str, kwargs: dict) -> Tuple[np.n
     label_lon_lat = np.zeros((kwargs['height'], kwargs['width'], 3), dtype=object)
 
     #Label all the pixels in points database
-    for geometry_id in range(len(polygons[tile])):
+    for geometry_id in range(len(polygons_in_tile)):
         #Get point and label
-        geometry_raw = polygons[tile][geometry_id]["geometry"]["coordinates"]
+        geometry_raw = polygons_in_tile[geometry_id]["geometry"]["coordinates"]
         geometry = Point(geometry_raw[0], geometry_raw[1])
-        label = polygons[tile][geometry_id]["label"]
+        label = polygons_in_tile[geometry_id]["label"]
 
         #Transform point projection to original raster pojection
         project = pyproj.Transformer.from_crs(pyproj.CRS.from_epsg(4326), kwargs['crs'], always_xy=True).transform
