@@ -38,3 +38,5 @@ auxiliar_scripts/
 # Rasters
 *.tif
 *.jp2
+
+*.egg-info
