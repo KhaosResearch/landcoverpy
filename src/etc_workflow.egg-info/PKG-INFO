@@ -1,0 +1,16 @@
+Metadata-Version: 2.1
+Name: etc-workflow
+Version: 1.0.0
+Summary: A workflow related with remote sensing data and land cover.
+Home-page: https://bitbucket.org/khaosresearchgroup/etc-scripts/src
+Author: Antonio Manuel Burgueño Romero
+Author-email: ambrbr[at]uma.es
+License: UNKNOWN
+Project-URL: Bug Tracker, https://bitbucket.org/khaosresearchgroup/etc-scripts/src
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: Development Status:: 3 - Alpha
+Description-Content-Type: text/markdown
+
+The package greensenti is available in the Khaos (private) PyPi repo. 
+

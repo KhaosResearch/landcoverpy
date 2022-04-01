@@ -2,8 +2,9 @@ from pathlib import Path
 
 from pydantic import BaseSettings
 
+
 class _Settings(BaseSettings):
-    # mongo settings
+    # Mongo-related settings
     MONGO_HOST: str = "0.0.0.0"
     MONGO_PORT: int = 27017
     MONGO_USERNAME: str = "user"
@@ -12,7 +13,7 @@ class _Settings(BaseSettings):
     MONGO_PRODUCTS_COLLECTION: str = "test"
     MONGO_COMPOSITES_COLLECTION: str = "test"
 
-    # DFS
+    # Minio-related settings
     MINIO_HOST: str = None
     MINIO_PORT: int = 9000
     MINIO_BUCKET_NAME_PRODUCTS: str = None
@@ -28,20 +29,20 @@ class _Settings(BaseSettings):
 
     # Sentinel download API
     SENTINEL_HOST: str = "https://scihub.copernicus.eu/dhus"
-    SENTINEL_USERNAME: str = ''
-    SENTINEL_PASSWORD: str = ''
+    SENTINEL_USERNAME: str = ""
+    SENTINEL_PASSWORD: str = ""
 
+    # Temporal directory
     TMP_DIR: str = "/tmp"
-    DB_DIR:str = '/data'
 
-    NFS_CLIENT: str = "/"
-    NFS_SERVER: str = "/"
+    # Directory containing validated datasets (.kmz or .geojson)
+    DB_DIR: str = "/data"
 
-    DASK_CLUSTER_IP: str = '0.0.0.0.0:0000'
-
+    # For running in a distributed environment
+    DASK_CLUSTER_IP: str = "0.0.0.0.0:0000"
 
     class Config:
-        env_file = "/data/.env"
+        env_file = ".env"
         file_path = Path(env_file)
         if not file_path.is_file():
             print("⚠️ `.env` not found in current directory")

@@ -1,36 +1,54 @@
 import shutil
 from pathlib import Path
-from dotenv import load_dotenv
+
 from greensenti.cli.compute_index import *
 from minio import Minio
 from pymongo import MongoClient
-from config import settings
-import utils
-load_dotenv()
+
+from etc_workflow import utils
+from etc_workflow.config import settings
 
 
+def _get_indexes_dict():
+    indexes_bands = dict(
+        moisture={"b8a": "B8A_20m", "b11": "B11_20m"},
+        ndvi={"b4": "B04_10m", "b8": "B08_10m"},
+        ndwi={"b3": "B03_10m", "b8": "B08_10m"},
+        ndsi={"b3": "B03_20m", "b11": "B11_20m"},
+        evi={"b2": "B02_10m", "b4": "B04_10m", "b8": "B08_10m"},
+        coverpercentage={"b3": "B03_20m", "b4": "B04_20m", "b11": "B11_20m"},
+        osavi={"b4": "B04_10m", "b8": "B08_10m"},
+        evi2={"b4": "B04_10m", "b8": "B08_10m"},
+        ndre={"b5": "B05_60m", "b9": "B09_60m"},
+        ndyi={"b2": "B02_10m", "b3": "B03_10m"},
+        mndwi={"b3": "B03_20m", "b11": "B11_20m"},
+        bri={"b3": "B03_10m", "b5": "B05_20m", "b8": "B08_10m"},
+        tci={"b2": "B02_10m", "b3": "B03_10m", "b4": "B04_10m"},
+        ri={"b3": "B03_10m", "b4": "B04_10m"},
+        cri1={"b2": "B02_10m", "b3": "B03_10m"},
+    )
 
-indexes_bands = dict(
-    moisture={"b8a": "B8A_20m", "b11": "B11_20m"},
-    ndvi={"b4": "B04_10m", "b8": "B08_10m"},
-    ndwi={"b3": "B03_10m", "b8": "B08_10m"},
-    ndsi={"b3": "B03_20m", "b11": "B11_20m"},
-    evi={"b2": "B02_10m", "b4": "B04_10m", "b8": "B08_10m"},
-    coverpercentage={"b3": "B03_20m", "b4": "B04_20m", "b11": "B11_20m"},
-    osavi={"b4": "B04_10m", "b8": "B08_10m"},
-    evi2={"b4": "B04_10m", "b8": "B08_10m"},
-    ndre={"b5": "B05_60m", "b9": "B09_60m"},
-    ndyi={"b2": "B02_10m", "b3": "B03_10m"},
-    mndwi={"b3": "B03_20m", "b11": "B11_20m"},
-    bri={"b3": "B03_10m", "b5": "B05_20m", "b8": "B08_10m"},
-    tci={"b2": "B02_10m", "b3": "B03_10m", "b4": "B04_10m"},
-    ri={"b3": "B03_10m", "b4": "B04_10m"},
-    cri1={"b2": "B02_10m", "b3": "B03_10m"},
-)
+    return indexes_bands
 
-def calculate_raw_indexes(uid:str):
 
-    index = ["Moisture", "NDVI", "NDWI", "NDSI", "EVI", "OSAVI", "EVI2", "NDRE", "NDYI", "MNDWI", "BRI", "TCI", "CRI1", "RI"]
+def calculate_raw_indexes(uid: str):
+
+    index = [
+        "Moisture",
+        "NDVI",
+        "NDWI",
+        "NDSI",
+        "EVI",
+        "OSAVI",
+        "EVI2",
+        "NDRE",
+        "NDYI",
+        "MNDWI",
+        "BRI",
+        "TCI",
+        "CRI1",
+        "RI",
+    ]
 
     minio_bucket_name = settings.MINIO_BUCKET_NAME_COMPOSITES
 
@@ -49,7 +67,7 @@ def calculate_raw_indexes(uid:str):
     # Find if the file is already unzipped in the temporary folder
     temp_dir = str(settings.TMP_DIR)
     title = product_data["title"]
-    unzip_folder = temp_dir + '/' + title + ".SAFE"
+    unzip_folder = temp_dir + "/" + title + ".SAFE"
 
     # Declare function for image search
     def find_product_image(pattern: str) -> Path:
@@ -58,14 +76,7 @@ def calculate_raw_indexes(uid:str):
         :param pattern: A pattern to match.
         :return: A Path object pointing to the first found image.
         """
-        return (
-            [
-                f
-                for f in Path(unzip_folder).glob(
-                    "*" + pattern + ".tif"
-                )
-            ]
-        )[0]
+        return ([f for f in Path(unzip_folder).glob("*" + pattern + ".tif")])[0]
 
     # Connect with minio
     client = Minio(
@@ -83,7 +94,7 @@ def calculate_raw_indexes(uid:str):
     bands_dir = title + "/raw/"
 
     def get_index(index_name, bands_dict):
-        
+
         output = Path(indexes_folder + "/" + index_name + ".tif")
         try:
             if index_name == "moisture":
@@ -171,36 +182,38 @@ def calculate_raw_indexes(uid:str):
                 )
             elif index_name == "cri1":
                 index_value = cri1(
-                   b2=find_product_image(bands_dict["b2"]),
-                   b3=find_product_image(bands_dict["b3"]),
-                   output=output,
+                    b2=find_product_image(bands_dict["b2"]),
+                    b3=find_product_image(bands_dict["b3"]),
+                    output=output,
                 )
             elif index_name == "tci":
                 index_value = true_color(
                     b=find_product_image(bands_dict["b2"]),
                     g=find_product_image(bands_dict["b3"]),
                     r=find_product_image(bands_dict["b4"]),
-                    output=output
+                    output=output,
                 )
 
             # Since greensenti 0.11 some indexes return full bands instead of values
-            index_value = np.nanmean(index_value) if index_value is not None and not isinstance(index_value, float) else index_value
+            index_value = (
+                np.nanmean(index_value)
+                if index_value is not None and not isinstance(index_value, float)
+                else index_value
+            )
         except Exception as e:
             raise e
 
         metadata_path = "minio://" + minio_bucket_name + "/"
-        tif_minio_path = (
-            title + "/indexes/" + title + "/" + index_name + ".tif"
-        )
+        tif_minio_path = title + "/indexes/" + title + "/" + index_name + ".tif"
         tif_meta_minio_path = metadata_path + tif_minio_path
         band_meta_minio_path = "minio://" + minio_bucket_name + "/" + bands_dir
 
-        utils.safe_minio_execute(
-            func = client.fput_object,
-            bucket_name = minio_bucket_name,
-            object_name = tif_minio_path,
-            file_path = indexes_folder + "/" + index_name + ".tif",
-            content_type="image/tif"
+        utils._safe_minio_execute(
+            func=client.fput_object,
+            bucket_name=minio_bucket_name,
+            object_name=tif_minio_path,
+            file_path=indexes_folder + "/" + index_name + ".tif",
+            content_type="image/tif",
         )
 
         band = dict()
@@ -218,25 +231,31 @@ def calculate_raw_indexes(uid:str):
 
         return index_dict
 
+    indexes_bands = _get_indexes_dict()
+
     # Create list of indexes
     l_indexes = []
 
     for idx in index:
         index_name = idx.lower()
 
-        dict_key = index_name.replace("-","")
+        dict_key = index_name.replace("-", "")
 
         l_indexes.append(
-            get_index(
-                index_name=index_name,
-                bands_dict=indexes_bands[dict_key]
-            )
+            get_index(index_name=index_name, bands_dict=indexes_bands[dict_key])
         )
     for index in l_indexes:
         if index["mask"] is None:
-            mongo_col.update_one({ "id": uid }, { "$pull":  {'indexes':{ "$and": [{"mask": None},{"name":index["name"]}]}}})
+            mongo_col.update_one(
+                {"id": uid},
+                {
+                    "$pull": {
+                        "indexes": {"$and": [{"mask": None}, {"name": index["name"]}]}
+                    }
+                },
+            )
     mongo_col.update_one({"id": uid}, {"$push": {"indexes": {"$each": l_indexes}}})
-    
+
     # Remove product from local folder
     try:
         print(f"Removing folder {str(indexes_folder)} recursively")
