@@ -56,10 +56,8 @@ def workflow(
             polygons_per_tile = {}
             for tile_to_predict in tiles_to_predict:
                 polygons_per_tile[tile_to_predict] = []
-            tiles = polygons_per_tile.keys()
-                
-        else:
-            tiles = _check_tiles_unpredicted_in_training(list(polygons_per_tile.keys()))
+            
+        tiles = _check_tiles_unpredicted_in_training(list(polygons_per_tile.keys()))
             
     else:
         print("Creating dataset from tiles")
