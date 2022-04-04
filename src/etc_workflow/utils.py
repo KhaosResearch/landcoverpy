@@ -9,6 +9,7 @@ from hashlib import sha256
 from itertools import compress
 from logging import exception
 from pathlib import Path
+from os.path import join
 from typing import Callable, Iterable, List, Tuple
 from zipfile import ZipFile
 
@@ -1052,7 +1053,7 @@ def _get_corners_raster(
     """
     final_crs = pyproj.CRS("epsg:4326")
 
-    band = _read_raster(band_path, no_data_value=np.nan)
+    band = _read_raster(band_path)
     kwargs = _get_kwargs_raster(band_path)
     init_crs = kwargs["crs"]
 
@@ -1143,7 +1144,7 @@ def _crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
 
     _, sentinel_polygon = _sentinel_raster_to_polygon(sentinel_path)
     cropped_raster = _read_raster(
-        raster_path, mask_geometry=sentinel_polygon, rescale=False, no_data_value=np.nan
+        raster_path, mask_geometry=sentinel_polygon, rescale=False
     )
     cropped_raster_kwargs = raster_kwargs.copy()
     cropped_raster_kwargs["transform"] = rasterio.Affine(
@@ -1338,3 +1339,22 @@ def _safe_minio_execute(func: Callable, n_retries: int = 100, *args, **kwargs):
             continue
         break
     signal.alarm(0)
+
+def _check_tiles_unpredicted_in_training(tiles_in_training: List[str]):
+    
+    minio = _get_minio()
+
+    classification_raster_cursor = minio.list_objects(
+        settings.MINIO_BUCKET_CLASSIFICATIONS, 
+        prefix=join(settings.MINIO_DATA_FOLDER_NAME,"")
+    )
+
+    predicted_tiles = []
+    for classification_raster in classification_raster_cursor:
+        classification_raster_cursor_path = classification_raster.object_name
+        predicted_tile = classification_raster_cursor_path[-9:-4] # ...classification_99XXX.tif
+        predicted_tiles.append(predicted_tile)
+
+    unpredicted_tiles = list(np.setdiff1d(tiles_in_training, predicted_tiles))
+
+    return unpredicted_tiles

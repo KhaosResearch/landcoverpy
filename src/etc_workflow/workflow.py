@@ -4,6 +4,7 @@ from os.path import join
 from pathlib import Path
 from shutil import rmtree
 from typing import List
+from random import shuffle
 
 import joblib
 import numpy as np
@@ -14,6 +15,7 @@ from distributed import Client
 from etc_workflow.aster import get_dem_from_tile
 from etc_workflow.config import settings
 from etc_workflow.utils import (
+    _check_tiles_unpredicted_in_training,
     _connect_mongo_composites_collection,
     _connect_mongo_products_collection,
     _create_composite,
@@ -55,14 +57,19 @@ def workflow(
             polygons_per_tile = {}
             for tile_to_predict in tiles_to_predict:
                 polygons_per_tile[tile_to_predict] = []
+            tiles = polygons_per_tile.keys()
+                
+        else:
+            tiles = _check_tiles_unpredicted_in_training(list(polygons_per_tile.keys()))
+            
     else:
         print("Creating dataset from tiles")
-
-    # Tiles related to the traininig zone
-    tiles = polygons_per_tile.keys()
+        # Tiles related to the traininig zone
+        tiles = polygons_per_tile.keys()
 
     if client is not None:
         futures = []
+        shuffle(tiles)
         for tile in tiles:
             future = client.submit(
                 _process_tile,
