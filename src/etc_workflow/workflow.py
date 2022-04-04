@@ -4,7 +4,6 @@ from os.path import join
 from pathlib import Path
 from shutil import rmtree
 from typing import List
-from random import shuffle
 
 import joblib
 import numpy as np
@@ -69,7 +68,6 @@ def workflow(
 
     if client is not None:
         futures = []
-        shuffle(tiles)
         for tile in tiles:
             future = client.submit(
                 _process_tile,
