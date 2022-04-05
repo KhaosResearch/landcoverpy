@@ -7,6 +7,7 @@ databases
 
 # Environments
 .env
+dist
 
 # Cache
 __pycache__/
@@ -33,7 +34,10 @@ auxiliar_scripts/
 
 # Images
 *.png
+images/
 
 # Rasters
 *.tif
 *.jp2
+
+*.egg-info

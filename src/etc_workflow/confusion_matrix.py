@@ -1,14 +1,14 @@
-from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sn
 from matplotlib.collections import QuadMesh
+from matplotlib.colors import LinearSegmentedColormap
 from sklearn.metrics import confusion_matrix
 
 
-def get_new_fig(fn, figsize=[9, 9]):
+def _get_new_fig(fn, figsize=[9, 9]):
     """Init graphics"""
     fig1 = plt.figure(fn, figsize)
     ax1 = fig1.gca()  # Get Current Axis
@@ -16,7 +16,7 @@ def get_new_fig(fn, figsize=[9, 9]):
     return fig1, ax1
 
 
-def write_cells(
+def _write_cells(
     array_df, lin, col, oText, facecolors, posi, fz, fmt, show_null_values=0
 ):
     """
@@ -116,7 +116,7 @@ def write_cells(
     return text_add, text_del
 
 
-def print_matrix(
+def _compute_matrix(
     df_cm,
     annot=True,
     cmap="Oranges",
@@ -127,9 +127,10 @@ def print_matrix(
     figsize=[8, 8],
     show_null_values=0,
     pred_val_axis="y",
+    out_image_path="./confusion_matrix.png",
 ):
     """
-    print confusion matrix
+    computes and saves the confusion matrix
     params:
       df_cm          dataframe (pandas) without totals
       annot          print text in each cell
@@ -139,6 +140,8 @@ def print_matrix(
       pred_val_axis  where to show the prediction values (x or y axis)
                       'col' or 'x': show predicted values in columns (x axis) instead lines
                       'lin' or 'y': show predicted values in lines   (y axis)
+      out_image_path path where the image will be saved
+
     """
     if pred_val_axis in ("col", "x"):
         xlbl = "Predicted"
@@ -159,8 +162,7 @@ def print_matrix(
     sum_col.append(np.sum(sum_lin))
     df_cm.loc["sum_col"] = sum_col
 
-    
-    fig, ax1 = get_new_fig("Conf matrix default", figsize)
+    fig, ax1 = _get_new_fig("Conf matrix default", figsize)
 
     ax = sn.heatmap(
         df_cm,
@@ -202,7 +204,7 @@ def print_matrix(
         posi += 1
 
         # set text
-        txt_res = write_cells(
+        txt_res = _write_cells(
             array_df, lin, col, t, facecolors, posi, fz, fmt, show_null_values
         )
 
@@ -221,22 +223,19 @@ def print_matrix(
     ax.set_xlabel(xlbl)
     ax.set_ylabel(ylbl)
     plt.tight_layout()  # set layout slim
-    plt.show()
-    plt.savefig("confussion_matrix.png")
+    plt.savefig(out_image_path)
 
-def get_cmap():
-    colors = [(1, 1, 1), (1, 1, 1), (1, 1, 1)] 
-    cmap_name = 'cmap_white'
+
+def _get_cmap():
+    colors = [(1, 1, 1), (1, 1, 1), (1, 1, 1)]
+    cmap_name = "cmap_white"
     cmap = LinearSegmentedColormap.from_list(cmap_name, colors, N=3)
     return cmap
 
 
-def visualize_confusion_matrix(y_true, y_test, labels):
+def compute_confusion_matrix(y_true, y_test, labels, out_image_path):
     df_cm = pd.DataFrame(confusion_matrix(y_true, y_test))
     df_cm.columns = labels
     df_cm.index = labels
 
-    print_matrix(df_cm, cmap=get_cmap())
-
-
-
+    _compute_matrix(df_cm, cmap=_get_cmap(), out_image_path=out_image_path)
