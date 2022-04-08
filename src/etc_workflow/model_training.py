@@ -10,9 +10,17 @@ from etc_workflow.config import settings
 from etc_workflow.confusion_matrix import compute_confusion_matrix
 from etc_workflow.utils import _get_minio, _safe_minio_execute
 
+from sklearn.feature_selection import RFE
+from sklearn.linear_model import LogisticRegression
 
-def _feature_reduction(df: pd.DataFrame):
-    """TODO feature reduction method. Receives the training dataset and returns a set of variables."""
+
+def _feature_reduction(df_x: pd.DataFrame, df_y: pd.DataFrame):
+    """Feature reduction method. Receives the training dataset and returns a set of variables."""
+
+    model = LogisticRegression(penalty="elasticnet", max_iter=1000, solver="saga", n_jobs=-1, l1_ratio=0.5)
+    rfe = RFE(estimator=model, n_features_to_select=30)
+    fit = rfe.fit(df_x, df_y)
+
     used_columns = sorted(
         [
             "slope",
@@ -86,6 +94,9 @@ def _feature_reduction(df: pd.DataFrame):
             "autumn_B8A",
         ]
     )
+
+    used_columns = df_x.columns[fit.support_].tolist()
+
     return used_columns
 
 
@@ -121,7 +132,8 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
         axis=1,
     )
 
-    used_columns = _feature_reduction(x_train_data)
+    used_columns = _feature_reduction(x_train_data, y_train_data)
+    print(used_columns)
 
     reduced_x_train_data = train_df[used_columns]
     X_train, X_test, y_train, y_test = train_test_split(
