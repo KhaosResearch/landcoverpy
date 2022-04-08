@@ -1,4 +1,5 @@
 import joblib
+import json
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -10,7 +11,6 @@ from etc_workflow.confusion_matrix import compute_confusion_matrix
 from etc_workflow.utils import _get_minio, _safe_minio_execute
 
 
-# For the future, save used columns to a model_metadata.json file
 def _feature_reduction(df: pd.DataFrame):
     """TODO feature reduction method. Receives the training dataset and returns a set of variables."""
     used_columns = sorted(
@@ -121,9 +121,9 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
         axis=1,
     )
 
-    pc_columns = _feature_reduction(x_train_data)
+    used_columns = _feature_reduction(x_train_data)
 
-    reduced_x_train_data = train_df[pc_columns]
+    reduced_x_train_data = train_df[used_columns]
     X_train, X_test, y_train, y_test = train_test_split(
         reduced_x_train_data, y_train_data, test_size=0.15
     )
@@ -149,13 +149,31 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
     )
 
     model_name = "model.joblib"
-    joblib.dump(clf, model_name)
+    model_path = join(settings.TMP_DIR, model_name)
+    joblib.dump(clf, model_path)
 
     # Save model to minio
     _safe_minio_execute(
         func=minio_client.fput_object,
         bucket_name=settings.MINIO_BUCKET_MODELS,
         object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{model_name}",
-        file_path=model_name,
+        file_path=model_path,
         content_type="mlmodel/randomforest",
     )
+
+    model_metadata = {"model": str(type(clf)), "n_jobs": n_jobs, "used_columns": used_columns}
+    model_metadata_name = 'metadata.json'
+    model_metadata_path = join(settings.TMP_DIR, model_metadata_name)
+
+    with open(model_metadata_path, 'w') as f:
+        json.dump(model_metadata, f)
+
+    _safe_minio_execute(
+        func=minio_client.fput_object,
+        bucket_name=settings.MINIO_BUCKET_MODELS,
+        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{model_metadata_name}",
+        file_path=model_metadata_path,
+        content_type="text/json",
+    )
+
+train_model("dataset_postprocessed.csv", n_jobs=1)

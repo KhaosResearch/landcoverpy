@@ -978,22 +978,22 @@ def _convert_3D_2D(geometry):
 
 
 def _filter_rasters_paths_by_features_used(
-    rasters_paths: List[str], is_band: List[bool], pc_columns: List[str], season: str
+    rasters_paths: List[str], is_band: List[bool], used_columns: List[str], season: str
 ) -> Tuple[Iterable[str], Iterable[bool]]:
     """
     Filter a list of rasters paths by a list of raster names (obtained in feature reduction).
     """
     pc_raster_paths = []
-    season_pc_columns = []
+    season_used_columns = []
     already_read = []
     is_band_pca = []
-    for pc_column in pc_columns:
+    for pc_column in used_columns:
         if season in pc_column:
-            season_pc_columns.append(pc_column.split("_")[-1])
+            season_used_columns.append(pc_column.split("_")[-1])
     for i, raster_path in enumerate(rasters_paths):
         raster_name = _get_raster_name_from_path(raster_path)
         raster_name = raster_name.split("_")[-1]
-        if any(x == raster_name for x in season_pc_columns) and (
+        if any(x == raster_name for x in season_used_columns) and (
             raster_name not in already_read
         ):
             pc_raster_paths.append(raster_path)
