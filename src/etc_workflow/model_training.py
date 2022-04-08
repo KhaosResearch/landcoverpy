@@ -95,7 +95,7 @@ def _feature_reduction(df_x: pd.DataFrame, df_y: pd.DataFrame):
         ]
     )
 
-    used_columns = df_x.columns[fit.support_].tolist()
+    used_columns = sorted(df_x.columns[fit.support_].tolist())
 
     return used_columns
 

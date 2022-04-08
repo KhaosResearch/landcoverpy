@@ -74,7 +74,7 @@ def workflow(
         with open(metadata_filepath, "r") as metadata_file:
             metadata = json.load(metadata_file)
 
-        used_columns = metadata["used_columns"]
+        used_columns = sorted(metadata["used_columns"])
             
     else:
         print("Creating dataset from tiles")
