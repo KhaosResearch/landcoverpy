@@ -10,82 +10,23 @@ from etc_workflow.config import settings
 from etc_workflow.confusion_matrix import compute_confusion_matrix
 from etc_workflow.utils import _get_minio, _safe_minio_execute
 
+from sklearn.feature_selection import RFE
+from sklearn.linear_model import LogisticRegression
 
-def _feature_reduction(df: pd.DataFrame):
-    """TODO feature reduction method. Receives the training dataset and returns a set of variables."""
-    used_columns = sorted(
-        [
-            "slope",
-            "aspect",
-            "dem",
-            "spring_cri1",
-            "spring_ri",
-            "spring_evi2",
-            "spring_mndwi",
-            "spring_moisture",
-            "spring_ndyi",
-            "spring_ndre",
-            "spring_ndvi",
-            "spring_osavi",
-            "spring_AOT",
-            "spring_B01",
-            "spring_B02",
-            "spring_B03",
-            "spring_B04",
-            "spring_B05",
-            "spring_B06",
-            "spring_B07",
-            "spring_B08",
-            "spring_B09",
-            "spring_B11",
-            "spring_B12",
-            "spring_B8A",
-            "summer_cri1",
-            "summer_ri",
-            "summer_evi2",
-            "summer_mndwi",
-            "summer_moisture",
-            "summer_ndyi",
-            "summer_ndre",
-            "summer_ndvi",
-            "summer_osavi",
-            "summer_AOT",
-            "summer_B01",
-            "summer_B02",
-            "summer_B03",
-            "summer_B04",
-            "summer_B05",
-            "summer_B06",
-            "summer_B07",
-            "summer_B08",
-            "summer_B09",
-            "summer_B11",
-            "summer_B12",
-            "summer_B8A",
-            "autumn_cri1",
-            "autumn_ri",
-            "autumn_evi2",
-            "autumn_mndwi",
-            "autumn_moisture",
-            "autumn_ndyi",
-            "autumn_ndre",
-            "autumn_ndvi",
-            "autumn_osavi",
-            "autumn_AOT",
-            "autumn_B01",
-            "autumn_B02",
-            "autumn_B03",
-            "autumn_B04",
-            "autumn_B05",
-            "autumn_B06",
-            "autumn_B07",
-            "autumn_B08",
-            "autumn_B09",
-            "autumn_B11",
-            "autumn_B12",
-            "autumn_B8A",
-        ]
-    )
+
+def _feature_reduction(df_x: pd.DataFrame, df_y: pd.DataFrame, percentage_columns: int=100):
+    """Feature reduction method. Receives the training dataset and returns a set of variables."""
+
+    if percentage_columns < 100: 
+        n_columns = len(df_x.columns.tolist())
+        n_features = int(n_columns * percentage_columns / 100)
+        model = LogisticRegression(penalty="elasticnet", max_iter=10000, solver="saga", n_jobs=-1, l1_ratio=0.5)
+        rfe = RFE(estimator=model, n_features_to_select=n_features)
+        fit = rfe.fit(df_x, df_y)
+        used_columns = df_x.columns[fit.support_].tolist()
+    else:
+        used_columns = df_x.columns.tolist()
+
     return used_columns
 
 
@@ -121,7 +62,7 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
         axis=1,
     )
 
-    used_columns = _feature_reduction(x_train_data)
+    used_columns = _feature_reduction(x_train_data, y_train_data)
 
     reduced_x_train_data = train_df[used_columns]
     X_train, X_test, y_train, y_test = train_test_split(
@@ -130,6 +71,8 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
 
     # Train model
     clf = RandomForestClassifier(n_jobs=n_jobs)
+    X_train = X_train.reindex(columns=used_columns)
+    print(X_train)
     clf.fit(X_train, y_train)
     y_true = clf.predict(X_test)
 

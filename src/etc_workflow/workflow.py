@@ -414,6 +414,7 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
         predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
         nodata_rows = np.isnan(predict_df).any(axis=1)
         predict_df.fillna(0, inplace=True)
+        predict_df = predict_df.reindex(columns=used_columns)
         predictions = clf.predict(predict_df)
         predictions[nodata_rows] = "nodata"
         predictions = np.reshape(
@@ -457,9 +458,10 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
             file_path=classification_path,
             content_type="image/tif",
         )
-
+'''
     for path in Path(settings.TMP_DIR).glob("**/*"):
         if path.is_file():
             path.unlink()
         elif path.is_dir():
             rmtree(path)
+'''
