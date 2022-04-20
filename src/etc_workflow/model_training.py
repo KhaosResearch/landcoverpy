@@ -14,14 +14,16 @@ from sklearn.feature_selection import RFE
 from sklearn.linear_model import LogisticRegression
 
 
-def _feature_reduction(df_x: pd.DataFrame, df_y: pd.DataFrame):
+def _feature_reduction(df_x: pd.DataFrame, df_y: pd.DataFrame, percentage_columns: int=100):
     """Feature reduction method. Receives the training dataset and returns a set of variables."""
 
-    model = LogisticRegression(penalty="elasticnet", max_iter=10000, solver="saga", n_jobs=-1, l1_ratio=0.5)
-    rfe = RFE(estimator=model, n_features_to_select=30)
-    fit = rfe.fit(df_x, df_y)
-
-    used_columns = df_x.columns[fit.support_].tolist()
+    if percentage_columns < 100: 
+        model = LogisticRegression(penalty="elasticnet", max_iter=10000, solver="saga", n_jobs=-1, l1_ratio=0.5)
+        rfe = RFE(estimator=model, n_features_to_select=30)
+        fit = rfe.fit(df_x, df_y)
+        used_columns = df_x.columns[fit.support_].tolist()
+    else:
+        used_columns = df_x.columns.tolist()
 
     return used_columns
 
