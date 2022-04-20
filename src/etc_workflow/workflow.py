@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from glob import glob
 from os.path import join
@@ -35,15 +36,11 @@ from etc_workflow.utils import (
 )
 
 
-def workflow(
-    predict: bool,
-    client: Client = None,
-    tiles_to_predict: List[str] = None,
-    columns_predict: List[str] = None,
-):
+def workflow(predict: bool, client: Client = None, tiles_to_predict: List[str] = None):
+
+    minio = _get_minio()
 
     # Iterate over a set of geojson/databases (the databases may not be equal)
-
     geojson_files = []
     for data_class in glob(join(settings.DB_DIR, "*.kmz")):
         print(f"Working with database {data_class}")
@@ -56,13 +53,32 @@ def workflow(
             polygons_per_tile = {}
             for tile_to_predict in tiles_to_predict:
                 polygons_per_tile[tile_to_predict] = []
-            
+
         tiles = _check_tiles_unpredicted_in_training(list(polygons_per_tile.keys()))
-            
+
+        # For predictions, read the rasters used in "metadata.json".
+        metadata_filename = "metadata.json"
+        metadata_filepath = join(settings.TMP_DIR, metadata_filename)
+
+        _safe_minio_execute(
+            func=minio.fget_object,
+            bucket_name=settings.MINIO_BUCKET_MODELS,
+            object_name=join(settings.MINIO_DATA_FOLDER_NAME, metadata_filename),
+            file_path=metadata_filepath,
+        )
+
+        with open(metadata_filepath, "r") as metadata_file:
+            metadata = json.load(metadata_file)
+
+        used_columns = metadata["used_columns"]
+
     else:
         print("Creating dataset from tiles")
         # Tiles related to the traininig zone
         tiles = polygons_per_tile.keys()
+
+        # In training, read all rasters available
+        used_columns = None
 
     if client is not None:
         futures = []
@@ -72,14 +88,14 @@ def workflow(
                 tile,
                 predict,
                 polygons_per_tile[tile],
-                columns_predict,
+                used_columns,
                 resources={"Memory": 100},
             )
             futures.append(future)
         client.gather(futures)
     else:
         for tile in tiles:
-            _process_tile(tile, predict, polygons_per_tile[tile], columns_predict)
+            _process_tile(tile, predict, polygons_per_tile[tile], used_columns)
 
     if not predict:
         # Merge all tiles datasets into a big dataset.csv, then upload it to minio
@@ -101,7 +117,7 @@ def workflow(
         for tile_dataset_minio_object in tiles_datasets_minio_cursor:
 
             tile_dataset_minio_path = tile_dataset_minio_object.object_name
-            
+
             _safe_minio_execute(
                 func=minio.fget_object,
                 bucket_name=settings.MINIO_BUCKET_DATASETS,
@@ -128,7 +144,7 @@ def workflow(
         )
 
 
-def _process_tile(tile, predict, polygons_in_tile, columns_predict=None):
+def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
 
     if not Path(settings.TMP_DIR).exists():
         Path.mkdir(Path(settings.TMP_DIR))
@@ -197,7 +213,7 @@ def _process_tile(tile, predict, polygons_in_tile, columns_predict=None):
     ]
     for dem_name in dems_raster_names:
         # Add dem and aspect data
-        if (not predict) or (predict and dem_name in columns_predict):
+        if (not predict) or (predict and dem_name in used_columns):
             dem_path = get_dem_from_tile(
                 tile, mongo_products_collection, minio_client, dem_name
             )
@@ -282,7 +298,7 @@ def _process_tile(tile, predict, polygons_in_tile, columns_predict=None):
 
         if predict:
             (rasters_paths, is_band) = _filter_rasters_paths_by_features_used(
-                rasters_paths, is_band, columns_predict, season
+                rasters_paths, is_band, used_columns, season
             )
         temp_product_folder = Path(settings.TMP_DIR, product_name + ".SAFE")
         if not temp_product_folder.exists():
@@ -394,6 +410,7 @@ def _process_tile(tile, predict, polygons_in_tile, columns_predict=None):
         predict_df = predict_df.replace([np.inf, -np.inf], np.nan)
         nodata_rows = np.isnan(predict_df).any(axis=1)
         predict_df.fillna(0, inplace=True)
+        predict_df = predict_df.reindex(columns=used_columns)
         predictions = clf.predict(predict_df)
         predictions[nodata_rows] = "nodata"
         predictions = np.reshape(
@@ -438,8 +455,11 @@ def _process_tile(tile, predict, polygons_in_tile, columns_predict=None):
             content_type="image/tif",
         )
 
+
+"""
     for path in Path(settings.TMP_DIR).glob("**/*"):
         if path.is_file():
             path.unlink()
         elif path.is_dir():
             rmtree(path)
+"""

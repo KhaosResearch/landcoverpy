@@ -23,6 +23,8 @@ class _Settings(BaseSettings):
     MINIO_BUCKET_DATASETS: str = None
     MINIO_BUCKET_MODELS: str = None
     MINIO_BUCKET_CLASSIFICATIONS: str = None
+    MINIO_BUCKET_TILE_METADATA: str = None
+    MINIO_BUCKET_GEOJSONS: str = None
     MINIO_DATA_FOLDER_NAME: str = None
     MINIO_ACCESS_KEY: str = "minio"
     MINIO_SECRET_KEY: str = "minio"
