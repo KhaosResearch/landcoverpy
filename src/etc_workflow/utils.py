@@ -26,7 +26,7 @@ from pymongo.cursor import Cursor
 from rasterio import mask as msk
 from rasterio.warp import Resampling, reproject
 from scipy.ndimage import convolve
-from sentinelsat.sentinel import read_geojson
+from sentinelsat.sentinel import read_geojson, SentinelAPI
 from shapely.geometry import MultiPolygon, Point, Polygon, shape
 from shapely.ops import transform
 from sklearn.decomposition import PCA
@@ -51,6 +51,18 @@ def _get_minio():
         secret_key=settings.MINIO_SECRET_KEY,
         secure=False,
     )
+
+def _get_sentinel():
+    """
+    Initialize Sentinel client
+    """
+    sentinel_api = SentinelAPI(
+        user = settings.SENTINEL_USERNAME,
+        password = settings.SENTINEL_PASSWORD,
+        api_url = settings.SENTINEL_HOST,
+        show_progressbars=False,
+    )
+    return sentinel_api
 
 
 def _get_products_by_tile_and_date(
