@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from glob import glob
 from os.path import join
@@ -5,7 +6,6 @@ from pathlib import Path
 from shutil import rmtree
 from typing import List
 
-import json
 import joblib
 import numpy as np
 import pandas as pd
@@ -36,11 +36,7 @@ from etc_workflow.utils import (
 )
 
 
-def workflow(
-    predict: bool,
-    client: Client = None,
-    tiles_to_predict: List[str] = None
-):
+def workflow(predict: bool, client: Client = None, tiles_to_predict: List[str] = None):
 
     minio = _get_minio()
 
@@ -57,7 +53,7 @@ def workflow(
             polygons_per_tile = {}
             for tile_to_predict in tiles_to_predict:
                 polygons_per_tile[tile_to_predict] = []
-            
+
         tiles = _check_tiles_unpredicted_in_training(list(polygons_per_tile.keys()))
 
         # For predictions, read the rasters used in "metadata.json".
@@ -67,15 +63,15 @@ def workflow(
         _safe_minio_execute(
             func=minio.fget_object,
             bucket_name=settings.MINIO_BUCKET_MODELS,
-            object_name= join(settings.MINIO_DATA_FOLDER_NAME, metadata_filename),
-            file_path=metadata_filepath
+            object_name=join(settings.MINIO_DATA_FOLDER_NAME, metadata_filename),
+            file_path=metadata_filepath,
         )
 
         with open(metadata_filepath, "r") as metadata_file:
             metadata = json.load(metadata_file)
 
         used_columns = metadata["used_columns"]
-            
+
     else:
         print("Creating dataset from tiles")
         # Tiles related to the traininig zone
@@ -121,7 +117,7 @@ def workflow(
         for tile_dataset_minio_object in tiles_datasets_minio_cursor:
 
             tile_dataset_minio_path = tile_dataset_minio_object.object_name
-            
+
             _safe_minio_execute(
                 func=minio.fget_object,
                 bucket_name=settings.MINIO_BUCKET_DATASETS,
@@ -458,10 +454,12 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
             file_path=classification_path,
             content_type="image/tif",
         )
-'''
+
+
+"""
     for path in Path(settings.TMP_DIR).glob("**/*"):
         if path.is_file():
             path.unlink()
         elif path.is_dir():
             rmtree(path)
-'''
+"""

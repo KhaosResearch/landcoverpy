@@ -1,5 +1,6 @@
-import pandas as pd
 from os.path import join
+
+import pandas as pd
 
 from etc_workflow.config import settings
 from etc_workflow.utils import _get_minio, _safe_minio_execute
@@ -24,7 +25,7 @@ def postprocess_dataset(input_dataset: str, output_dataset: str):
         func=minio_client.fget_object,
         bucket_name=settings.MINIO_BUCKET_DATASETS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, input_dataset),
-        file_path=input_file_path
+        file_path=input_file_path,
     )
 
     df = pd.read_csv(input_file_path)

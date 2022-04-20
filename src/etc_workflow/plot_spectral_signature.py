@@ -1,13 +1,14 @@
+from os.path import join
 from typing import List
 
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot
-from os.path import join
 
 from etc_workflow.config import settings
 from etc_workflow.utils import _get_minio, _safe_minio_execute
+
 
 def _plot_dataset(dataset: pd.DataFrame, out_plot_path: str):
     fig, ax = pyplot.subplots(figsize=(35, 15))
@@ -46,7 +47,7 @@ def compute_spectral_signature_plot(
         func=minio_client.fget_object,
         bucket_name=settings.MINIO_BUCKET_DATASETS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, input_dataset),
-        file_path=dataset_path
+        file_path=dataset_path,
     )
 
     df = pd.read_csv(dataset_path)

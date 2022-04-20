@@ -1,26 +1,30 @@
-import joblib
 import json
+from os.path import join
+
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_selection import RFE
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
-from os.path import join
 
 from etc_workflow.config import settings
 from etc_workflow.confusion_matrix import compute_confusion_matrix
 from etc_workflow.utils import _get_minio, _safe_minio_execute
 
-from sklearn.feature_selection import RFE
-from sklearn.linear_model import LogisticRegression
 
-
-def _feature_reduction(df_x: pd.DataFrame, df_y: pd.DataFrame, percentage_columns: int=100):
+def _feature_reduction(
+    df_x: pd.DataFrame, df_y: pd.DataFrame, percentage_columns: int = 100
+):
     """Feature reduction method. Receives the training dataset and returns a set of variables."""
 
-    if percentage_columns < 100: 
+    if percentage_columns < 100:
         n_columns = len(df_x.columns.tolist())
         n_features = int(n_columns * percentage_columns / 100)
-        model = LogisticRegression(penalty="elasticnet", max_iter=10000, solver="saga", n_jobs=-1, l1_ratio=0.5)
+        model = LogisticRegression(
+            penalty="elasticnet", max_iter=10000, solver="saga", n_jobs=-1, l1_ratio=0.5
+        )
         rfe = RFE(estimator=model, n_features_to_select=n_features)
         fit = rfe.fit(df_x, df_y)
         used_columns = df_x.columns[fit.support_].tolist()
@@ -41,7 +45,7 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
         func=minio_client.fget_object,
         bucket_name=settings.MINIO_BUCKET_DATASETS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, input_training_dataset),
-        file_path=training_dataset_path
+        file_path=training_dataset_path,
     )
 
     train_df = pd.read_csv(training_dataset_path)
@@ -86,7 +90,7 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
     _safe_minio_execute(
         func=minio_client.fput_object,
         bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=join(settings.MINIO_DATA_FOLDER_NAME,confusion_image_filename),
+        object_name=join(settings.MINIO_DATA_FOLDER_NAME, confusion_image_filename),
         file_path=out_image_path,
         content_type="image/png",
     )
@@ -104,11 +108,15 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
         content_type="mlmodel/randomforest",
     )
 
-    model_metadata = {"model": str(type(clf)), "n_jobs": n_jobs, "used_columns": used_columns}
-    model_metadata_name = 'metadata.json'
+    model_metadata = {
+        "model": str(type(clf)),
+        "n_jobs": n_jobs,
+        "used_columns": used_columns,
+    }
+    model_metadata_name = "metadata.json"
     model_metadata_path = join(settings.TMP_DIR, model_metadata_name)
 
-    with open(model_metadata_path, 'w') as f:
+    with open(model_metadata_path, "w") as f:
         json.dump(model_metadata, f)
 
     _safe_minio_execute(
@@ -118,5 +126,6 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
         file_path=model_metadata_path,
         content_type="text/json",
     )
+
 
 train_model("dataset_postprocessed.csv", n_jobs=1)
