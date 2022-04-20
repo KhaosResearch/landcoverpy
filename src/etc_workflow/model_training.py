@@ -21,7 +21,7 @@ def _feature_reduction(df_x: pd.DataFrame, df_y: pd.DataFrame, percentage_column
         n_columns = len(df_x.columns.tolist())
         n_features = int(n_columns * percentage_columns / 100)
         model = LogisticRegression(penalty="elasticnet", max_iter=10000, solver="saga", n_jobs=-1, l1_ratio=0.5)
-        rfe = RFE(estimator=model, n_features_to_select=30)
+        rfe = RFE(estimator=model, n_features_to_select=n_features)
         fit = rfe.fit(df_x, df_y)
         used_columns = df_x.columns[fit.support_].tolist()
     else:
