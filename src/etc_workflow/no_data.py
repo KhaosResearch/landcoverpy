@@ -27,7 +27,7 @@ from etc_workflow.utils import (
 
 def _get_available_products(tiles: dict, mongo_collection: Collection, seasons: dict):
     """
-    Query to mongo for obtaining products of the given dates and tiles and 
+    Query to mongo for obtaining products of the given dates and tiles and
     create a dictionary with all available products in mongo with its no data percentage.
 
     Parameters:
@@ -117,12 +117,13 @@ def _get_country_tiles(sentinel_api: SentinelAPI, countries: list):
     return tiles_by_country
 
 
-def compute_no_data(countries: List[str]):
+def compute_no_data(countries: List[str], seasons: dict):
     """
     Get percentage of no data for each product in a list of tiles included in several countries.
 
     Parameters:
         countries (List[str]): List of countries included.
+        seasons (dict): Dictionary of date range (start and end date) for each query.
 
     """
 
@@ -131,12 +132,6 @@ def compute_no_data(countries: List[str]):
     sentinel_api = _get_sentinel()
 
     tiles = _get_country_tiles(sentinel_api, countries)
-
-    seasons = {
-        "spring": (datetime(2021, 3, 1), datetime(2021, 3, 31)),
-        "summer": (datetime(2021, 6, 1), datetime(2021, 6, 30)),
-        "autumn": (datetime(2021, 11, 1), datetime(2021, 11, 30)),
-    }
 
     tiles_by_country = _get_available_products(
         mongo_collection=mongo, tiles=tiles, seasons=seasons
@@ -171,7 +166,9 @@ def get_nodata_percentage(filename: str, mongo_collection: Collection):
     """
 
     minio_client = _get_minio()
-    sample_band = _download_sample_band(filename, minio_client, mongo_collection)
+    sample_band = _download_sample_band_by_title(
+        filename, minio_client, mongo_collection
+    )
 
     # In case there is no band for the given file (due to errors in the download process it is empty)
     if sample_band == None:
@@ -191,9 +188,11 @@ def get_nodata_percentage(filename: str, mongo_collection: Collection):
     return percentage
 
 
-def _download_sample_band(title: str, minio_client: Minio, mongo_collection: Collection):
+def _download_sample_band_by_title(
+    title: str, minio_client: Minio, mongo_collection: Collection
+):
     """
-    Having a tile, download a sample sentinel band of any related product.
+    Having a title of a product, download a sample sentinel band of the product.
     """
     product_metadata = mongo_collection.find_one({"title": title})
 
