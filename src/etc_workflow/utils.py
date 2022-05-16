@@ -8,8 +8,8 @@ from functools import partial
 from hashlib import sha256
 from itertools import compress
 from logging import exception
-from pathlib import Path
 from os.path import join
+from pathlib import Path
 from typing import Callable, Iterable, List, Tuple
 from zipfile import ZipFile
 
@@ -26,7 +26,7 @@ from pymongo.cursor import Cursor
 from rasterio import mask as msk
 from rasterio.warp import Resampling, reproject
 from scipy.ndimage import convolve
-from sentinelsat.sentinel import read_geojson
+from sentinelsat.sentinel import SentinelAPI, read_geojson
 from shapely.geometry import MultiPolygon, Point, Polygon, shape
 from shapely.ops import transform
 from sklearn.decomposition import PCA
@@ -35,11 +35,15 @@ from etc_workflow import raw_index_calculation_composite
 from etc_workflow.config import settings
 from etc_workflow.rasterpoint import RasterPoint
 
+
 # Signal used for simulating a time-out in minio connections.
 def _timeout_handler(signum, frame):
     raise Exception
+
+
 # Change the behavior of SIGALRM
 signal.signal(signal.SIGALRM, _timeout_handler)
+
 
 def _get_minio():
     """
@@ -51,6 +55,19 @@ def _get_minio():
         secret_key=settings.MINIO_SECRET_KEY,
         secure=False,
     )
+
+
+def _get_sentinel():
+    """
+    Initialize Sentinel client
+    """
+    sentinel_api = SentinelAPI(
+        user=settings.SENTINEL_USERNAME,
+        password=settings.SENTINEL_PASSWORD,
+        api_url=settings.SENTINEL_HOST,
+        show_progressbars=False,
+    )
+    return sentinel_api
 
 
 def _get_products_by_tile_and_date(
@@ -341,7 +358,7 @@ def _project_shape(geom: dict, scs: str = "epsg:4326", dcs: str = "epsg:32630"):
         dcs (str) : Destination coordinate system.
 
     Returns:
-        p_geom (dict) : Geometry proyected to destination coordinate system 
+        p_geom (dict) : Geometry proyected to destination coordinate system
     """
     # TODO remove this warning catcher
     # This disables FutureWarning: '+init=<authority>:<code>' syntax is deprecated. '<authority>:<code>' is the preferred initialization method. When making the change, be mindful of axis order changes: https://pyproj4.github.io/pyproj/stable/gotchas.html#axis-order-changes-in-proj-6 in_crs_string = _prepare_from_proj_string(in_crs_string)
@@ -374,7 +391,7 @@ def _read_raster(
         to_tif (bool) : If the raster wants to be transformed to a GeoTiff raster (usefull when reading JP2 rasters that can only store natural numbers)
 
     Returns:
-        band (np.ndarray) : The read raster as numpy array 
+        band (np.ndarray) : The read raster as numpy array
 
     """
     band_name = _get_raster_name_from_path(str(band_path))
@@ -532,15 +549,15 @@ def _download_sample_band(tile: str, minio_client: Minio, mongo_collection: Coll
 
 def _expand_cloud_mask(cloud_mask: np.ndarray, spatial_resolution: int):
     """
-    Empirically-tested method for expanding a cloud mask using convolutions. 
-    Method specifically developed for expanding the Sentinel-2 cloud mask (values of SCL), as provided cloud mask is very conservative. 
+    Empirically-tested method for expanding a cloud mask using convolutions.
+    Method specifically developed for expanding the Sentinel-2 cloud mask (values of SCL), as provided cloud mask is very conservative.
     This method reduces the percentage of false negatives around true positives, but increases the percentage os false positives.
     We fear false negatives more than false positives, because false positives will usually disappear when a composite is done.
 
     Parameters:
         cloud_mask (np.ndarray) : Boolean array, ones are cloudy pixels and zeros non-cloudy pixels.
-        spatial_resolution (int) : Spatial resolution of the image. 
-                                   It has to be provided because the convolution kernel should cover a 600 x 600 m2 area, 
+        spatial_resolution (int) : Spatial resolution of the image.
+                                   It has to be provided because the convolution kernel should cover a 600 x 600 m2 area,
                                    which is the ideal for expanding the Sentinel-2 cloud mask.
     Returns:
         expanded_mask (np.ndarray) : Expanded cloud mask.
@@ -916,7 +933,7 @@ def _pca(data: pd.DataFrame, variance_explained: int = 75):
     """
     Return the main columns after a Principal Component Analysis.
 
-    Source: 
+    Source:
         https://bitbucket.org/khaosresearchgroup/enbic2lab-images/src/master/soil/PCA_variance/pca-variance.py
     """
 
@@ -1322,7 +1339,7 @@ def _mask_polygons_by_tile(
 
 def _safe_minio_execute(func: Callable, n_retries: int = 100, *args, **kwargs):
     """
-    Adds a timeout for minio connections of 250s. 
+    Adds a timeout for minio connections of 250s.
     If connection fails for timeout or any other reason, it will retry a maximum of 100 times.
     """
     for i in range(n_retries):
@@ -1340,19 +1357,22 @@ def _safe_minio_execute(func: Callable, n_retries: int = 100, *args, **kwargs):
         break
     signal.alarm(0)
 
+
 def _check_tiles_unpredicted_in_training(tiles_in_training: List[str]):
-    
+
     minio = _get_minio()
 
     classification_raster_cursor = minio.list_objects(
-        settings.MINIO_BUCKET_CLASSIFICATIONS, 
-        prefix=join(settings.MINIO_DATA_FOLDER_NAME,"")
+        settings.MINIO_BUCKET_CLASSIFICATIONS,
+        prefix=join(settings.MINIO_DATA_FOLDER_NAME, ""),
     )
 
     predicted_tiles = []
     for classification_raster in classification_raster_cursor:
         classification_raster_cursor_path = classification_raster.object_name
-        predicted_tile = classification_raster_cursor_path[-9:-4] # ...classification_99XXX.tif
+        predicted_tile = classification_raster_cursor_path[
+            -9:-4
+        ]  # ...classification_99XXX.tif
         predicted_tiles.append(predicted_tile)
 
     unpredicted_tiles = list(np.setdiff1d(tiles_in_training, predicted_tiles))
