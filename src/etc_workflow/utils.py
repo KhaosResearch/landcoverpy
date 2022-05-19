@@ -876,9 +876,8 @@ def _create_composite(
         raise e
 
     finally:
-        pass
-        #for composite_band in temp_paths_composite_bands + cloud_masks_temp_paths:
-        #    Path.unlink(Path(composite_band))
+        for composite_band in temp_paths_composite_bands + cloud_masks_temp_paths:
+            Path.unlink(Path(composite_band))
         # Path.rmdir(Path(temp_path_composite))
         # for product_dir in temp_product_dirs:
         # Path.rmdir(Path(product_dir))

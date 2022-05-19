@@ -21,7 +21,7 @@ def run_compute_training_dataset():
 
 
 def run_model_training():
-    """Postprocess the training dataset, trains a Random Forest using it and computes the spectral plot of classes `water`, `wetland`, `bosque` and `matorral`"""
+    """Postprocess the training dataset, trains a Random Forest using it and computes the spectral plot of classes `water`, `wetland`, `closedForest` and `shrubland`"""
 
     input_dataset = "dataset.csv"
     postprocessed_dataset = "dataset_postprocessed.csv"
@@ -31,7 +31,7 @@ def run_model_training():
     compute_spectral_signature_plot(
         postprocessed_dataset,
         out_plot_path="/mnt/home/anmabur/etc-uma/etc-scripts/images/plot.png",
-        classes_showed=["water", "wetland", "bosque", "matorral"],
+        classes_showed=["water", "wetland", "closedForest", "shrubland"],
     )
 
 

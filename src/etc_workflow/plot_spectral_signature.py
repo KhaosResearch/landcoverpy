@@ -36,7 +36,7 @@ def _plot_dataset(dataset: pd.DataFrame, out_plot_path: str):
 def compute_spectral_signature_plot(
     input_dataset: str,
     out_plot_path: str,
-    classes_showed: List[str] = ["water", "wetland", "bosque", "matorral"],
+    classes_showed: List[str] = ["water", "wetland", "closedForest", "shrubland"],
 ):
 
     dataset_path = join(settings.TMP_DIR, input_dataset)
