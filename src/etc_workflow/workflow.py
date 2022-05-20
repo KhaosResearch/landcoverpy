@@ -19,7 +19,7 @@ from etc_workflow.utils import (
     _connect_mongo_composites_collection,
     _connect_mongo_products_collection,
     _create_composite,
-    _download_sample_band,
+    _download_sample_band_by_tile,
     _filter_rasters_paths_by_features_used,
     _get_composite,
     _get_kwargs_raster,
@@ -33,6 +33,7 @@ from etc_workflow.utils import (
     _mask_polygons_by_tile,
     _read_raster,
     _safe_minio_execute,
+    get_season_dict
 )
 
 
@@ -149,12 +150,7 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
     if not Path(settings.TMP_DIR).exists():
         Path.mkdir(Path(settings.TMP_DIR))
 
-    spring_start = datetime(2021, 3, 1)
-    spring_end = datetime(2021, 3, 31)
-    summer_start = datetime(2021, 6, 1)
-    summer_end = datetime(2021, 6, 30)
-    autumn_start = datetime(2021, 11, 1)
-    autumn_end = datetime(2021, 11, 30)
+    seasons = get_season_dict()
 
     minio_client = _get_minio()
     mongo_products_collection = _connect_mongo_products_collection()
@@ -179,12 +175,18 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
     print(f"Working in tile {tile}")
     # Mongo query for obtaining valid products
     max_cloud_percentage = 20
+
+    spring_start, spring_end = seasons["spring"]
     product_metadata_cursor_spring = _get_products_by_tile_and_date(
         tile, mongo_products_collection, spring_start, spring_end, max_cloud_percentage
     )
+
+    summer_start, summer_end = seasons["summer"]
     product_metadata_cursor_summer = _get_products_by_tile_and_date(
         tile, mongo_products_collection, summer_start, summer_end, max_cloud_percentage
     )
+
+    autumn_start, autumn_end = seasons["autumn"]
     product_metadata_cursor_autumn = _get_products_by_tile_and_date(
         tile, mongo_products_collection, autumn_start, autumn_end, max_cloud_percentage
     )
@@ -241,7 +243,7 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
             tile_df = pd.concat([tile_df, raster_df], axis=1)
 
     # Get crop mask for sentinel rasters and dataset labeled with database points in tile
-    band_path = _download_sample_band(tile, minio_client, mongo_products_collection)
+    band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
     kwargs = _get_kwargs_raster(band_path)
 
     if not predict:
