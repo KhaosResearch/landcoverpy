@@ -9,5 +9,6 @@ release:
 
 clean:
 	@rm -rf build dist .eggs *.egg-info
-
+	
+.DEFAULT_GOAL :=
 all: clean build release install
