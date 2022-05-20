@@ -600,6 +600,7 @@ def _expand_cloud_mask(cloud_mask: np.ndarray, spatial_resolution: int):
         (kernel_side, 1)
     )  # Apply convolution separability property to reduce computation time
     h_kernel = np.ones((1, kernel_side))
+    cloud_mask = cloud_mask.astype(np.float32)
     convolved_mask_v = convolve(
         cloud_mask[0], v_kernel, mode="reflect"
     )  # Input matrices has to be 2-D
@@ -768,22 +769,22 @@ def _create_composite(
                 # Expand cloud mask for a more aggresive masking
                 cloud_mask = _expand_cloud_mask(cloud_mask, int(spatial_resolution))
                 cloud_masks[spatial_resolution].append(cloud_mask)
+                kwargs = _get_kwargs_raster(temp_path_product_band)
+                with rasterio.open(temp_path_product_band, "w", **kwargs) as f:
+                    f.write(cloud_mask)
 
                 # 10m spatial resolution cloud mask raster does not exists, have to be rescaled from 20m mask
                 if "SCL_20m" in band_filename:
                     scl_band_10m_temp_path = temp_path_product_band.replace(
                         "_20m.jp2", "_10m.jp2"
                     )
-                    scl_band_10m = _read_raster(
+                    cloud_mask_10m = _read_raster(
                         temp_path_product_band,
                         rescale=True,
                         path_to_disk=scl_band_10m_temp_path,
                         to_tif=False,
                     )
                     cloud_masks_temp_paths.append(scl_band_10m_temp_path)
-                    cloud_mask_10m = np.isin(scl_band_10m, scl_cloud_values).astype(
-                        np.bool
-                    )
                     cloud_masks["10"].append(cloud_mask_10m)
 
     composite_id = _get_id_composite(products_ids)

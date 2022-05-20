@@ -126,6 +126,3 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
         file_path=model_metadata_path,
         content_type="text/json",
     )
-
-
-train_model("dataset_postprocessed.csv", n_jobs=1)

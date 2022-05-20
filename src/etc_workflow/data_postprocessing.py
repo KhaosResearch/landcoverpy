@@ -11,9 +11,9 @@ def postprocess_dataset(input_dataset: str, output_dataset: str):
     Once the training dataset is computed, it is possible that it needs some preprocessing.
     This script is in charge of all kind of preprocessing needed. Right now, the steps are:
         - Read input dataset `input_dataset` from minio
-        - Map classes `mixedBosque`, `plantacion`, and `bosqueRibera` to `bosque`
+        - Map classes `mixedBosque`, `plantacion`, and `riparianForest` to `closedForest`
         - Map class `pastos` to `dehesas`
-        - Reduce the quantity of rows labeled as `bosque` in a 1:9 ratio.
+        - Reduce the quantity of rows labeled as `closedForest` in a 1:9 ratio.
         - Shuffle the whole dataset
         - Write resulting dataset to Minio as `output_dataset`
     """
@@ -33,15 +33,15 @@ def postprocess_dataset(input_dataset: str, output_dataset: str):
 
     # Sustituir clases
     df["class"].replace(
-        to_replace=["mixedBosque", "plantacion", "bosqueRibera"],
-        value="bosque",
+        to_replace=["mixedBosque", "plantacion", "riparianForest"],
+        value="closedForest",
         inplace=True,
     )
     df["class"].replace(to_replace="pastos", value="dehesas", inplace=True)
 
-    # Reducir tamaño datos bosque
-    df_bosque = df[df["class"] == "bosque"]
-    df_not_bosque = df[df["class"] != "bosque"]
+    # Reduce size closedForest
+    df_bosque = df[df["class"] == "closedForest"]
+    df_not_bosque = df[df["class"] != "closedForest"]
     df_bosque = df_bosque.drop_duplicates(subset=["longitude", "latitude"]).reset_index(
         drop=True
     )

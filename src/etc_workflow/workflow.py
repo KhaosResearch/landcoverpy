@@ -422,18 +422,19 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
         mapping = {
             "nodata": 0,
             "beaches": 1,
-            "bosqueRibera": 2,
-            "cities": 3,
+            "riparianForest": 2,
+            "builtUp": 3,
             "dehesas": 4,
-            "matorral": 5,
+            "shrubland": 5,
             "pastos": 6,
             "plantacion": 7,
             "rocks": 8,
             "water": 9,
             "wetland": 10,
-            "agricola": 11,
-            "bosque": 12,
-            "bosqueAbierto": 13,
+            "cropland": 11,
+            "closedForest": 12,
+            "openForest": 13,
+            "bareSoil": 14
         }
         for class_, value in mapping.items():
             encoded_predictions = np.where(
