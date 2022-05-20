@@ -13,7 +13,7 @@ from etc_workflow.config import settings
 from etc_workflow.rasterpoint import RasterPoint
 from etc_workflow.utils import (
     _crop_as_sentinel_raster,
-    _download_sample_band,
+    _download_sample_band_by_tile,
     _get_bound,
     _get_corners_raster,
     _get_kwargs_raster,
@@ -170,7 +170,7 @@ def get_dem_from_tile(
     """
     bucket = _get_bucket_by_name(dem_name)
 
-    sample_band_path = _download_sample_band(tile, minio_client, mongo_collection)
+    sample_band_path = _download_sample_band_by_tile(tile, minio_client, mongo_collection)
 
     (
         top_left,

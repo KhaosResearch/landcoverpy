@@ -14,6 +14,7 @@ from etc_workflow.utils import (
     _get_products_by_tile_and_date,
     _get_sentinel,
     _safe_minio_execute,
+    get_season_dict,
 )
 
 
@@ -36,7 +37,7 @@ def _get_available_products(tiles: dict, mongo_collection: Collection, seasons: 
         for season in seasons:
             start_date, end_date = seasons[season]
             product_metadata_cursor = _get_products_by_tile_and_date(
-                tile, mongo_collection, start_date, end_date, 101
+                tile, mongo_collection, start_date, end_date, cloud_percentage=101
             )
             products = list(product_metadata_cursor)
 
@@ -123,11 +124,7 @@ def compute_cloud_coverage(countries: List[str]):
     # tiles = _get_country_tiles(sentinel_api, countries, order_by_country)
     tiles = _get_country_tiles(sentinel_api, countries)
 
-    seasons = {
-        "spring": (datetime(2021, 3, 1), datetime(2021, 3, 31)),
-        "summer": (datetime(2021, 6, 1), datetime(2021, 6, 30)),
-        "autumn": (datetime(2021, 11, 1), datetime(2021, 11, 30)),
-    }
+    seasons = get_season_dict()
 
     tiles_by_country = _get_available_products(
         mongo_collection=mongo, tiles=tiles, seasons=seasons
