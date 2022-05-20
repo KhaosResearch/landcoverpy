@@ -1,3 +1,4 @@
+from distutils.command.config import config
 import json
 import signal
 import time
@@ -45,12 +46,12 @@ def _timeout_handler(signum, frame):
 signal.signal(signal.SIGALRM, _timeout_handler)
 
 def get_season_dict():
-        spring_start = datetime(2021, 3, 1)
-        spring_end = datetime(2021, 3, 31)
-        summer_start = datetime(2021, 6, 1)
-        summer_end = datetime(2021, 6, 30)
-        autumn_start = datetime(2021, 11, 1)
-        autumn_end = datetime(2021, 11, 30)
+        spring_start = datetime.strptime(settings.SPRING_START, '%Y-%m-%d')
+        spring_end = datetime.strptime(settings.SPRING_END, '%Y-%m-%d')
+        summer_start = datetime.strptime(settings.SUMMER_START, '%Y-%m-%d')
+        summer_end = datetime.strptime(settings.SUMMER_END, '%Y-%m-%d')
+        autumn_start = datetime.strptime(settings.AUTUMN_START, '%Y-%m-%d')
+        autumn_end = datetime.strptime(settings.AUTUMN_END, '%Y-%m-%d')
 
         seasons =   {
             "spring" : (spring_start, spring_end),
