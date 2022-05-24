@@ -46,20 +46,20 @@ def _timeout_handler(signum, frame):
 signal.signal(signal.SIGALRM, _timeout_handler)
 
 def get_season_dict():
-        spring_start = datetime.strptime(settings.SPRING_START, '%Y-%m-%d')
-        spring_end = datetime.strptime(settings.SPRING_END, '%Y-%m-%d')
-        summer_start = datetime.strptime(settings.SUMMER_START, '%Y-%m-%d')
-        summer_end = datetime.strptime(settings.SUMMER_END, '%Y-%m-%d')
-        autumn_start = datetime.strptime(settings.AUTUMN_START, '%Y-%m-%d')
-        autumn_end = datetime.strptime(settings.AUTUMN_END, '%Y-%m-%d')
+    spring_start = datetime.strptime(settings.SPRING_START, '%Y-%m-%d')
+    spring_end = datetime.strptime(settings.SPRING_END, '%Y-%m-%d')
+    summer_start = datetime.strptime(settings.SUMMER_START, '%Y-%m-%d')
+    summer_end = datetime.strptime(settings.SUMMER_END, '%Y-%m-%d')
+    autumn_start = datetime.strptime(settings.AUTUMN_START, '%Y-%m-%d')
+    autumn_end = datetime.strptime(settings.AUTUMN_END, '%Y-%m-%d')
+    
+    seasons =   {
+        "spring" : (spring_start, spring_end),
+        "summer" : (summer_start, summer_end),
+        "autumn" : (autumn_start, autumn_end)
+    }
 
-        seasons =   {
-            "spring" : (spring_start, spring_end),
-            "summer" : (summer_start, summer_end),
-            "autumn" : (autumn_start, autumn_end)
-        }
-
-        return seasons
+    return seasons
 
 def _get_minio():
     """
@@ -1411,6 +1411,27 @@ def _check_tiles_unpredicted_in_training(tiles_in_training: List[str]):
     unpredicted_tiles = list(np.setdiff1d(tiles_in_training, predicted_tiles))
 
     return unpredicted_tiles
+
+def _remove_tiles_already_processed_in_training(tiles_in_training: List[str]):
+
+    minio = _get_minio()
+
+    tiles_datasets_cursor = minio.list_objects(
+        settings.MINIO_BUCKET_DATASETS,
+        prefix=join(settings.MINIO_DATA_FOLDER_NAME, "tiles_datasets", ""),
+    )
+
+    tiles_processed = []
+    for tile_dataset in tiles_datasets_cursor:
+        tile_dataset_cursor_path = tile_dataset.object_name
+        tile_processed = tile_dataset_cursor_path[
+            -9:-4
+        ]  # ...dataset_99XXX.csv
+        tiles_processed.append(tile_processed)
+
+    unprocessed_tiles = list(np.setdiff1d(tiles_in_training, tiles_processed))
+
+    return unprocessed_tiles
 
 def get_list_of_tiles_in_study_region():
     tiles = ["30SUD", "34TEM", "34TCM", "34TEL", "34TCN", "34SCJ", "34TCK", "34TDM", "34TDN", "34TEK", "34TDL", "34TDK", "34SDJ", "32SPF", 

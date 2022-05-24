@@ -38,9 +38,9 @@ def _get_dict_of_products_by_tile(tiles: List[str], mongo_collection: Collection
         for season in seasons:
             start_date, end_date = seasons[season]
             product_metadata_cursor = _get_products_by_tile_and_date(
-                tile, mongo_collection, start_date, end_date, cloud_percentage=101
+                tile, mongo_collection, start_date, end_date, cloud_percentage=settings.MAX_CLOUD_PERCENTAGE
             )
-            products = list(product_metadata_cursor)
+            products = list(product_metadata_cursor)[:5] # The workflow only takes into account the first five
 
             dict_products = {}
             # Generate a dictionary of the products set with title as key and no data percentage as value
@@ -113,3 +113,73 @@ def get_quality_map_nodata(tiles: List[str]):
         file_path=tile_metadata_path,
         content_type="text/json",
     )
+
+def get_log_from_quality_map(quality_map_local_path: str = None):
+    """
+    Extract a log file from a quality map.
+
+    Parameters:
+        quality_map_local_path (str): Local path of the quality_map, if it is None, "no_data.json" is looked for in Minio.
+    """
+
+    minio_client = _get_minio()
+
+    if quality_map_local_path is None:
+        tile_metadata_name = "no_data.json"
+        quality_map_local_path = join(settings.TMP_DIR,tile_metadata_name)
+        _safe_minio_execute(
+            func=minio_client.fget_object,
+            bucket_name=settings.MINIO_BUCKET_TILE_METADATA,
+            object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{tile_metadata_name}",
+            file_path=quality_map_local_path
+        )
+
+    with open(quality_map_local_path) as f:
+        quality_map = json.load(f)
+
+    log_file = f"{settings.TMP_DIR}/log_nodata.txt"
+
+    log_tiers = [[] for _ in range(4)]
+
+    for tile, seasons in quality_map.items():
+        for season in seasons:
+
+            n_products_available = len(quality_map[tile][season])
+            no_data_percentages = list(quality_map[tile][season].values())
+
+            # No data available for a tile in a season
+            if n_products_available == 0:
+                log_tiers[0].append((tile, season))
+
+            # Only one partial product available
+            elif n_products_available == 1 and no_data_percentages[0] > 10:
+                log_tiers[1].append((tile, season))
+            
+            # Only one complete product available
+            elif n_products_available == 1:
+                log_tiers[2].append((tile, season))
+
+            # Several products available, but all are partial
+            elif all(percentage  > 10 for percentage in no_data_percentages):
+                log_tiers[3].append((tile, season))
+
+    with open(log_file,"w") as f:
+        f.write("Any product available for next tiles in seasons, data is needed\n\n")
+        for (tile, season) in log_tiers[0]:
+            f.write(f"Tile {tile} in {season}\n")
+
+        f.write("\nOnly one partial product available for next tiles in seasons, data is needed\n\n")
+        for (tile, season) in log_tiers[1]:
+            f.write(f"Tile {tile} in {season}\n")
+
+        f.write("\nOnly one complete product available for next tiles in seasons, it is not possible to create a composite\n\n")
+        for (tile, season) in log_tiers[2]:
+            f.write(f"Tile {tile} in {season}\n")
+
+        f.write("\nSeveral products available, but all are partial for next tiles in seasons\n\n")
+        for (tile, season) in log_tiers[3]:
+            f.write(f"Tile {tile} in {season}\n")
+
+                    
+
+    

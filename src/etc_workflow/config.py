@@ -51,6 +51,9 @@ class _Settings(BaseSettings):
     AUTUMN_START: str = "2001-12-31"
     AUTUMN_END: str = "2001-12-31"
 
+    # Product filtering parameters
+    MAX_CLOUD_PERCENTAGE: int = 100
+
     class Config:
         env_file = ".env"
         file_path = Path(env_file)

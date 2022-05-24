@@ -33,7 +33,8 @@ from etc_workflow.utils import (
     _mask_polygons_by_tile,
     _read_raster,
     _safe_minio_execute,
-    get_season_dict
+    get_season_dict,
+    _remove_tiles_already_processed_in_training
 )
 
 
@@ -75,8 +76,8 @@ def workflow(predict: bool, client: Client = None, tiles_to_predict: List[str] =
 
     else:
         print("Creating dataset from tiles")
-        # Tiles related to the traininig zone
-        tiles = polygons_per_tile.keys()
+        # Tiles related to the traininig zone that wasn't already processed
+        tiles = _remove_tiles_already_processed_in_training(list(polygons_per_tile.keys()))
 
         # In training, read all rasters available
         used_columns = None
@@ -174,7 +175,7 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
 
     print(f"Working in tile {tile}")
     # Mongo query for obtaining valid products
-    max_cloud_percentage = 20
+    max_cloud_percentage = settings.MAX_CLOUD_PERCENTAGE
 
     spring_start, spring_end = seasons["spring"]
     product_metadata_cursor_spring = _get_products_by_tile_and_date(

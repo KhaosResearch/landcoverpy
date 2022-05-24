@@ -1,5 +1,5 @@
 install:
-	@python -m pip install install etc_workflow --upgrade
+	@python -m pip install etc_workflow --upgrade
 
 build:
 	@python -m build
