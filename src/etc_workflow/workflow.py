@@ -420,29 +420,28 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
             predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
         )
         encoded_predictions = predictions.copy()
+        
         mapping = {
             "nodata": 0,
-            "beaches": 1,
-            "riparianForest": 2,
-            "builtUp": 3,
-            "dehesas": 4,
-            "shrubland": 5,
-            "pastos": 6,
-            "plantacion": 7,
-            "rocks": 8,
-            "water": 9,
-            "wetland": 10,
-            "cropland": 11,
-            "closedForest": 12,
-            "openForest": 13,
-            "bareSoil": 14
+            "builtUp": 1,
+            "herbaceousVegetation": 2,
+            "shrubland": 3,
+            "water": 4,
+            "wetland": 5,
+            "cropland": 6,
+            "closedForest": 7,
+            "openForest": 8,
+            "bareSoil": 9
         }
         for class_, value in mapping.items():
             encoded_predictions = np.where(
                 encoded_predictions == class_, value, encoded_predictions
             )
 
+        encoded_predictions = encoded_predictions.astype(np.uint8)
+
         kwargs_10m["driver"] = "GTiff"
+        kwargs_10m["dtype"] = np.uint8
         classification_name = f"classification_{tile}.tif"
         classification_path = str(Path(settings.TMP_DIR, classification_name))
         with rasterio.open(
@@ -459,11 +458,8 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
             content_type="image/tif",
         )
 
-
-"""
     for path in Path(settings.TMP_DIR).glob("**/*"):
         if path.is_file():
             path.unlink()
         elif path.is_dir():
             rmtree(path)
-"""

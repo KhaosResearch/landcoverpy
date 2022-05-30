@@ -1,4 +1,3 @@
-from distutils.command.config import config
 import json
 import signal
 import time
@@ -14,6 +13,7 @@ from pathlib import Path
 from typing import Callable, Iterable, List, Tuple
 from zipfile import ZipFile
 
+from bs4 import BeautifulSoup 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -175,8 +175,53 @@ def _kmz_to_geojson(kmz_file: str) -> str:
         zip_in.extractall("./databases/")
     df = gpd.read_file(filename="./databases/doc.kml", driver="KML")
     df.to_file(geojson_file, driver="GeoJSON")
+
+    _postprocess_geojson_file(geojson_file)
+
     return geojson_file
 
+def _postprocess_geojson_file(geojson_file: str):
+    """
+    Postprocess a geojson that comes from a kmz, transform its html table to a dictionary
+    """
+    geojson = read_geojson(geojson_file)
+
+    for feature in geojson['features']:
+
+        propery = feature["properties"]
+
+        html_table = propery["Description"]
+
+        if 'html' in html_table:
+            html_table_splitted = html_table.split('</td> </tr> <tr> <td> ')
+            html_table_without_header = html_table_splitted[1]
+            html_table_without_header_splitted = html_table_without_header.split('</td> </tr> </table> </body>')
+            content = html_table_without_header_splitted[0]
+            
+            parser_object = BeautifulSoup(content, 'lxml') 
+            key_value_list = parser_object.find_all('td') 
+            key_value_list_text=[element.get_text() for element in key_value_list]
+
+            key_value_list_text = np.array(key_value_list_text)
+            pairs= list(range(0,len(key_value_list_text),2))
+            evens= list(range(1,len(key_value_list_text),2))
+            keys=key_value_list_text[pairs]
+            values=key_value_list_text[evens]
+
+        else:
+            keys=""
+            values=""
+
+        parsed_description={}
+        for c in range(len(values)):
+            parsed_description[keys[c]]= values[c]
+            
+
+        del propery["Description"]
+        propery.update(parsed_description)
+
+    with open(geojson_file, "w", encoding='utf8') as f:
+        json.dump(geojson, f, ensure_ascii=False)
 
 def _group_polygons_by_tile(*geojson_files: str) -> dict:
     """
@@ -1452,7 +1497,7 @@ def get_list_of_tiles_in_study_region():
     "32TNR", "32TNK", "32TNQ", "33SXD", "32TQP", "33TUH", "32TMR", "34TBL", "32TML", "32SQH", "33TYF", "33SWD", "32TMP", "32TQS", "32TNT",
     "33TWE", "33SWC", "32TMS", "33TXF", "32TNL", "33STC", "33SUB", "32TPS", "32TLR", "32SMJ", "33TVE", "32TNS", "32TPT", "33SUC", "32TQT",
     "32SNJ", "33TVH", "32TLS", "33TUN", "33TUF", "33TVF", "31TGM", "33TVG", "33TUG", "32TQL", "33TTF", "34SDB", "34SCA", "34RCV", "34RDV",
-    "34SDA", "34SEA", "34SFA", "34SEB", "34SFB", "33SVV", "33TYG", "34TBM", "28RFQ", "28RGR", "29RLL", "29RNM", "28RGS", "29SNR", "30SUA", 
+    "34SDA", "34SEA", "34SFA", "34SEB", "34SFB", "33SVV", "33TYG", "34TBM", "28RFQ", "29RLL", "29RNM", "28RGS", "29SNR", "30SUA", # 28RGR is missing
     "29SPR", "30SVB", "30STA", "30SWB", "30SUB", "29SQU", "30SVA", "29RKL", "30SVC", "29RLP", "30RWV", "29RPP", "30SUE", "29RQP", "30SVD", 
     "30SWA", "29RLM", "29RLN", "29SQV", "29RMM", "29RPN", "29SMR", "29RMP", "29SPU", "29RPQ", "29SQT", "30STD", "30SUC", "29RKN", "29RNQ", 
     "29SQS", "29RKM", "30RTU", "30RTV", "30STC", "34TCL", "29RMQ", "30RUV", "28RFR", "29SPT", "29RMN", "30SVE", "30STB", "29SNS", "29SQR", 
