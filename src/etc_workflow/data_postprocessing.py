@@ -11,8 +11,8 @@ def postprocess_dataset(input_dataset: str, output_dataset: str):
     Once the training dataset is computed, it is possible that it needs some preprocessing.
     This script is in charge of all kind of preprocessing needed. Right now, the steps are:
         - Read input dataset `input_dataset` from minio
-        - Map classes `mixedBosque`, `plantacion`, and `riparianForest` to `closedForest`
-        - Map class `pastos` to `dehesas`
+        - Map classes `mixedForest`, `treePlantation`, and `riparianForest` to `closedForest`
+        - Map class `grass` to `dehesa`
         - Reduce the quantity of rows labeled as `closedForest` in a 1:9 ratio.
         - Shuffle the whole dataset
         - Write resulting dataset to Minio as `output_dataset`
@@ -33,11 +33,14 @@ def postprocess_dataset(input_dataset: str, output_dataset: str):
 
     # Sustituir clases
     df["class"].replace(
-        to_replace=["mixedBosque", "plantacion", "riparianForest"],
+        to_replace=["mixedForest", "treePlantation", "riparianForest"],
         value="closedForest",
         inplace=True,
     )
-    df["class"].replace(to_replace="pastos", value="dehesas", inplace=True)
+    df["class"].replace(to_replace=["grass", "dehesa"], value="herbaceousVegetation", inplace=True)
+
+    df["class"].replace(to_replace=["rocks", "beaches"], 
+    value="bareSoil", inplace=True)
 
     # Reduce size closedForest
     df_bosque = df[df["class"] == "closedForest"]

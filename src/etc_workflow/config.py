@@ -43,6 +43,17 @@ class _Settings(BaseSettings):
     # For running in a distributed environment
     DASK_CLUSTER_IP: str = "0.0.0.0.0:0000"
 
+    # Dates used for each season
+    SPRING_START: str = "2001-12-31"
+    SPRING_END: str = "2001-12-31"
+    SUMMER_START: str = "2001-12-31"
+    SUMMER_END: str = "2001-12-31"
+    AUTUMN_START: str = "2001-12-31"
+    AUTUMN_END: str = "2001-12-31"
+
+    # Product filtering parameters
+    MAX_CLOUD_PERCENTAGE: int = 100
+
     class Config:
         env_file = ".env"
         file_path = Path(env_file)

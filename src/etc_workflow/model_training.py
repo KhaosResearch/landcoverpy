@@ -112,6 +112,7 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
         "model": str(type(clf)),
         "n_jobs": n_jobs,
         "used_columns": used_columns,
+        "classes": labels
     }
     model_metadata_name = "metadata.json"
     model_metadata_path = join(settings.TMP_DIR, model_metadata_name)

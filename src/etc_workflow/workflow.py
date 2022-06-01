@@ -19,7 +19,7 @@ from etc_workflow.utils import (
     _connect_mongo_composites_collection,
     _connect_mongo_products_collection,
     _create_composite,
-    _download_sample_band,
+    _download_sample_band_by_tile,
     _filter_rasters_paths_by_features_used,
     _get_composite,
     _get_kwargs_raster,
@@ -33,6 +33,8 @@ from etc_workflow.utils import (
     _mask_polygons_by_tile,
     _read_raster,
     _safe_minio_execute,
+    get_season_dict,
+    _remove_tiles_already_processed_in_training
 )
 
 
@@ -43,8 +45,13 @@ def workflow(predict: bool, client: Client = None, tiles_to_predict: List[str] =
     # Iterate over a set of geojson/databases (the databases may not be equal)
     geojson_files = []
     for data_class in glob(join(settings.DB_DIR, "*.kmz")):
+        if not Path.exists(Path(data_class.replace("kmz","geojson"))):
+            print(f"Parsing database to geojson: {data_class}")
+            _kmz_to_geojson(data_class)
+
+    for data_class in glob(join(settings.DB_DIR, "*.geojson")):
         print(f"Working with database {data_class}")
-        geojson_files.append(_kmz_to_geojson(data_class))
+        geojson_files.append(data_class)
     polygons_per_tile = _group_polygons_by_tile(*geojson_files)
 
     if predict:
@@ -74,8 +81,8 @@ def workflow(predict: bool, client: Client = None, tiles_to_predict: List[str] =
 
     else:
         print("Creating dataset from tiles")
-        # Tiles related to the traininig zone
-        tiles = polygons_per_tile.keys()
+        # Tiles related to the traininig zone that wasn't already processed
+        tiles = _remove_tiles_already_processed_in_training(list(polygons_per_tile.keys()))
 
         # In training, read all rasters available
         used_columns = None
@@ -149,12 +156,7 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
     if not Path(settings.TMP_DIR).exists():
         Path.mkdir(Path(settings.TMP_DIR))
 
-    spring_start = datetime(2021, 3, 1)
-    spring_end = datetime(2021, 3, 31)
-    summer_start = datetime(2021, 6, 1)
-    summer_end = datetime(2021, 6, 30)
-    autumn_start = datetime(2021, 11, 1)
-    autumn_end = datetime(2021, 11, 30)
+    seasons = get_season_dict()
 
     minio_client = _get_minio()
     mongo_products_collection = _connect_mongo_products_collection()
@@ -178,13 +180,19 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
 
     print(f"Working in tile {tile}")
     # Mongo query for obtaining valid products
-    max_cloud_percentage = 20
+    max_cloud_percentage = settings.MAX_CLOUD_PERCENTAGE
+
+    spring_start, spring_end = seasons["spring"]
     product_metadata_cursor_spring = _get_products_by_tile_and_date(
         tile, mongo_products_collection, spring_start, spring_end, max_cloud_percentage
     )
+
+    summer_start, summer_end = seasons["summer"]
     product_metadata_cursor_summer = _get_products_by_tile_and_date(
         tile, mongo_products_collection, summer_start, summer_end, max_cloud_percentage
     )
+
+    autumn_start, autumn_end = seasons["autumn"]
     product_metadata_cursor_autumn = _get_products_by_tile_and_date(
         tile, mongo_products_collection, autumn_start, autumn_end, max_cloud_percentage
     )
@@ -241,7 +249,7 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
             tile_df = pd.concat([tile_df, raster_df], axis=1)
 
     # Get crop mask for sentinel rasters and dataset labeled with database points in tile
-    band_path = _download_sample_band(tile, minio_client, mongo_products_collection)
+    band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
     kwargs = _get_kwargs_raster(band_path)
 
     if not predict:
@@ -417,29 +425,28 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
             predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
         )
         encoded_predictions = predictions.copy()
+        
         mapping = {
             "nodata": 0,
-            "beaches": 1,
-            "riparianForest": 2,
-            "builtUp": 3,
-            "dehesas": 4,
-            "shrubland": 5,
-            "pastos": 6,
-            "plantacion": 7,
-            "rocks": 8,
-            "water": 9,
-            "wetland": 10,
-            "cropland": 11,
-            "closedForest": 12,
-            "openForest": 13,
-            "bareSoil": 14
+            "builtUp": 1,
+            "herbaceousVegetation": 2,
+            "shrubland": 3,
+            "water": 4,
+            "wetland": 5,
+            "cropland": 6,
+            "closedForest": 7,
+            "openForest": 8,
+            "bareSoil": 9
         }
         for class_, value in mapping.items():
             encoded_predictions = np.where(
                 encoded_predictions == class_, value, encoded_predictions
             )
 
+        encoded_predictions = encoded_predictions.astype(np.uint8)
+
         kwargs_10m["driver"] = "GTiff"
+        kwargs_10m["dtype"] = np.uint8
         classification_name = f"classification_{tile}.tif"
         classification_path = str(Path(settings.TMP_DIR, classification_name))
         with rasterio.open(
@@ -456,11 +463,8 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
             content_type="image/tif",
         )
 
-
-"""
     for path in Path(settings.TMP_DIR).glob("**/*"):
         if path.is_file():
             path.unlink()
         elif path.is_dir():
             rmtree(path)
-"""
