@@ -45,8 +45,13 @@ def workflow(predict: bool, client: Client = None, tiles_to_predict: List[str] =
     # Iterate over a set of geojson/databases (the databases may not be equal)
     geojson_files = []
     for data_class in glob(join(settings.DB_DIR, "*.kmz")):
+        if not Path.exists(Path(data_class.replace("kmz","geojson"))):
+            print(f"Parsing database to geojson: {data_class}")
+            _kmz_to_geojson(data_class)
+
+    for data_class in glob(join(settings.DB_DIR, "*.geojson")):
         print(f"Working with database {data_class}")
-        geojson_files.append(_kmz_to_geojson(data_class))
+        geojson_files.append(data_class)
     polygons_per_tile = _group_polygons_by_tile(*geojson_files)
 
     if predict:
