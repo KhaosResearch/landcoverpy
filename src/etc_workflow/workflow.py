@@ -372,21 +372,13 @@ def _process_tile(tile, predict, polygons_in_tile, used_columns=None):
 
     if not predict:
 
-        raster_masked = np.ma.masked_array(label_lon_lat[:, :, 0], mask=crop_mask)
-        raster_masked = np.ma.compressed(raster_masked).flatten()
-        raster_df = pd.DataFrame({"class": raster_masked})
-        tile_df = pd.concat([tile_df, raster_df], axis=1)
+        for index, label in enumerate(["class", "longitude", "latitude", "forest_type"]):
 
-        raster_masked = np.ma.masked_array(label_lon_lat[:, :, 1], mask=crop_mask)
-        raster_masked = np.ma.compressed(raster_masked).flatten()
-        raster_df = pd.DataFrame({"longitude": raster_masked})
-        tile_df = pd.concat([tile_df, raster_df], axis=1)
-
-        raster_masked = np.ma.masked_array(label_lon_lat[:, :, 2], mask=crop_mask)
-        raster_masked = np.ma.compressed(raster_masked).flatten()
-        raster_df = pd.DataFrame({"latitude": raster_masked})
-        tile_df = pd.concat([tile_df, raster_df], axis=1)
-
+            raster_masked = np.ma.masked_array(label_lon_lat[:, :, index], mask=crop_mask)
+            raster_masked = np.ma.compressed(raster_masked).flatten()
+            raster_df = pd.DataFrame({label: raster_masked})
+            tile_df = pd.concat([tile_df, raster_df], axis=1)
+            
         tile_df_name = f"dataset_{tile}.csv"
         tile_df_path = Path(settings.TMP_DIR, tile_df_name)
         tile_df.to_csv(str(tile_df_path), index=False)

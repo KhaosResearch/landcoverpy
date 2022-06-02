@@ -236,6 +236,7 @@ def _group_polygons_by_tile(*geojson_files: str) -> dict:
         for feature in geojson["features"]:
             small_geojson = {"type": "FeatureCollection", "features": [feature]}
             geometry = small_geojson["features"][0]["geometry"]
+            properties = small_geojson["features"][0]["properties"]
             classification_label = geojson_file.split("_")[2]
             intersection_tiles = _get_mgrs_from_geometry(geometry)
 
@@ -247,6 +248,7 @@ def _group_polygons_by_tile(*geojson_files: str) -> dict:
                     {
                         "label": classification_label,
                         "geometry": geometry,
+                        "properties": properties
                     }
                 )
     return tiles
@@ -1291,6 +1293,7 @@ def _label_neighbours(
     column: int,
     coordinates: Tuple[int, int],
     label: str,
+    forest_type: str,
     label_lon_lat: np.ndarray,
 ) -> np.ndarray:
     """
@@ -1303,6 +1306,7 @@ def _label_neighbours(
         column (int) : dataset column position to label.
         coordinates (Tuple[int, int]) : latitude and longitude of the point
         label (str) : label name.
+        forest_type (str) : Type of the forest, None is pixel is not related to forests
         label_lon_lat (np.ndarray) : empty array of size (height, width, 3)
 
     Returns:
@@ -1311,6 +1315,7 @@ def _label_neighbours(
                                      `i` = 0 refers to the label of the pixel,
                                      `i` = 1 refers to the longitude of the pixel,
                                      `i` = 2 refers to the latitude of the pixel,
+                                     `i` = 3 refers to the forest type of the pixel,
     """
     # check the pixel is not out of bounds
     top = 0 < row + 1 < height
@@ -1318,17 +1323,18 @@ def _label_neighbours(
     left = 0 < column - 1 < width
     right = 0 < column + 1 < width
 
-    label_lon_lat[row, column, :] = label, coordinates[0], coordinates[1]
+    label_lon_lat[row, column, :] = label, coordinates[0], coordinates[1], forest_type
 
     if top:
-        label_lon_lat[row - 1, column, :] = label, coordinates[0], coordinates[1]
+        label_lon_lat[row - 1, column, :] = label, coordinates[0], coordinates[1], forest_type
 
         if right:
-            label_lon_lat[row, column + 1, :] = label, coordinates[0], coordinates[1]
+            label_lon_lat[row, column + 1, :] = label, coordinates[0], coordinates[1], forest_type
             label_lon_lat[row - 1, column + 1, :] = (
                 label,
                 coordinates[0],
                 coordinates[1],
+                forest_type
             )
 
         if left:
@@ -1336,26 +1342,29 @@ def _label_neighbours(
                 label,
                 coordinates[0],
                 coordinates[1],
+                forest_type
             )
-            label_lon_lat[row, column - 1, :] = label, coordinates[0], coordinates[1]
+            label_lon_lat[row, column - 1, :] = label, coordinates[0], coordinates[1], forest_type
 
     if bottom:
-        label_lon_lat[row + 1, column, :] = label, coordinates[0], coordinates[1]
+        label_lon_lat[row + 1, column, :] = label, coordinates[0], coordinates[1], forest_type
 
         if left:
             label_lon_lat[row + 1, column - 1, :] = (
                 label,
                 coordinates[0],
                 coordinates[1],
+                forest_type
             )
-            label_lon_lat[row, column - 1, :] = label, coordinates[0], coordinates[1]
+            label_lon_lat[row, column - 1, :] = label, coordinates[0], coordinates[1], forest_type
 
         if right:
-            label_lon_lat[row, column + 1, :] = label, coordinates[0], coordinates[1]
+            label_lon_lat[row, column + 1, :] = label, coordinates[0], coordinates[1], forest_type
             label_lon_lat[row + 1, column + 1, :] = (
                 label,
                 coordinates[0],
                 coordinates[1],
+                forest_type
             )
 
     return label_lon_lat
@@ -1380,7 +1389,7 @@ def _mask_polygons_by_tile(
                                      `i` = 2 refers to the latitude of the pixel,
 
     """
-    label_lon_lat = np.zeros((kwargs["height"], kwargs["width"], 3), dtype=object)
+    label_lon_lat = np.zeros((kwargs["height"], kwargs["width"], 4), dtype=object)
 
     # Label all the pixels in points database
     for geometry_id in range(len(polygons_in_tile)):
@@ -1399,6 +1408,9 @@ def _mask_polygons_by_tile(
         row, column = rasterio.transform.rowcol(
             kwargs["transform"], tr_point.x, tr_point.y
         )
+
+        forest_type = polygons_in_tile[geometry_id]["properties"].get("form_arb_d", None)
+
         label_lon_lat = _label_neighbours(
             kwargs["height"],
             kwargs["width"],
@@ -1406,6 +1418,7 @@ def _mask_polygons_by_tile(
             column,
             geometry_raw,
             label,
+            forest_type,
             label_lon_lat,
         )
 
@@ -1479,42 +1492,16 @@ def _remove_tiles_already_processed_in_training(tiles_in_training: List[str]):
     return unprocessed_tiles
 
 def get_list_of_tiles_in_study_region():
-    tiles = ["30SUD", "34TEM", "34TCM", "34TEL", "34TCN", "34SCJ", "34TCK", "34TDM", "34TDN", "34TEK", "34TDL", "34TDK", "34SDJ", "32SPF", 
-    "31SGV", "31SFB", "33STV", "32SND", "31SFT", "31SCA", "31SDS", "31SFU", "31SDA", "32SMF", "31SET", "30SXD", "31SDT", "31SDV", "31SBA",
-    "30SYF", "32SKD", "30SXA", "31SGA", "31SFV", "31SEV", "32SPD", "31SES", "31SCV", "31SCU", "32SPG", "31SEB", "32SKE", "31SDU", "30SYB",
-    "31SCT", "32SKG", "31SBR", "32SPC", "31SCS", "32SPE", "32SNE", "31SFA", "31SEA", "32SMD", "31SEU", "32SLD", "30SYC", "30SYE", "30SXE",
-    "32SLF", "32SNG", "31SBV", "32SLE", "31SBU", "31SGU", "31SBS", "30SYA", "31SBT", "31SGB", "30SYD", "32SKF", "32SNC", "30SWD", "30SXB",
-    "32SLG", "30SWC", "32SME", "32SMC", "30SXC", "32SNF", "32SQE", "30SWE", "32SMG", "32SQD", "33STA", "32SQF", "34TFL", "34TFM", "31SCC",
-    "31TDE", "31SCD", "31SED", "31SDD", "31TEE", "28RCR", "27RYM", "27RYL", "28RBR", "27RYN", "28RBT", "28RDR", "31TFE", "28RDS", "28RBS",
-    "28RER", "28RFS", "28RCS", "28RFT", "28RES", "28RET", "33TYH", "33TUL", "33TVL", "33TVK", "33TVM", "33TXH", "33TWJ", "33TYJ", "33TUM",
-    "33TXJ", "33TWL", "33TWK", "33TVJ", "33TWH", "33TXK", "33TUK", "36SUA", "36STA", "36RUV", "36RTV", "35RQQ", "35RPQ", "31TFH", "31TGH",
-    "31TEJ", "31TGJ", "31TFJ", "31TEG", "32TLP", "32TLN", "31TDK", "31TFL", "32TLQ", "31TFK", "31TGK", "31TGL", "31TDG", "31TEK", "31TDH",
-    "31TDJ", "31TEH", "31TEL", "30STF", "30STE", "35TKE", "34TGK", "34TFK", "35SKD", "34SGJ", "35SKB", "35SKC", "35SKA", "34SGH", "34SGG",
-    "35SLD", "35SNA", "35TLE", "35SLC", "35SLU", "34SFE", "35SLB", "34SFJ", "34SDG", "35SKV", "34TGL", "35TKF", "35SMU", "35SLV", "34SFH",
-    "35SKU", "35SLA", "34SGD", "34SGE", "34SFF", "34SEF", "34SGF", "34TGM", "35TKG", "35SNV", "34SDH", "34SFG", "35SMA", "35SMV", "34SEJ",
-    "34SEH", "34SEG", "35SMB", "32TPM", "33SWB", "33TTG", "34TBK", "32TQM", "33SVC", "33TYE", "32TMK", "33SVA", "32TQQ", "33SWA", "33TWG",
-    "32TQN", "33SXC", "32SQG", "33TXE", "32TMQ", "32TNP", "33TWF", "32TPN", "33SVB", "32TQR", "33STB", "33TUJ", "32TPR", "32TPQ", "32TPP",
-    "32TNR", "32TNK", "32TNQ", "33SXD", "32TQP", "33TUH", "32TMR", "34TBL", "32TML", "32SQH", "33TYF", "33SWD", "32TMP", "32TQS", "32TNT",
-    "33TWE", "33SWC", "32TMS", "33TXF", "32TNL", "33STC", "33SUB", "32TPS", "32TLR", "32SMJ", "33TVE", "32TNS", "32TPT", "33SUC", "32TQT",
-    "32SNJ", "33TVH", "32TLS", "33TUN", "33TUF", "33TVF", "31TGM", "33TVG", "33TUG", "32TQL", "33TTF", "34SDB", "34SCA", "34RCV", "34RDV",
-    "34SDA", "34SEA", "34SFA", "34SEB", "34SFB", "33SVV", "33TYG", "34TBM", "28RFQ", "29RLL", "29RNM", "28RGS", "29SNR", "30SUA", # 28RGR is missing
-    "29SPR", "30SVB", "30STA", "30SWB", "30SUB", "29SQU", "30SVA", "29RKL", "30SVC", "29RLP", "30RWV", "29RPP", "30SUE", "29RQP", "30SVD", 
-    "30SWA", "29RLM", "29RLN", "29SQV", "29RMM", "29RPN", "29SMR", "29RMP", "29SPU", "29RPQ", "29SQT", "30STD", "30SUC", "29RKN", "29RNQ", 
-    "29SQS", "29RKM", "30RTU", "30RTV", "30STC", "34TCL", "29RMQ", "30RUV", "28RFR", "29SPT", "29RMN", "30SVE", "30STB", "29SNS", "29SQR", 
-    "29SNT", "29SPS", "29RNN", "29RQQ", "29SMS", "29RNP", "29RLQ", "30TYK", "31TCE", "30SYG", "29TPG", "31TBE", "31SBD", "31SBC", "29SPC", 
-    "30STH", "30SYJ", "30SYH", "29TMG", "29SQC", "29TPF", "30SVH", "30SVJ", "30SWJ", "30STG", "30SUH", "29SPD", "29TPH", "30TUM", "30SUJ", 
-    "30TVK", "31TCF", "29SQD", "29SQA", "29SPA", "30SWF", "30SUF", "30TTM", "29TQG", "29TQE", "29SQB", "30TTK", "29TNG", "29SPB", "30SXG", 
-    "30SXJ", "30SXH", "30SUG", "30STJ", "30TWL", "29TPE", "30SVF", "30TWK", "30TUK", "30SWG", "30SVG", "29TQF", "30SWH", "30SXF", "30TTL", 
-    "30TVL", "31TBF", "30TUL", "30TXK", "31TDF", "30TYL", "31TBG", "30TYM", "30TWN", "30TXL", "29TNH", "30TYN", "29TQH", "31TCG", "30TXM", 
-    "29TMH", "29TQJ", "30TUN", "29TMJ", "31TCH", "30TUP", "30TVM", "30TXN", "30TVN", "29TNJ", "30TWM", "30TVP", "30TXP", "29TPJ", "30TWP", 
-    "36SXC", "37SCS", "37RBP", "36RYT", "36RYU", "37SCU", "37SCT", "36RXU", "37RBQ", "37SCR", "37SEA", "36RYV", "37RCQ", "37SGA", "37SFA", 
-    "37SDV", "37SBS", "36SYE", "38SKF", "37SBV", "36SYD", "37SBR", "36SYC", "37SBU", "37SDA", "37SCB", "37SBT", "37SDB", "36SXB", "38SLF", 
-    "36SYB", "37SEB", "36SYA", "37SCV", "37SGB", "37SFB", "38SKG", "37SFC", "37SCA", "38SLG", "38SKH", "37SGC", "36RXV", "37SCC", "37SBC", 
-    "36SYH", "36SXA", "36SYF", "37SBA", "37SEC", "36SYG", "37SBB", "37SDC", "33SVR", "32SNB", "32SQC", "33RXQ", "32SPB", "33RWQ", "32SPA", 
-    "33RVQ", "33STS", "33SUS", "32SQB", "32SQA", "33SUR", "33SWR", "33SVS", "33STR", "36SXD", "36SXE", "35TQE", "36TTL", "35TPF", "35TQF", 
-    "35SPA", "36SXF", "35SPB", "35TNF", "35SNB", "35TLG", "35TMG", "35TMF", "35TLF", "35TPE", "35SNC", "35SPC", "35SQD", "36SXG", "36STJ", 
-    "36TUK", "35TME", "35SPD", "35SND", "36SUJ", "36TTK", "35SMC", "36SXJ", "35TNE", "35SMD", "36SWD", "36TVK", "35SQV", "36SXH", "36SUG", 
-    "35SQC", "36SWF", "35SPV", "36SVD", "36STG", "36STE", "36SWE", "36STH", "35SQB", "36TUL", "35SQA", "36STF", "36SUH", "36SVE", "36SVJ", 
-    "36SVF", "36SWG", "36SVG", "36SWH", "36SVH", "36SWJ", "36SUF"]
+    tiles = ['30SYG', '29TPG', '31SCC', '31TDE', '31SBD', '31SBC', '29SPC', '30STH', '30SYJ',
+ '30SYH', '31SCD', '31SED', '31SDD', '29SQC', '29TPF', '30SVH', '30SVJ', '30SWJ',
+ '30STG', '30SUH', '29SPD', '29TPH', '30TUM', '30SUJ', '30SUE', '30TVK', '31TCF',
+ '29SQD', '31TEE', '29SQA', '29SPA', '30SWF', '30SUF', '30TTM', '29TQG', '29TQE',
+ '29SQB', '30TTK', '29TNG', '29SPB', '29SQV', '30SXG', '30SXJ', '30SXH', '30SUG',
+ '30STJ', '30TWL', '29TPE', '30STF', '30SVF', '30STE', '30TWK', '30TUK', '30SWG',
+ '30SVG', '29TQF', '30SWH', '31TBE', '30SXF', '30TTL', '30TVL', '31TBF', '30TUL',
+ '28RCR', '30TYK', '30TXK', '31TDF', '30TYL', '31TBG', '30TYM', '27RYM', '30TXL',
+ '29TNH', '27RYL', '29TQH', '28RBR', '31TCG', '28SCB', '27RYN', '30TXM', '31TDG',
+ '28RBT', '28RDR', '30TUN', '30TVM', '31TFE', '28RDS', '28RBS', '28RER', '28RFS',
+ '28RCS', '30TWM', '28SBB', '28RFT', '28RES', '28RET']
 
     return tiles
