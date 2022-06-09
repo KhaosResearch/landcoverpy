@@ -2,7 +2,7 @@ from distributed import Client
 
 from etc_workflow.config import settings
 from etc_workflow.data_postprocessing import postprocess_dataset
-from etc_workflow.model_training import train_model
+from etc_workflow.model_training import train_model_land_cover, train_model_forest
 from etc_workflow.plot_spectral_signature import compute_spectral_signature_plot
 from etc_workflow.workflow import workflow
 
@@ -24,12 +24,16 @@ def run_model_training():
     """Postprocess the training dataset, trains a Random Forest using it and computes the spectral plot of classes `water`, `wetland`, `closedForest` and `shrubland`"""
 
     input_dataset = "dataset.csv"
-    postprocessed_dataset = "dataset_postprocessed.csv"
+    land_cover_dataset = "dataset_postprocessed.csv"
+    forest_dataset = "dataset_forests.csv"
 
-    postprocess_dataset(input_dataset, postprocessed_dataset)
-    train_model(postprocessed_dataset)
+    postprocess_dataset(input_dataset, land_cover_dataset, True, forest_dataset)
+    train_model_land_cover(land_cover_dataset)
+    train_model_forest(forest_dataset, use_open_forest = True)
+    train_model_forest(forest_dataset, use_open_forest = False)
+
     compute_spectral_signature_plot(
-        postprocessed_dataset,
+        land_cover_dataset,
         out_plot_path="/mnt/home/anmabur/etc-uma/etc-scripts/images/plot.png",
         classes_showed=["water", "wetland", "closedForest", "shrubland"],
     )
