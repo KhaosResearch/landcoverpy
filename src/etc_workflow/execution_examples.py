@@ -2,6 +2,7 @@ from distributed import Client
 
 from etc_workflow.config import settings
 from etc_workflow.data_postprocessing import postprocess_dataset
+from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.model_training import train_model_land_cover, train_model_forest
 from etc_workflow.plot_spectral_signature import compute_spectral_signature_plot
 from etc_workflow.workflow import workflow
@@ -11,13 +12,13 @@ def run_compute_training_dataset_distributed():
     """Creates a training dataset in distributed mode"""
 
     client = Client(address=settings.DASK_CLUSTER_IP)
-    workflow(predict=False, client=client)
+    workflow(execution_mode=ExecutionMode.TRAINING, client=client)
 
 
 def run_compute_training_dataset():
     """Creates a training dataset in local mode"""
 
-    workflow(predict=False)
+    workflow(execution_mode=ExecutionMode.TRAINING)
 
 
 def run_model_training():
@@ -43,10 +44,10 @@ def run_predict_tiles_distributed():
     """Predicts all tiles appearing in the training dataset in distributed mode"""
 
     client = Client(address=settings.DASK_CLUSTER_IP)
-    workflow(predict=True, client=client, tiles_to_predict=None)
+    workflow(execution_mode=ExecutionMode.FOREST_PREDICTION, client=client, tiles_to_predict=None)
 
 
 def run_predict_tiles():
     """Predicts all tiles appearing in the training dataset in local mode"""
 
-    workflow(predict=True, tiles_to_predict=None)
+    workflow(execution_mode=ExecutionMode.FOREST_PREDICTION, tiles_to_predict=None)

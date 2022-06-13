@@ -1449,13 +1449,18 @@ def _safe_minio_execute(func: Callable, n_retries: int = 100, *args, **kwargs):
     signal.alarm(0)
 
 
-def _check_tiles_unpredicted_in_training(tiles_in_training: List[str]):
+def _check_tiles_not_predicted_in_training(tiles_in_training: List[str], forest_prediction: bool = False):
 
     minio = _get_minio()
 
+    if forest_prediction:
+        prefix = join(settings.MINIO_DATA_FOLDER_NAME, "forest_classification")
+    else:
+        prefix = join(settings.MINIO_DATA_FOLDER_NAME, "classification")
+
     classification_raster_cursor = minio.list_objects(
         settings.MINIO_BUCKET_CLASSIFICATIONS,
-        prefix=join(settings.MINIO_DATA_FOLDER_NAME, ""),
+        prefix=prefix
     )
 
     predicted_tiles = []
@@ -1469,6 +1474,34 @@ def _check_tiles_unpredicted_in_training(tiles_in_training: List[str]):
     unpredicted_tiles = list(np.setdiff1d(tiles_in_training, predicted_tiles))
 
     return unpredicted_tiles
+
+def _get_forest_masks(tile: str):
+    """
+    Get the land cover classification from a certain tile. A mask of pixels that are open forest or closed forest is returned.
+    Mask = 1 means closed forest, mask = 2 means open forest
+    """
+
+    minio_client = _get_minio()
+    filename = f"classification_{tile}.tif"
+    band_path = join(settings.TMP_DIR, filename)
+
+    _safe_minio_execute(
+        func=minio_client.fget_object,
+        bucket_name=settings.MINIO_BUCKET_CLASSIFICATIONS,
+        object_name=join(settings.MINIO_DATA_FOLDER_NAME, filename),
+        file_path=band_path,
+    )
+
+    with rasterio.open(band_path) as band_file:
+        band = band_file.read()
+
+        band = band_file.read()
+
+    mask = np.zeros_like(band)
+    mask = np.where(band == 7 , 1, mask) # closed forest, this should be get from .env
+    mask = np.where(band == 8 , 2, mask) # open forest, this should be get from .env
+
+    return mask
 
 def _remove_tiles_already_processed_in_training(tiles_in_training: List[str]):
 
@@ -1490,6 +1523,17 @@ def _remove_tiles_already_processed_in_training(tiles_in_training: List[str]):
     unprocessed_tiles = list(np.setdiff1d(tiles_in_training, tiles_processed))
 
     return unprocessed_tiles
+
+def _predict_forest_data_with_proper_model(data: pd.Series, data_type: int, clf_dense_forest, clf_open_forest):
+    """
+    Predicts `data` with `clf_dense_forest` if `data_type` is 1.
+    Predicts `data` with `clf_open_forest` if `data_type` is 2.
+    """
+    if data_type == 1:
+        prediction = clf_dense_forest.predict(data)
+    if data_type == 2:
+        prediction = clf_open_forest.predict(data)
+    return prediction
 
 def get_list_of_tiles_in_study_region():
     tiles = ['30SYG', '29TPG', '31SCC', '31TDE', '31SBD', '31SBC', '29SPC', '30STH', '30SYJ',
