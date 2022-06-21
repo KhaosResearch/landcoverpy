@@ -29,9 +29,9 @@ def run_model_training():
     forest_dataset = "dataset_forests.csv"
 
     postprocess_dataset(input_dataset, land_cover_dataset, True, forest_dataset)
-    train_model_land_cover(land_cover_dataset)
-    train_model_forest(forest_dataset, use_open_forest = True)
-    train_model_forest(forest_dataset, use_open_forest = False)
+    train_model_land_cover(land_cover_dataset, n_jobs = 1)
+    train_model_forest(forest_dataset, use_open_forest = True, n_jobs = 1)
+    train_model_forest(forest_dataset, use_open_forest = False, n_jobs = 1)
 
     compute_spectral_signature_plot(
         land_cover_dataset,
