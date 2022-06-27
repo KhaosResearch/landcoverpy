@@ -14,6 +14,7 @@ from distributed import Client
 
 from etc_workflow.aster import get_dem_from_tile
 from etc_workflow.config import settings
+from etc_workflow.exceptions import EtcWorkflowException, NoSentinelException
 from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.utils import (
     _check_tiles_not_predicted_in_training,
@@ -108,17 +109,27 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
             for tile in tiles_forest:
                 future = client.submit(_process_tile, tile, ExecutionMode.FOREST_PREDICTION, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
                 futures.append(future)
-        client.gather(futures)
+        client.gather(futures, errors="skip")
 
     else:
         if execution_mode != ExecutionMode.FOREST_PREDICTION:
             for tile in tiles:
-                _process_tile(tile, execution_mode, polygons_per_tile[tile], used_columns)  
+                try:
+                    _process_tile(tile, execution_mode, polygons_per_tile[tile], used_columns)
+                except EtcWorkflowException as e:
+                    print(e)
         else:
             for tile in tiles:
-                _process_tile(tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns)  
+                try:
+                    _process_tile(tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns)
+                except EtcWorkflowException as e:
+                    print(e)
             for tile in tiles_forest:
-                _process_tile(tile, ExecutionMode.FOREST_PREDICTION, polygons_per_tile[tile], used_columns)
+                try:
+                    _process_tile(tile, ExecutionMode.FOREST_PREDICTION, polygons_per_tile[tile], used_columns)
+                except EtcWorkflowException as e:
+                    print(e)
+
 
     if not predict:
         # Merge all tiles datasets into a big dataset.csv, then upload it to minio
@@ -226,8 +237,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         or len(product_per_season["autumn"]) == 0
         or len(product_per_season["summer"]) == 0
     ):
-        print(f"There is no valid data for tile {tile}. Skipping it...")
-        return
+        raise NoSentinelException(f"There is no valid Sentinel products for tile {tile}. Skipping it...")
 
     # Dataframe for storing data of a tile
     tile_df = None
@@ -237,9 +247,11 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         "aspect",
         "dem",
     ]
+    
     for dem_name in dems_raster_names:
         # Add dem and aspect data
         if (not predict) or (predict and dem_name in used_columns):
+
             dem_path = get_dem_from_tile(
                 tile, mongo_products_collection, minio_client, dem_name
             )
@@ -274,10 +286,10 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
     if execution_mode==ExecutionMode.TRAINING:
         crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, kwargs)
 
-    if execution_mode==ExecutionMode.LAND_COVER_PREDICTION:
+    elif execution_mode==ExecutionMode.LAND_COVER_PREDICTION:
         crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])), dtype=np.uint8)
 
-    if execution_mode==ExecutionMode.FOREST_PREDICTION:
+    elif execution_mode==ExecutionMode.FOREST_PREDICTION:
         forest_mask = _get_forest_masks(tile)
         crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])), dtype=np.uint8)
 
@@ -403,7 +415,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             raster_masked = np.ma.compressed(raster_masked).flatten()
             raster_df = pd.DataFrame({label: raster_masked})
             tile_df = pd.concat([tile_df, raster_df], axis=1)
-            
+
         tile_df_name = f"dataset_{tile}.csv"
         tile_df_path = Path(settings.TMP_DIR, tile_df_name)
         tile_df.to_csv(str(tile_df_path), index=False)
@@ -432,19 +444,22 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             file_path=model_path,
         )
 
+        nodata_rows = (~np.isfinite(tile_df)).any(axis=1)
+
+        # Low memory column reindex without copy taken from https://stackoverflow.com/questions/25878198/change-pandas-dataframe-column-order-in-place
+        for column in used_columns:
+            tile_df[column] = tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
+
         clf = joblib.load(model_path)
-        tile_df.sort_index(inplace=True, axis=1)
-        tile_df = tile_df.replace([np.inf, -np.inf], np.nan)
-        nodata_rows = np.isnan(tile_df).any(axis=1)
-        tile_df.fillna(0, inplace=True)
-        tile_df = tile_df.reindex(columns=used_columns)
+
         predictions = clf.predict(tile_df)
+
         predictions[nodata_rows] = "nodata"
         predictions = np.reshape(
             predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
         )
         encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
-        
+
         mapping = {
             "nodata": 0,
             "builtUp": 1,
@@ -481,7 +496,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             content_type="image/tif",
         )
 
-    if execution_mode == ExecutionMode.FOREST_PREDICTION:
+    elif execution_mode == ExecutionMode.FOREST_PREDICTION:
 
         model_name = "model.joblib"
         minio_models_folders_open = settings.OPEN_FOREST_MODEL_FOLDER
@@ -496,14 +511,14 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
                 file_path=join(settings.TMP_DIR, minio_model_folder, model_name),
             )
 
+
+        nodata_rows = (~np.isfinite(tile_df)).any(axis=1)
+
+        for column in used_columns:
+            tile_df[column] = tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
+
         clf_open_forest = joblib.load(join(settings.TMP_DIR, minio_models_folders_open, model_name))
         clf_dense_forest = joblib.load(join(settings.TMP_DIR, minio_models_folders_dense, model_name))
-
-        tile_df.sort_index(inplace=True, axis=1)
-        tile_df = tile_df.replace([np.inf, -np.inf], np.nan)
-        nodata_rows = np.isnan(tile_df).any(axis=1)
-        tile_df.fillna(0, inplace=True)
-        tile_df = tile_df.reindex(columns=used_columns)
 
         predictions_open = clf_open_forest.predict(tile_df)
         predictions_dense = clf_dense_forest.predict(tile_df)
@@ -518,8 +533,8 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         predictions = np.reshape(
             predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
         )
-        encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)       
-        
+        encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
+
         mapping = {
             'nodata': 0,
             'noforest': 1,

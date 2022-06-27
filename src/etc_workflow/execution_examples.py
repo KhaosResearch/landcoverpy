@@ -6,6 +6,7 @@ from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.model_training import train_model_land_cover, train_model_forest
 from etc_workflow.plot_spectral_signature import compute_spectral_signature_plot
 from etc_workflow.workflow import workflow
+from etc_workflow.utils import get_list_of_tiles_in_study_region
 
 
 def run_compute_training_dataset_distributed():
@@ -50,4 +51,4 @@ def run_predict_tiles_distributed():
 def run_predict_tiles():
     """Predicts all tiles appearing in the training dataset in local mode"""
 
-    workflow(execution_mode=ExecutionMode.FOREST_PREDICTION, tiles_to_predict=None)
+    workflow(execution_mode=ExecutionMode.FOREST_PREDICTION, tiles_to_predict=get_list_of_tiles_in_study_region())
