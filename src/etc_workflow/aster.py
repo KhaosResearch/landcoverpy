@@ -10,6 +10,7 @@ from rasterio import merge
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 from etc_workflow.config import settings
+from etc_workflow.exceptions import NoAsterException
 from etc_workflow.rasterpoint import RasterPoint
 from etc_workflow.utils import (
     _crop_as_sentinel_raster,
@@ -187,6 +188,8 @@ def get_dem_from_tile(
     overlapping_dem = _gather_aster(
         minio_client, bucket, left_bound, right_bound, upper_bound, lower_bound
     )
+    if overlapping_dem == []:
+        raise NoAsterException(f"There is no Aster products related to tile {tile}, probably a full-water tile.")
 
     print(
         f"Obtaining {dem_name} data of tile {tile} using {overlapping_dem} aster products"
