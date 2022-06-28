@@ -54,6 +54,11 @@ class _Settings(BaseSettings):
     # Product filtering parameters
     MAX_CLOUD_PERCENTAGE: int = 100
 
+    # Model folders in MinIO
+    LAND_COVER_MODEL_FOLDER: str = ""
+    OPEN_FOREST_MODEL_FOLDER: str = ""
+    DENSE_FOREST_MODEL_FOLDER: str = ""
+
     class Config:
         env_file = ".env"
         file_path = Path(env_file)

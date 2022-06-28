@@ -34,17 +34,17 @@ def _feature_reduction(
     return used_columns
 
 
-def train_model(input_training_dataset: str, n_jobs: int = 2):
-    """Trains a Random Forest model using a dataset."""
+def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
+    """Trains a Random Forest model using a land cover dataset."""
 
-    training_dataset_path = join(settings.TMP_DIR, input_training_dataset)
+    training_dataset_path = join(settings.TMP_DIR, land_cover_dataset)
 
     minio_client = _get_minio()
 
     _safe_minio_execute(
         func=minio_client.fget_object,
         bucket_name=settings.MINIO_BUCKET_DATASETS,
-        object_name=join(settings.MINIO_DATA_FOLDER_NAME, input_training_dataset),
+        object_name=join(settings.MINIO_DATA_FOLDER_NAME, land_cover_dataset),
         file_path=training_dataset_path,
     )
 
@@ -52,6 +52,8 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
     train_df = train_df.replace([np.inf, -np.inf], np.nan)
     train_df = train_df.fillna(np.nan)
     train_df = train_df.dropna()
+
+    minio_folder = settings.LAND_COVER_MODEL_FOLDER
 
     y_train_data = train_df["class"]
     x_train_data = train_df.drop(
@@ -90,7 +92,7 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
     _safe_minio_execute(
         func=minio_client.fput_object,
         bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=join(settings.MINIO_DATA_FOLDER_NAME, confusion_image_filename),
+        object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_folder, confusion_image_filename),
         file_path=out_image_path,
         content_type="image/png",
     )
@@ -103,7 +105,7 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
     _safe_minio_execute(
         func=minio_client.fput_object,
         bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{model_name}",
+        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_name}",
         file_path=model_path,
         content_type="mlmodel/randomforest",
     )
@@ -111,8 +113,112 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
     model_metadata = {
         "model": str(type(clf)),
         "n_jobs": n_jobs,
-        "used_columns": used_columns,
-        "classes": labels
+        "used_columns": list(used_columns),
+        "classes": list(labels)
+    }
+
+    model_metadata_name = "metadata.json"
+    model_metadata_path = join(settings.TMP_DIR, model_metadata_name)
+
+    with open(model_metadata_path, "w") as f:
+        json.dump(model_metadata, f)
+
+    _safe_minio_execute(
+        func=minio_client.fput_object,
+        bucket_name=settings.MINIO_BUCKET_MODELS,
+        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_metadata_name}",
+        file_path=model_metadata_path,
+        content_type="text/json",
+    )
+
+def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_jobs: int = 2):
+    """Trains a Random Forest model using a forest dataset."""
+
+    training_dataset_path = join(settings.TMP_DIR, forest_dataset)
+
+    minio_client = _get_minio()
+
+    _safe_minio_execute(
+        func=minio_client.fget_object,
+        bucket_name=settings.MINIO_BUCKET_DATASETS,
+        object_name=join(settings.MINIO_DATA_FOLDER_NAME, forest_dataset),
+        file_path=training_dataset_path,
+    )
+
+    train_df = pd.read_csv(training_dataset_path)
+    train_df = train_df.replace([np.inf, -np.inf], np.nan)
+    train_df = train_df.fillna(np.nan)
+    train_df = train_df.dropna()
+
+    minio_folder = ''
+    if use_open_forest:
+        train_df = train_df[train_df["class"] == "openForest"]
+        minio_folder = settings.OPEN_FOREST_MODEL_FOLDER
+    else:
+        train_df = train_df[train_df["class"] != "openForest"]
+        minio_folder = settings.DENSE_FOREST_MODEL_FOLDER
+
+    y_train_data = train_df["forest_type"]
+    x_train_data = train_df.drop(
+        [
+            "class",
+            "latitude",
+            "longitude",
+            "spring_product_name",
+            "autumn_product_name",
+            "summer_product_name",
+            "forest_type",
+        ],
+        axis=1,
+    )
+
+    used_columns = _feature_reduction(x_train_data, y_train_data)
+
+    reduced_x_train_data = train_df[used_columns]
+    X_train, X_test, y_train, y_test = train_test_split(
+        reduced_x_train_data, y_train_data, test_size=0.30
+    )
+
+    # Train model
+    clf = RandomForestClassifier(n_jobs=n_jobs)
+    X_train = X_train.reindex(columns=used_columns)
+    print(X_train)
+    clf.fit(X_train, y_train)
+    y_true = clf.predict(X_test)
+
+    labels = y_train_data.unique()
+
+    confusion_image_filename = "confusion_matrix.png"
+    out_image_path = join(settings.TMP_DIR, confusion_image_filename)
+    compute_confusion_matrix(y_true, y_test, labels, out_image_path=out_image_path)
+
+    # Save confusion matrix image to minio
+    _safe_minio_execute(
+        func=minio_client.fput_object,
+        bucket_name=settings.MINIO_BUCKET_MODELS,
+        object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_folder, confusion_image_filename),
+        file_path=out_image_path,
+        content_type="image/png",
+    )
+
+    model_name = "model.joblib"
+    model_path = join(settings.TMP_DIR, model_name)
+    joblib.dump(clf, model_path)
+
+    # Save model to minio
+    _safe_minio_execute(
+        func=minio_client.fput_object,
+        bucket_name=settings.MINIO_BUCKET_MODELS,
+        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_name}",
+        file_path=model_path,
+        content_type="mlmodel/randomforest",
+    )
+
+    model_metadata = {
+        "model": str(type(clf)),
+        "n_jobs": n_jobs,
+        "used_columns": list(used_columns),
+        "classes": list(labels)
     }
     model_metadata_name = "metadata.json"
     model_metadata_path = join(settings.TMP_DIR, model_metadata_name)
@@ -123,7 +229,8 @@ def train_model(input_training_dataset: str, n_jobs: int = 2):
     _safe_minio_execute(
         func=minio_client.fput_object,
         bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{model_metadata_name}",
+        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_metadata_name}",
         file_path=model_metadata_path,
         content_type="text/json",
     )
+
