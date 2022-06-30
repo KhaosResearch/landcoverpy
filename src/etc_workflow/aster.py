@@ -84,44 +84,38 @@ def _merge_dem(
     """
     dem = []
     bucket = _get_bucket_by_name(dem_name)
-    if not len(dem_paths) == 0:
-        for dem_path in dem_paths:
-            for file in minio_client.list_objects(
-                bucket, prefix=dem_path, recursive=True
-            ):
-                file_object = file.object_name
-                _safe_minio_execute(
-                    func=minio_client.fget_object,
-                    bucket_name=bucket,
-                    object_name=file_object,
-                    file_path=str(Path(outpath, file_object)),
-                )
-                if file_object.endswith(f"{dem_name}.tif"):
-                    dem.append(str(Path(outpath, file_object)))
+    for dem_path in dem_paths:
+        for file in minio_client.list_objects(
+            bucket, prefix=dem_path, recursive=True
+        ):
+            file_object = file.object_name
+            _safe_minio_execute(
+                func=minio_client.fget_object,
+                bucket_name=bucket,
+                object_name=file_object,
+                file_path=str(Path(outpath, file_object)),
+            )
+            if file_object.endswith(f"{dem_name}.tif"):
+                dem.append(str(Path(outpath, file_object)))
 
-        out_dem_meta = _get_kwargs_raster(dem[0])
-        dem, dem_transform = merge.merge(dem)
-        out_dem_meta["driver"] = "GTiff"
-        out_dem_meta["dtype"] = "float32"
-        out_dem_meta["height"] = dem.shape[1]
-        out_dem_meta["width"] = dem.shape[2]
-        out_dem_meta["transform"] = dem_transform
-        out_dem_meta["nodata"] = np.nan
+    out_dem_meta = _get_kwargs_raster(dem[0])
+    dem, dem_transform = merge.merge(dem)
+    out_dem_meta["driver"] = "GTiff"
+    out_dem_meta["dtype"] = "float32"
+    out_dem_meta["height"] = dem.shape[1]
+    out_dem_meta["width"] = dem.shape[2]
+    out_dem_meta["transform"] = dem_transform
+    out_dem_meta["nodata"] = np.nan
 
-        outpath_dem = str(Path(outpath, f"{dem_name}.tif"))
+    outpath_dem = str(Path(outpath, f"{dem_name}.tif"))
 
-        if not os.path.exists(os.path.dirname(outpath_dem)):
-            try:
-                os.makedirs(os.path.dirname(outpath_dem))
-            except OSError as err:  # Guard against race condition
-                print("Could not create merged DEM file path: ", err)
+    if not os.path.exists(os.path.dirname(outpath_dem)):
+        os.makedirs(os.path.dirname(outpath_dem))
 
-        with rasterio.open(outpath_dem, "w", **out_dem_meta) as dm:
-            dm.write(dem)
+    with rasterio.open(outpath_dem, "w", **out_dem_meta) as dm:
+        dm.write(dem)
 
-        return outpath_dem
-    else:
-        print("Any dem found for this product")
+    return outpath_dem
 
 
 def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:

@@ -300,8 +300,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         current_bucket = None
 
         if len(products_metadata) == 0:
-            print(f"Products found in tile {tile} are not valid")
-            break
+            raise NoSentinelException(f"There is no valid Sentinel products for tile {tile}. Skipping it...")
 
         elif len(products_metadata) == 1:
             product_metadata = products_metadata[0]
