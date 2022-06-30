@@ -253,7 +253,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         if (not predict) or (predict and dem_name in used_columns):
 
             dem_path = get_dem_from_tile(
-                tile, mongo_products_collection, minio_client, dem_name
+                execution_mode, tile, mongo_products_collection, minio_client, dem_name
             )
 
             # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters

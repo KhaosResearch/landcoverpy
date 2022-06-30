@@ -11,6 +11,7 @@ from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 from etc_workflow.config import settings
 from etc_workflow.exceptions import NoAsterException
+from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.rasterpoint import RasterPoint
 from etc_workflow.utils import (
     _crop_as_sentinel_raster,
@@ -158,7 +159,7 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
 
 
 def get_dem_from_tile(
-    tile: str, mongo_collection: Collection, minio_client: Minio, dem_name: str
+    execution_mode: ExecutionMode, tile: str, mongo_collection: Collection, minio_client: Minio, dem_name: str
 ):
     """
     Create both aspect and slope rasters merging aster products and proyecting them to sentinel rasters.
@@ -198,6 +199,6 @@ def get_dem_from_tile(
     kwargs = _get_kwargs_raster(sample_band_path)
     r_dem_path = _reproject_dem(dem_path, str(kwargs["crs"]))
 
-    r_dem_path = _crop_as_sentinel_raster(r_dem_path, sample_band_path)
+    r_dem_path = _crop_as_sentinel_raster(execution_mode ,r_dem_path, sample_band_path)
 
     return r_dem_path
