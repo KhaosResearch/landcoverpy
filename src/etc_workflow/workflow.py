@@ -105,7 +105,7 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
             for tile in tiles:
                 future = client.submit(_process_tile, tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
                 futures.append(future)
-            client.gather(futures)
+            client.gather(futures, errors="skip")
             for tile in tiles_forest:
                 future = client.submit(_process_tile, tile, ExecutionMode.FOREST_PREDICTION, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
                 futures.append(future)
@@ -253,7 +253,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         if (not predict) or (predict and dem_name in used_columns):
 
             dem_path = get_dem_from_tile(
-                tile, mongo_products_collection, minio_client, dem_name
+                execution_mode, tile, mongo_products_collection, minio_client, dem_name
             )
 
             # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
