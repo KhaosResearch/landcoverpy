@@ -34,6 +34,7 @@ from sklearn.decomposition import PCA
 
 from etc_workflow import raw_index_calculation_composite
 from etc_workflow.config import settings
+from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.rasterpoint import RasterPoint
 
 
@@ -1201,7 +1202,7 @@ def _sentinel_raster_to_polygon(sentinel_raster_path: str):
     return sentinel_raster_polygon, sentinel_raster_polygon_json
 
 
-def _crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
+def _crop_as_sentinel_raster(execution_mode: ExecutionMode, raster_path: str, sentinel_path: str) -> str:
     """
     Crop a raster merge as a sentinel tile. The resulting image can be smaller than a sentinel tile.
 
@@ -1282,6 +1283,38 @@ def _crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
             dst_crs=sentinel_kwargs["crs"],
             resampling=Resampling.nearest,
         )
+
+    if execution_mode != ExecutionMode.TRAINING:
+
+        # For prediction, raster is filled with 0 to have equal dimensions to the Sentinel product (aster products in water are always 0).
+        # This is made only for prediction because in training pixels are obtained using latlong, it will be a waste of time.
+        # In prediction, the same dimensions are needed because the whole product is converted to a flattered array, then concatenated to a big dataframe.
+
+        if (y_transform_position < y_sentinel) or (x_transform_position > x_sentinel):
+
+            spatial_resolution = sentinel_kwargs["transform"][0]
+            
+            with rasterio.open(raster_path) as raster_file:
+                cropped_raster_kwargs = raster_file.meta
+                cropped_raster = raster_file.read(1) 
+
+            row_difference = int((y_sentinel - y_transform_position)/spatial_resolution)
+            column_difference = int((x_sentinel - x_transform_position)/spatial_resolution)
+            cropped_raster = np.roll(cropped_raster, (row_difference,-column_difference), axis=(0,1))
+            cropped_raster[:row_difference,:] = 0
+            cropped_raster[:,:column_difference] = 0
+
+            cropped_raster_kwargs["transform"] = rasterio.Affine(
+                sentinel_kwargs["transform"][0],
+                0.0,
+                sentinel_kwargs["transform"][2],
+                0.0,
+                sentinel_kwargs["transform"][4],
+                sentinel_kwargs["transform"][5],
+            )
+
+            with rasterio.open(raster_path, "w", **cropped_raster_kwargs) as dst:
+                dst.write(cropped_raster.reshape(1,cropped_raster.shape[0],-1))
 
     return raster_path
 
@@ -1532,9 +1565,9 @@ def get_list_of_tiles_in_study_region():
  '29SQB', '30TTK', '29TNG', '29SPB', '29SQV', '30SXG', '30SXJ', '30SXH', '30SUG',
  '30STJ', '30TWL', '29TPE', '30STF', '30SVF', '30STE', '30TWK', '30TUK', '30SWG',
  '30SVG', '29TQF', '30SWH', '31TBE', '30SXF', '30TTL', '30TVL', '31TBF', '30TUL',
- '28RCR', '30TYK', '30TXK', '31TDF', '30TYL', '31TBG', '30TYM', '27RYM', '30TXL',
- '29TNH', '27RYL', '29TQH', '28RBR', '31TCG', '28SCB', '27RYN', '30TXM', '31TDG',
- '28RBT', '28RDR', '30TUN', '30TVM', '31TFE', '28RDS', '28RBS', '28RER', '28RFS',
- '28RCS', '30TWM', '28SBB', '28RFT', '28RES', '28RET']
+ '30TYK', '30TXK', '31TDF', '30TYL', '31TBG', '30TYM', '27RYM', '30TXL', '29TNH',
+ '27RYL', '29TQH', '31TCG', '27RYN', '30TXM', '31TDG', '30TUN', '30TVM', '31TFE',
+ '30TWM', '29TNG', '29THN', '29TNJ', '29TPJ', '29TQJ', '30TPU', '30TVP', '30TWP',
+ '30TVN', '30TWN', '30TXN', '30TYN', '31TCH' ]
 
     return tiles
