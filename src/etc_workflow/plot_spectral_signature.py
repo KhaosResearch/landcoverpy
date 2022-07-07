@@ -14,10 +14,9 @@ def _plot_dataset(dataset: pd.DataFrame, out_plot_path: str, target_column: str)
 
 
 
-    fig, ax = pyplot.subplots(figsize=(35, 15))
-    ax.set(ylim=(-2, 2))
+    fig, ax = pyplot.subplots(figsize=(16, 5))
     sns.lineplot(
-        ax=ax, x=dataset["raster"], y=dataset["mean"], hue=dataset[target_column], linewidth=3
+        ax=ax, x=dataset["raster"], y=dataset["mean"], hue=dataset[target_column], linewidth=2
     )
     ax.tick_params(labelrotation=90)
 
@@ -30,10 +29,11 @@ def _plot_dataset(dataset: pd.DataFrame, out_plot_path: str, target_column: str)
             x=df["raster"],
             y1=df["mean"] + df["std"],
             y2=df["mean"] - df["std"],
-            alpha=0.5,
+            alpha=0.3,
             linewidth=0,
         )
-    fig.get_figure().savefig(out_plot_path)
+        
+    fig.get_figure().savefig(out_plot_path, bbox_inches="tight")
 
 
 def compute_spectral_signature_plot(
@@ -62,6 +62,9 @@ def compute_spectral_signature_plot(
             "spring_product_name",
             "autumn_product_name",
             "summer_product_name",
+            "summer_cri1",
+            "autumn_cri1",
+            "spring_cri1",
         ],
         axis=1,
     )
