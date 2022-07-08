@@ -664,7 +664,7 @@ def _composite(
     band_paths: List[str], method: str = "median", cloud_masks: List[np.ndarray] = None
 ) -> Tuple[np.ndarray, dict]:
     """
-    Calculate the composite between a series of bands
+    Calculate the composite between a series of bands.
 
     Parameters:
         band_paths (List[str]) : List of paths to calculate the composite from.
@@ -711,21 +711,24 @@ def _composite(
     return (composite_out, composite_kwargs)
 
 
-def _get_id_composite(products_ids: List[str]) -> str:
+def _get_id_composite(products_ids: List[str], execution_mode: ExecutionMode) -> str:
     """
-    Calculate the id of a composite using its products' ids.
+    Calculate the id of a composite using its products' ids and the execution mode.
     """
     products_ids.sort()
+    mode_encoded = "1" if execution_mode != ExecutionMode.TRAINING else "0"
     concat_ids = "".join(products_ids)
-    hashed_ids = sha256(concat_ids.encode("utf-8")).hexdigest()
+    id_code = concat_ids + mode_encoded 
+    hashed_ids = sha256(id_code.encode("utf-8")).hexdigest()
     return hashed_ids
 
 
 def _get_title_composite(
-    products_dates: List[str], products_tiles: List[str], composite_id: str
+    products_dates: List[str], products_tiles: List[str], composite_id: str, execution_mode: ExecutionMode
 ) -> str:
     """
     Get the title of a composite.
+    If the execution mode is training, the title will contain the "S2E" prefix, else it will be "S2S".
     """
     if not all(product_tile == products_tiles[0] for product_tile in products_tiles):
         raise ValueError(
@@ -735,19 +738,20 @@ def _get_title_composite(
     first_product_date, last_product_date = min(products_dates), max(products_dates)
     first_product_date = first_product_date.split("T")[0]
     last_product_date = last_product_date.split("T")[0]
-    composite_title = f"S2X_MSIL2A_{first_product_date}_NXXX_RXXX_{tile}_{last_product_date}_{composite_id[:8]}"
+    prefix = "S2S" if execution_mode != ExecutionMode.TRAINING else "S2E"
+    composite_title = f"{prefix}_MSIL2A_{first_product_date}_NXXX_RXXX_{tile}_{last_product_date}_{composite_id[:8]}"
     return composite_title
 
 
 # Intentar leer de mongo si existe algun composite con esos products
 def _get_composite(
-    products_metadata: Iterable[dict], mongo_collection: Collection
+    products_metadata: Iterable[dict], mongo_collection: Collection, execution_mode: ExecutionMode
 ) -> dict:
     """
     Search a composite metadata in mongo.
     """
     products_ids = [products_metadata["id"] for products_metadata in products_metadata]
-    hashed_id_composite = _get_id_composite(products_ids)
+    hashed_id_composite = _get_id_composite(products_ids, execution_mode)
     composite_metadata = mongo_collection.find_one({"id": hashed_id_composite})
     return composite_metadata
 
@@ -758,11 +762,14 @@ def _create_composite(
     bucket_products: str,
     bucket_composites: str,
     mongo_composites_collection: Collection,
+    execution_mode: ExecutionMode
 ) -> None:
     """
     Compose multiple Sentinel-2 products into a new product, this product is called "composite".
     Each band of the composite is computed using the pixel-wise median. Cloudy pixels of each product are not used in the median.
-    Once computed, the composite is stored in Minio, and its metadata in Mongo.
+    Cloud masks are expanded if the execution mode is training, creating a composite with "S2E" prefix.
+    If execution mode is predict, Sentinel's default cloud masks are used, creating a composite with "S2S" prefix.
+    Once computed, the composite is stored in Minio, and its metadata in Mongo. 
     """
 
     products_titles = [product["title"] for product in products_metadata]
@@ -815,7 +822,8 @@ def _create_composite(
                 # Binarize scl band to get a cloud mask
                 cloud_mask = np.isin(scl_band, scl_cloud_values).astype(np.bool)
                 # Expand cloud mask for a more aggresive masking
-                cloud_mask = _expand_cloud_mask(cloud_mask, int(spatial_resolution))
+                if execution_mode == ExecutionMode.TRAINING:
+                    cloud_mask = _expand_cloud_mask(cloud_mask, int(spatial_resolution))
                 cloud_masks[spatial_resolution].append(cloud_mask)
                 kwargs = _get_kwargs_raster(temp_path_product_band)
                 with rasterio.open(temp_path_product_band, "w", **kwargs) as f:
@@ -835,8 +843,8 @@ def _create_composite(
                     cloud_masks_temp_paths.append(scl_band_10m_temp_path)
                     cloud_masks["10"].append(cloud_mask_10m)
 
-    composite_id = _get_id_composite(products_ids)
-    composite_title = _get_title_composite(products_dates, products_tiles, composite_id)
+    composite_id = _get_id_composite(products_ids, execution_mode)
+    composite_title = _get_title_composite(products_dates, products_tiles, composite_id, execution_mode)
     temp_path_composite = Path(settings.TMP_DIR, composite_title + ".SAFE")
 
     uploaded_composite_band_paths = []
@@ -938,7 +946,7 @@ def _create_composite(
         # Compute indexes
         raw_index_calculation_composite.calculate_raw_indexes(
             _get_id_composite(
-                [products_metadata["id"] for products_metadata in products_metadata]
+                [products_metadata["id"] for products_metadata in products_metadata], execution_mode
             )
         )
 

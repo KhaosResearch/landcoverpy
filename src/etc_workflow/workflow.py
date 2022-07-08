@@ -310,7 +310,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             mongo_composites_collection = _connect_mongo_composites_collection()
             products_metadata_list = list(products_metadata)
             product_metadata = _get_composite(
-                products_metadata_list, mongo_composites_collection
+                products_metadata_list, mongo_composites_collection, execution_mode
             )
             if product_metadata is None:
                 _create_composite(
@@ -319,9 +319,10 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
                     bucket_products,
                     bucket_composites,
                     mongo_composites_collection,
+                    execution_mode
                 )
                 product_metadata = _get_composite(
-                    products_metadata_list, mongo_composites_collection
+                    products_metadata_list, mongo_composites_collection, execution_mode
                 )
             current_bucket = bucket_composites
 

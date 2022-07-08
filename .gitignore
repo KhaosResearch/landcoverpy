@@ -14,6 +14,7 @@ __pycache__/
 
 # Tmp files
 minio_tmp/
+tmp/
 
 # ML models
 *.pkl
