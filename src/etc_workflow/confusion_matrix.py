@@ -222,8 +222,7 @@ def _compute_matrix(
     ax.set_title("Confusion matrix")
     ax.set_xlabel(xlbl)
     ax.set_ylabel(ylbl)
-    plt.tight_layout()  # set layout slim
-    plt.savefig(out_image_path)
+    plt.savefig(out_image_path, bbox_inches="tight")
 
 
 def _get_cmap():
@@ -238,4 +237,4 @@ def compute_confusion_matrix(y_true, y_test, labels, out_image_path):
     df_cm.columns = labels
     df_cm.index = labels
 
-    _compute_matrix(df_cm, cmap=_get_cmap(), out_image_path=out_image_path)
+    _compute_matrix(df_cm, cmap=_get_cmap(), out_image_path=out_image_path, figsize=[20,20])
