@@ -728,6 +728,7 @@ def _get_title_composite(
 ) -> str:
     """
     Get the title of a composite.
+    If the execution mode is training, the title will contain the "S2E" prefix, else it will be "S2S".
     """
     if not all(product_tile == products_tiles[0] for product_tile in products_tiles):
         raise ValueError(
