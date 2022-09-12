@@ -228,10 +228,11 @@ def compute_confusion_matrix(y_true, y_test, labels, out_image_path):
     df_cm = pd.DataFrame(confusion_matrix(y_true, y_test))
 
     # Save the matrix in csv format in case it is needed (is not uploaded to MinIO)
-    df_cm.to_csv(out_image_path.replace(".png",".csv"))
 
     df_cm.columns = labels
     df_cm.index = labels
+
+    df_cm.to_csv(out_image_path.replace(".png",".csv"),)
 
     df_len = len(df_cm) + 1
 
