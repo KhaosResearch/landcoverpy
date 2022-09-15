@@ -10,13 +10,17 @@ from etc_workflow.config import settings
 from etc_workflow.utils import _get_minio, _safe_minio_execute
 
 
-def _plot_dataset(dataset: pd.DataFrame, out_plot_path: str, target_column: str):
-
-
+def _plot_dataset(
+    dataset: pd.DataFrame, out_plot_path: str, out_legend_path: str, target_column: str
+):
 
     fig, ax = pyplot.subplots(figsize=(16, 5))
     sns.lineplot(
-        ax=ax, x=dataset["raster"], y=dataset["mean"], hue=dataset[target_column], linewidth=2
+        ax=ax,
+        x=dataset["raster"],
+        y=dataset["mean"],
+        hue=dataset[target_column],
+        linewidth=2,
     )
     ax.tick_params(labelrotation=90)
 
@@ -32,13 +36,117 @@ def _plot_dataset(dataset: pd.DataFrame, out_plot_path: str, target_column: str)
             alpha=0.3,
             linewidth=0,
         )
-        
+
+    # Remove legend
+    ax.get_legend().remove()
+
+    # Set x-axis ticks labels
+    bands = [
+        "slope",
+        "aspect",
+        "dem",
+        "spring_B01",
+        "spring_B02",
+        "spring_B03",
+        "spring_B04",
+        "spring_B05",
+        "spring_B06",
+        "spring_B07",
+        "spring_B08",
+        "spring_B8A",
+        "spring_B09",
+        "spring_B11",
+        "spring_B12",
+        "summer_B01",
+        "summer_B02",
+        "summer_B03",
+        "summer_B04",
+        "summer_B05",
+        "summer_B06",
+        "summer_B07",
+        "summer_B08",
+        "summer_B8A",
+        "summer_B09",
+        "summer_B11",
+        "summer_B12",
+        "autumn_B01",
+        "autumn_B02",
+        "autumn_B03",
+        "autumn_B04",
+        "autumn_B05",
+        "autumn_B06",
+        "autumn_B07",
+        "autumn_B08",
+        "autumn_B8A",
+        "autumn_B09",
+        "autumn_B11",
+        "autumn_B12",
+        "spring_AOT",
+        "spring_WVP",
+        "summer_AOT",
+        "summer_WVP",
+        "autumn_AOT",
+        "autumn_WVP",
+        "spring_evi2",
+        "spring_mndwi",
+        "spring_moisture",
+        "spring_ndre",
+        "spring_ndvi",
+        "spring_ndyi",
+        "spring_osavi",
+        "spring_ri",
+        "summer_evi2",
+        "summer_mndwi",
+        "summer_moisture",
+        "summer_ndre",
+        "summer_ndvi",
+        "summer_ndyi",
+        "summer_osavi",
+        "summer_ri",
+        "autumn_evi2",
+        "autumn_mndwi",
+        "autumn_moisture",
+        "autumn_ndre",
+        "autumn_ndvi",
+        "autumn_ndyi",
+        "autumn_osavi",
+        "autumn_ri",
+    ]
+
+    ax.set_xticks(ax.get_xticks())  # just get ticks and reset whatever we already have
+    ax.set_xticklabels(bands)  # set the new x ticks labels
+
     fig.get_figure().savefig(out_plot_path, bbox_inches="tight")
+
+    # Isolate and save legend separately
+    legend = fig.legend(prop=dict(size=19))
+    fig.canvas.draw()
+    legend_bbox = legend.get_tightbbox(fig.canvas.get_renderer())
+    legend_bbox = legend_bbox.transformed(fig.dpi_scale_trans.inverted())
+    legend_fig, legend_ax = pyplot.subplots(
+        figsize=(legend_bbox.width, legend_bbox.height)
+    )
+    legend_squared = legend_ax.legend(
+        *ax.get_legend_handles_labels(),
+        bbox_to_anchor=(0, 0, 1, 1),
+        bbox_transform=legend_fig.transFigure,
+        frameon=False,
+        fancybox=None,
+        shadow=False,
+        mode="expand",
+        prop=dict(size=18)
+    )
+    legend_ax.axis("off")
+
+    legend_fig.savefig(
+        out_legend_path, bbox_inches="tight", bbox_extra_artists=[legend_squared],
+    )
 
 
 def compute_spectral_signature_plot(
     input_dataset: str,
     out_plot_path: str,
+    out_legend_path: str,
     classes_showed: List[str],
     is_forest: bool = False,
 ):
@@ -69,10 +177,9 @@ def compute_spectral_signature_plot(
         axis=1,
     )
 
-    
     if is_forest:
         class_column = "forest_type"
-        df = df.drop("class",axis=1)
+        df = df.drop("class", axis=1)
     else:
         class_column = "class"
 
@@ -87,4 +194,4 @@ def compute_spectral_signature_plot(
     df = means.join(stds)
 
     df = df[df[class_column].isin(classes_showed)]
-    _plot_dataset(df, out_plot_path, class_column)
+    _plot_dataset(df, out_plot_path, out_legend_path, class_column)
