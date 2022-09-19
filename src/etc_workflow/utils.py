@@ -170,7 +170,8 @@ def _kmz_to_geojson(kmz_file: str) -> str:
     """
     Transform a kmz file to a geojson file
     """
-    gpd.io.file.fiona.drvsupport.supported_drivers["KML"] = "rw"
+    import fiona
+    fiona.drvsupport.supported_drivers['KML'] = 'rw'
     geojson_file = kmz_file[:-4] + ".geojson"
     with ZipFile(kmz_file, "r") as zip_in:
         zip_in.extractall("./databases/")
@@ -1504,8 +1505,6 @@ def _get_forest_masks(tile: str):
     )
 
     with rasterio.open(band_path) as band_file:
-        band = band_file.read()
-
         band = band_file.read()
 
     mask = np.zeros_like(band, dtype=np.uint8)

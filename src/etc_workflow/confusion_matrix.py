@@ -225,7 +225,7 @@ def compute_confusion_matrix(y_true, y_test, labels, out_image_path):
         Create confusion matrix structure and make sure it scales properly based on the number of classes.
     """
 
-    df_cm = pd.DataFrame(confusion_matrix(y_true, y_test))
+    df_cm = pd.DataFrame(confusion_matrix(y_true, y_test, labels=labels))
 
     # Save the matrix in csv format in case it is needed (is not uploaded to MinIO)
 
