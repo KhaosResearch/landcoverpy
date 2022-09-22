@@ -52,7 +52,7 @@ class _Settings(BaseSettings):
     AUTUMN_END: str = "2001-12-31"
 
     # Product filtering parameters
-    MAX_CLOUD_PERCENTAGE: int = 100
+    MAX_CLOUD: float = 1.0
 
     # Model folders in MinIO
     LAND_COVER_MODEL_FOLDER: str = ""

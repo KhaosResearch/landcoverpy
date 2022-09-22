@@ -38,7 +38,7 @@ def _get_dict_of_products_by_tile(tiles: List[str], mongo_collection: Collection
         for season in seasons:
             start_date, end_date = seasons[season]
             product_metadata_cursor = _get_products_by_tile_and_date(
-                tile, mongo_collection, start_date, end_date, cloud_percentage=settings.MAX_CLOUD_PERCENTAGE
+                tile, mongo_collection, start_date, end_date, cloud_percentage=settings.MAX_CLOUD
             )
             products = list(product_metadata_cursor)[:5] # The workflow only takes into account the first five
 

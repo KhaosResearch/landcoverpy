@@ -109,7 +109,7 @@ def _get_products_by_tile_and_date(
                             "cond": {
                                 "$and": [
                                     {"$eq": ["$$index.mask", None]},
-                                    {"$eq": ["$$index.name", "cover-percentage"]},
+                                    {"$eq": ["$$index.name", "cloud-mask"]},
                                     {"$lt": ["$$index.value", cloud_percentage]},
                                 ]
                             },
