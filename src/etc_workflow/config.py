@@ -59,6 +59,9 @@ class _Settings(BaseSettings):
     OPEN_FOREST_MODEL_FOLDER: str = ""
     DENSE_FOREST_MODEL_FOLDER: str = ""
 
+    # Composite-related parameters
+    MAX_PRODUCTS_COMPOSITE: int = 1
+
     class Config:
         env_file = ".env"
         file_path = Path(env_file)
