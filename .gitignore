@@ -4,6 +4,7 @@
 databases
 *.kmz
 *.geojson
+hackaton/
 
 # Environments
 .env

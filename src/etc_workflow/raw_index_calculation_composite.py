@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-from greensenti.cli.compute_index import *
+from greensenti.band_arithmetic import *
 from minio import Minio
 from pymongo import MongoClient
 

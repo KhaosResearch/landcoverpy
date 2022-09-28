@@ -52,12 +52,15 @@ class _Settings(BaseSettings):
     AUTUMN_END: str = "2001-12-31"
 
     # Product filtering parameters
-    MAX_CLOUD_PERCENTAGE: int = 100
+    MAX_CLOUD: float = 1.0
 
     # Model folders in MinIO
     LAND_COVER_MODEL_FOLDER: str = ""
     OPEN_FOREST_MODEL_FOLDER: str = ""
     DENSE_FOREST_MODEL_FOLDER: str = ""
+
+    # Composite-related parameters
+    MAX_PRODUCTS_COMPOSITE: int = 1
 
     class Config:
         env_file = ".env"

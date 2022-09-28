@@ -109,7 +109,7 @@ def _get_products_by_tile_and_date(
                             "cond": {
                                 "$and": [
                                     {"$eq": ["$$index.mask", None]},
-                                    {"$eq": ["$$index.name", "cover-percentage"]},
+                                    {"$eq": ["$$index.name", "cloud-mask"]},
                                     {"$lt": ["$$index.value", cloud_percentage]},
                                 ]
                             },
@@ -170,7 +170,8 @@ def _kmz_to_geojson(kmz_file: str) -> str:
     """
     Transform a kmz file to a geojson file
     """
-    gpd.io.file.fiona.drvsupport.supported_drivers["KML"] = "rw"
+    import fiona
+    fiona.drvsupport.supported_drivers['KML'] = 'rw'
     geojson_file = kmz_file[:-4] + ".geojson"
     with ZipFile(kmz_file, "r") as zip_in:
         zip_in.extractall("./databases/")
@@ -488,38 +489,8 @@ def _read_raster(
         band = _normalize(band, value1, value2)
 
     if rescale:
-        img_resolution = kwargs["transform"][0]
-        scale_factor = img_resolution / 10
-        # Scale the image to a resolution of 10m per pixel
-        if img_resolution != 10:
-
-            new_kwargs = kwargs.copy()
-            new_kwargs["height"] = int(kwargs["height"] * scale_factor)
-            new_kwargs["width"] = int(kwargs["width"] * scale_factor)
-            new_kwargs["transform"] = rasterio.Affine(
-                10, 0.0, kwargs["transform"][2], 0.0, -10, kwargs["transform"][5]
-            )
-
-            rescaled_raster = np.ndarray(
-                shape=(new_kwargs["height"], new_kwargs["width"]), dtype=np.float32
-            )
-
-            print(f"Rescaling raster {band_name}, from: {img_resolution}m to 10.0m")
-            reproject(
-                source=band,
-                destination=rescaled_raster,
-                src_transform=kwargs["transform"],
-                src_crs=kwargs["crs"],
-                dst_resolution=(new_kwargs["width"], new_kwargs["height"]),
-                dst_transform=new_kwargs["transform"],
-                dst_crs=new_kwargs["crs"],
-                resampling=Resampling.nearest,
-            )
-            band = rescaled_raster.reshape(
-                (new_kwargs["count"], *rescaled_raster.shape)
-            )
-            kwargs = new_kwargs
-            # Update band metadata
+        band, kwargs = _rescale_band(band, kwargs, 10, band_name)
+        
 
     # Create a temporal memory file to mask the band
     # This is necessary because the band is previously read to scale its resolution
@@ -1536,8 +1507,6 @@ def _get_forest_masks(tile: str):
     with rasterio.open(band_path) as band_file:
         band = band_file.read()
 
-        band = band_file.read()
-
     mask = np.zeros_like(band, dtype=np.uint8)
     mask = np.where(band == 7 , 1, mask) # closed forest, this should be get from .env
     mask = np.where(band == 8 , 2, mask) # open forest, this should be get from .env
@@ -1620,3 +1589,40 @@ def get_list_of_tiles_in_mediterranean_basin():
     "36SVF", "36SWG", "36SVG", "36SWH", "36SVH", "36SWJ", "36SUF"]
 
     return tiles
+
+
+def _rescale_band(
+    band: np.ndarray,
+    kwargs: dict, 
+    spatial_resol: int,
+    band_name: str
+):
+    img_resolution = kwargs["transform"][0]
+
+    if img_resolution != spatial_resol:
+        scale_factor = img_resolution / spatial_resol
+        
+        new_kwargs = kwargs.copy()
+        new_kwargs["height"] = int(kwargs["height"] * scale_factor)
+        new_kwargs["width"] = int(kwargs["width"] * scale_factor)
+        new_kwargs["transform"] = rasterio.Affine(
+        spatial_resol, 0.0, kwargs["transform"][2], 0.0, -spatial_resol, kwargs["transform"][5])
+
+        rescaled_raster = np.ndarray(
+            shape=(new_kwargs["height"], new_kwargs["width"]), dtype=np.float32)
+
+        print(f"Rescaling raster {band_name}, from: {img_resolution}m to {str(spatial_resol)}.0m")
+        reproject(
+            source=band,
+            destination=rescaled_raster,
+            src_transform=kwargs["transform"],
+            src_crs=kwargs["crs"],
+            dst_resolution=(new_kwargs["width"], new_kwargs["height"]),
+            dst_transform=new_kwargs["transform"],
+            dst_crs=new_kwargs["crs"],
+            resampling=Resampling.nearest,
+        )
+        band = rescaled_raster.reshape((new_kwargs["count"], *rescaled_raster.shape))
+        kwargs = new_kwargs
+
+    return band, kwargs
