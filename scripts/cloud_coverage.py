@@ -8,15 +8,24 @@ import pandas as pd
 from sentinelsat.sentinel import SentinelAPI, geojson_to_wkt, read_geojson
 
 from etc_workflow.config import settings
-from etc_workflow.utils import (
+from etc_workflow.minio_connection import MinioConnection
+from etc_workflow.utilities.utils import (
     _connect_mongo_products_collection,
-    _get_minio,
     _get_products_by_tile_and_date,
-    _get_sentinel,
-    _safe_minio_execute,
     get_season_dict,
 )
 
+def _get_sentinel():
+    """
+    Initialize Sentinel client
+    """
+    sentinel_api = SentinelAPI(
+        user=settings.SENTINEL_USERNAME,
+        password=settings.SENTINEL_PASSWORD,
+        api_url=settings.SENTINEL_HOST,
+        show_progressbars=False,
+    )
+    return sentinel_api
 
 def _get_available_products(tiles: dict, mongo_collection: Collection, seasons: dict):
     """
@@ -63,7 +72,7 @@ def _get_country_tiles(sentinel_api: SentinelAPI, countries: list):
 
     """
 
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
     tiles_by_country = {}
 
     for country in countries:
@@ -72,8 +81,7 @@ def _get_country_tiles(sentinel_api: SentinelAPI, countries: list):
         geojson_filename = str.lower(country) + ".geojson"
         geojson_path = join(settings.TMP_DIR, "countries", geojson_filename)
 
-        _safe_minio_execute(
-            func=minio_client.fget_object,
+        minio_client.fget_object(
             bucket_name=settings.MINIO_BUCKET_GEOJSONS,
             object_name=join("countries", geojson_filename),
             file_path=geojson_path,
@@ -119,7 +127,7 @@ def compute_cloud_coverage(countries: List[str]):
     """
 
     mongo = _connect_mongo_products_collection()
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
     sentinel_api = _get_sentinel()
     # tiles = _get_country_tiles(sentinel_api, countries, order_by_country)
     tiles = _get_country_tiles(sentinel_api, countries)
@@ -136,8 +144,7 @@ def compute_cloud_coverage(countries: List[str]):
     with open(tile_metadata_path, "w") as f:
         json.dump(tiles_by_country, f)
 
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_TILE_METADATA,
         object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{tile_metadata_name}",
         file_path=tile_metadata_path,

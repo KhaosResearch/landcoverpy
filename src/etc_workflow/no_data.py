@@ -5,7 +5,7 @@ import numpy as np
 from operator import mul
 
 from etc_workflow.config import settings
-from etc_workflow.utils import (
+from etc_workflow.utilities.utils import (
     _connect_mongo_products_collection,
     _get_minio,
     _get_products_by_tile_and_date,

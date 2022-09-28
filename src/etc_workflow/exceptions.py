@@ -6,3 +6,6 @@ class NoAsterException(EtcWorkflowException):
 
 class NoSentinelException(EtcWorkflowException):
     """Raised when there is no Sentinel-2 products available"""
+
+class RuntimeMinioException(EtcWorkflowException):
+    """Raised when there is no Sentinel-2 products available"""

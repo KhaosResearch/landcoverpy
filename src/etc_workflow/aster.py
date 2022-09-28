@@ -13,7 +13,7 @@ from etc_workflow.config import settings
 from etc_workflow.exceptions import NoAsterException
 from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.rasterpoint import RasterPoint
-from etc_workflow.utils import (
+from etc_workflow.utilities.utils import (
     _crop_as_sentinel_raster,
     _download_sample_band_by_tile,
     _get_bound,

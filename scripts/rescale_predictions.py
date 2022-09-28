@@ -7,7 +7,7 @@ import rasterio
 from rasterio.warp import Resampling, reproject
 
 from etc_workflow.config import settings
-from etc_workflow.utils import _get_minio, _safe_minio_execute
+from etc_workflow.utilities.utils import _get_minio, _safe_minio_execute
 
 
 def rescale_predictions(resolutions: Iterable[int]):

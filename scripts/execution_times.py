@@ -11,7 +11,7 @@ from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.workflow import  _process_tile
 from etc_workflow.config import settings
 from etc_workflow.model_training import train_model_land_cover
-from etc_workflow.utils import (
+from etc_workflow.utilities.utils import (
     get_list_of_tiles_in_spain,
     _connect_mongo_products_collection,
     _connect_mongo_composites_collection,

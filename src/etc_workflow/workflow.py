@@ -16,7 +16,7 @@ from etc_workflow.aster import get_dem_from_tile
 from etc_workflow.config import settings
 from etc_workflow.exceptions import EtcWorkflowException, NoSentinelException
 from etc_workflow.execution_mode import ExecutionMode
-from etc_workflow.utils import (
+from etc_workflow.utilities.utils import (
     _check_tiles_not_predicted_in_training,
     _connect_mongo_composites_collection,
     _connect_mongo_products_collection,

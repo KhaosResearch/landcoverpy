@@ -4,7 +4,7 @@ import collections
 import pandas as pd
 
 from etc_workflow.config import settings
-from etc_workflow.utils import _get_minio, _safe_minio_execute
+from etc_workflow.utilities.utils import _get_minio, _safe_minio_execute
 
 
 def postprocess_dataset(input_dataset: str, output_land_cover_dataset: str, forest_classification: bool = False, output_dataset_forest: str = None):

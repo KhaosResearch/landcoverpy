@@ -5,7 +5,7 @@ from greensenti.band_arithmetic import *
 from minio import Minio
 from pymongo import MongoClient
 
-from etc_workflow import utils
+from etc_workflow.utilities import utils
 from etc_workflow.config import settings
 
 

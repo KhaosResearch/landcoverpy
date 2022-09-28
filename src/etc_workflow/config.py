@@ -15,7 +15,7 @@ class _Settings(BaseSettings):
 
     # Minio-related settings
     MINIO_HOST: str = None
-    MINIO_PORT: int = 9000
+    MINIO_PORT: str = None
     MINIO_BUCKET_NAME_PRODUCTS: str = None
     MINIO_BUCKET_NAME_COMPOSITES: str = None
     MINIO_BUCKET_NAME_ASTER: str = None

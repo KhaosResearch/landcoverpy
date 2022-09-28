@@ -7,7 +7,7 @@ import seaborn as sns
 from matplotlib import pyplot
 
 from etc_workflow.config import settings
-from etc_workflow.utils import _get_minio, _safe_minio_execute
+from etc_workflow.utilities.utils import _get_minio, _safe_minio_execute
 
 
 def _plot_dataset(

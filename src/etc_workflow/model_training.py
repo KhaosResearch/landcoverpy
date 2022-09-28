@@ -10,8 +10,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
 from etc_workflow.config import settings
-from etc_workflow.confusion_matrix import compute_confusion_matrix
-from etc_workflow.utils import _get_minio, _safe_minio_execute
+from etc_workflow.utilities.confusion_matrix import compute_confusion_matrix
+from etc_workflow.utilities.utils import _get_minio, _safe_minio_execute
 
 
 def _feature_reduction(
