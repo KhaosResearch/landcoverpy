@@ -16,36 +16,39 @@ from etc_workflow.aster import get_dem_from_tile
 from etc_workflow.config import settings
 from etc_workflow.exceptions import EtcWorkflowException, NoSentinelException
 from etc_workflow.execution_mode import ExecutionMode
-from etc_workflow.utilities.utils import (
-    _check_tiles_not_predicted_in_training,
-    _connect_mongo_composites_collection,
-    _connect_mongo_products_collection,
+from etc_workflow.composite import(
     _create_composite,
-    _download_sample_band_by_tile,
-    _filter_rasters_paths_by_features_used,
     _get_composite,
-    _get_forest_masks,
-    _get_kwargs_raster,
-    _get_minio,
-    _get_product_rasters_paths,
-    _get_products_by_tile_and_date,
-    _get_raster_filename_from_path,
-    _get_raster_name_from_path,
+)
+from etc_workflow.minio import MinioConnection
+from etc_workflow.mongo import MongoConnection
+from etc_workflow.utilities.geometries import(
     _group_polygons_by_tile,
     _kmz_to_geojson,
-    _mask_polygons_by_tile,
-    _read_raster,
-    _safe_minio_execute,
-    get_season_dict,
-    _remove_tiles_already_processed_in_training
 )
-
+from etc_workflow.utilities.utils import (
+    _check_tiles_not_predicted_in_training,
+    _get_forest_masks,
+    _mask_polygons_by_tile,
+    _remove_tiles_already_processed_in_training,
+    get_season_dict,
+    get_products_by_tile_and_date,
+)
+from etc_workflow.utilities.raster import(
+    _download_sample_band_by_tile,
+    _get_kwargs_raster,
+    _filter_rasters_paths_by_features_used,
+    _get_product_rasters_paths,
+    _get_raster_filename_from_path,
+    _get_raster_name_from_path,
+    _read_raster,
+)
 
 def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_predict: List[str] = None):
 
     predict = execution_mode != ExecutionMode.TRAINING
 
-    minio = _get_minio()
+    minio = MinioConnection()
 
     # Iterate over a set of geojson/databases (the databases may not be equal)
     geojson_files = []
@@ -75,8 +78,7 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
         metadata_filename = "metadata.json"
         metadata_filepath = join(settings.TMP_DIR, settings.LAND_COVER_MODEL_FOLDER, metadata_filename)
 
-        _safe_minio_execute(
-            func=minio.fget_object,
+        minio.fget_object(
             bucket_name=settings.MINIO_BUCKET_MODELS,
             object_name=join(settings.MINIO_DATA_FOLDER_NAME, settings.LAND_COVER_MODEL_FOLDER, metadata_filename),
             file_path=metadata_filepath,
@@ -136,7 +138,7 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
 
         final_df = None
 
-        minio = _get_minio()
+        minio = MinioConnection()
 
         tiles_datasets_minio_dir = join(
             settings.MINIO_DATA_FOLDER_NAME, "tiles_datasets", ""
@@ -152,8 +154,7 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
 
             tile_dataset_minio_path = tile_dataset_minio_object.object_name
 
-            _safe_minio_execute(
-                func=minio.fget_object,
+            minio.fget_object(
                 bucket_name=settings.MINIO_BUCKET_DATASETS,
                 object_name=tile_dataset_minio_path,
                 file_path=local_dataset_path,
@@ -169,8 +170,7 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
         print(final_df)
         file_path = join(settings.TMP_DIR, "dataset.csv")
         final_df.to_csv(file_path, index=False)
-        _safe_minio_execute(
-            func=minio.fput_object,
+        minio.fput_object(
             bucket_name=settings.MINIO_BUCKET_DATASETS,
             object_name=join(settings.MINIO_DATA_FOLDER_NAME, "dataset.csv"),
             file_path=file_path,
@@ -187,8 +187,9 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
     seasons = get_season_dict()
 
-    minio_client = _get_minio()
-    mongo_products_collection = _connect_mongo_products_collection()
+    minio_client = MinioConnection()
+    mongo_client = MongoConnection()
+    mongo_products_collection = mongo_client.get_collection_object()
 
     # Names of the indexes that are taken into account
     indexes_used = [
@@ -212,17 +213,17 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
     max_cloud_percentage = settings.MAX_CLOUD
 
     spring_start, spring_end = seasons["spring"]
-    product_metadata_cursor_spring = _get_products_by_tile_and_date(
+    product_metadata_cursor_spring = get_products_by_tile_and_date(
         tile, mongo_products_collection, spring_start, spring_end, max_cloud_percentage
     )
 
     summer_start, summer_end = seasons["summer"]
-    product_metadata_cursor_summer = _get_products_by_tile_and_date(
+    product_metadata_cursor_summer = get_products_by_tile_and_date(
         tile, mongo_products_collection, summer_start, summer_end, max_cloud_percentage
     )
 
     autumn_start, autumn_end = seasons["autumn"]
-    product_metadata_cursor_autumn = _get_products_by_tile_and_date(
+    product_metadata_cursor_autumn = get_products_by_tile_and_date(
         tile, mongo_products_collection, autumn_start, autumn_end, max_cloud_percentage
     )
 
@@ -307,7 +308,8 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             current_bucket = bucket_products
         else:
             # If there are multiple products for one season, use a composite.
-            mongo_composites_collection = _connect_mongo_composites_collection()
+            mongo_client.set_collection(settings.MONGO_COMPOSITES_COLLECTION)
+            mongo_composites_collection = mongo_client.get_collection_object()
             products_metadata_list = list(products_metadata)
             product_metadata = _get_composite(
                 products_metadata_list, mongo_composites_collection, execution_mode
@@ -379,8 +381,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             already_read.append(raster_name)
 
             print(f"Downloading raster {raster_name} from minio into {temp_path}")
-            _safe_minio_execute(
-                func=minio_client.fget_object,
+            minio_client.fget_object(
                 bucket_name=current_bucket,
                 object_name=raster_path,
                 file_path=str(temp_path),
@@ -420,8 +421,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         tile_df_path = Path(settings.TMP_DIR, tile_df_name)
         tile_df.to_csv(str(tile_df_path), index=False)
 
-        _safe_minio_execute(
-            func=minio_client.fput_object,
+        minio_client.fput_object(
             bucket_name=settings.MINIO_BUCKET_DATASETS,
             object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/tiles_datasets/{tile_df_name}",
             file_path=tile_df_path,
@@ -437,8 +437,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         minio_model_folder = settings.LAND_COVER_MODEL_FOLDER
         model_path = join(settings.TMP_DIR, minio_model_folder, model_name)
 
-        _safe_minio_execute(
-            func=minio_client.fget_object,
+        minio_client.fget_object(
             bucket_name=settings.MINIO_BUCKET_MODELS,
             object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_model_folder}/{model_name}",
             file_path=model_path,
@@ -488,8 +487,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             classification_file.write(encoded_predictions)
         print(f"{classification_name} saved")
 
-        _safe_minio_execute(
-            func=minio_client.fput_object,
+        minio_client.fput_object(
             bucket_name=settings.MINIO_BUCKET_CLASSIFICATIONS,
             object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{classification_name}",
             file_path=classification_path,
@@ -504,8 +502,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
         for minio_model_folder in [minio_models_folders_open, minio_models_folders_dense]:
 
-            _safe_minio_execute(
-                func=minio_client.fget_object,
+            minio_client.fget_object(
                 bucket_name=settings.MINIO_BUCKET_MODELS,
                 object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_model_folder}/{model_name}",
                 file_path=join(settings.TMP_DIR, minio_model_folder, model_name),
@@ -611,8 +608,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             classification_file.write(encoded_predictions)
         print(f"{classification_name} saved")
 
-        _safe_minio_execute(
-            func=minio_client.fput_object,
+        minio_client.fput_object(
             bucket_name=settings.MINIO_BUCKET_CLASSIFICATIONS,
             object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{classification_name}",
             file_path=classification_path,

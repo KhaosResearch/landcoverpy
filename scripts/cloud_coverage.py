@@ -2,30 +2,20 @@ import datetime
 import json
 from datetime import datetime
 from os.path import join
-from typing import Collection, List
+from typing import List
+from pymongo.collection import Collection
 
 import pandas as pd
 from sentinelsat.sentinel import SentinelAPI, geojson_to_wkt, read_geojson
 
 from etc_workflow.config import settings
-from etc_workflow.minio_connection import MinioConnection
+from etc_workflow.minio import MinioConnection
+from etc_workflow.mongo import MongoConnection
+from etc_workflow.utilities.sentinel import _get_sentinel
 from etc_workflow.utilities.utils import (
-    _connect_mongo_products_collection,
-    _get_products_by_tile_and_date,
+    get_products_by_tile_and_date,
     get_season_dict,
 )
-
-def _get_sentinel():
-    """
-    Initialize Sentinel client
-    """
-    sentinel_api = SentinelAPI(
-        user=settings.SENTINEL_USERNAME,
-        password=settings.SENTINEL_PASSWORD,
-        api_url=settings.SENTINEL_HOST,
-        show_progressbars=False,
-    )
-    return sentinel_api
 
 def _get_available_products(tiles: dict, mongo_collection: Collection, seasons: dict):
     """
@@ -45,7 +35,7 @@ def _get_available_products(tiles: dict, mongo_collection: Collection, seasons: 
     for tile in tiles:
         for season in seasons:
             start_date, end_date = seasons[season]
-            product_metadata_cursor = _get_products_by_tile_and_date(
+            product_metadata_cursor = get_products_by_tile_and_date(
                 tile, mongo_collection, start_date, end_date, cloud_percentage=101
             )
             products = list(product_metadata_cursor)
@@ -126,8 +116,9 @@ def compute_cloud_coverage(countries: List[str]):
 
     """
 
-    mongo = _connect_mongo_products_collection()
+    mongo_client = MongoConnection()
     minio_client = MinioConnection()
+    mongo_collection = mongo_client.get_collection_object()
     sentinel_api = _get_sentinel()
     # tiles = _get_country_tiles(sentinel_api, countries, order_by_country)
     tiles = _get_country_tiles(sentinel_api, countries)
@@ -135,7 +126,7 @@ def compute_cloud_coverage(countries: List[str]):
     seasons = get_season_dict()
 
     tiles_by_country = _get_available_products(
-        mongo_collection=mongo, tiles=tiles, seasons=seasons
+        mongo_collection=mongo_collection, tiles=tiles, seasons=seasons
     )
 
     tile_metadata_name = "cloud_coverage.json"

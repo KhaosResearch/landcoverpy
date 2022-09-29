@@ -12,15 +12,15 @@ from scipy.ndimage import convolve
 from etc_workflow import raw_index_calculation_composite
 from etc_workflow.config import settings
 from etc_workflow.execution_mode import ExecutionMode
-from etc_workflow.minio_connection import MinioConnection
-from etc_workflow.utilities.utils import (
+from etc_workflow.minio import MinioConnection
+from etc_workflow.utilities.sentinel import _sentinel_date_to_datetime
+from etc_workflow.utilities.raster import (
     _get_kwargs_raster,
-    _read_raster,
     _get_product_rasters_paths,
     _get_raster_filename_from_path,
     _get_raster_name_from_path,
     _get_spatial_resolution_raster,
-    _sentinel_date_to_datetime
+    _read_raster,
 )
 
 def _composite(

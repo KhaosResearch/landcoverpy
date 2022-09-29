@@ -10,8 +10,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
 from etc_workflow.config import settings
+from etc_workflow.minio import MinioConnection
 from etc_workflow.utilities.confusion_matrix import compute_confusion_matrix
-from etc_workflow.utilities.utils import _get_minio, _safe_minio_execute
 
 
 def _feature_reduction(
@@ -39,10 +39,9 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
 
     training_dataset_path = join(settings.TMP_DIR, land_cover_dataset)
 
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
 
-    _safe_minio_execute(
-        func=minio_client.fget_object,
+    minio_client.fget_object(
         bucket_name=settings.MINIO_BUCKET_DATASETS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, land_cover_dataset),
         file_path=training_dataset_path,
@@ -89,8 +88,7 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
     compute_confusion_matrix(y_true, y_test, labels, out_image_path=out_image_path)
 
     # Save confusion matrix image to minio
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_folder, confusion_image_filename),
         file_path=out_image_path,
@@ -102,8 +100,7 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
     joblib.dump(clf, model_path)
 
     # Save model to minio
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
         object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_name}",
         file_path=model_path,
@@ -123,8 +120,7 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
     with open(model_metadata_path, "w") as f:
         json.dump(model_metadata, f)
 
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
         object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_metadata_name}",
         file_path=model_metadata_path,
@@ -136,10 +132,9 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
 
     training_dataset_path = join(settings.TMP_DIR, forest_dataset)
 
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
 
-    _safe_minio_execute(
-        func=minio_client.fget_object,
+    minio_client.fget_object(
         bucket_name=settings.MINIO_BUCKET_DATASETS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, forest_dataset),
         file_path=training_dataset_path,
@@ -193,8 +188,7 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
     compute_confusion_matrix(y_true, y_test, labels, out_image_path=out_image_path)
 
     # Save confusion matrix image to minio
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_folder, confusion_image_filename),
         file_path=out_image_path,
@@ -206,8 +200,7 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
     joblib.dump(clf, model_path)
 
     # Save model to minio
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
         object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_name}",
         file_path=model_path,
@@ -226,8 +219,7 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
     with open(model_metadata_path, "w") as f:
         json.dump(model_metadata, f)
 
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
         object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_metadata_name}",
         file_path=model_metadata_path,

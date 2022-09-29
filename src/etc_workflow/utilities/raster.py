@@ -1,10 +1,27 @@
+import json
+from pathlib import Path
+from typing import Iterable, List, Tuple
+from itertools import compress
+
 import numpy as np
+import rasterio
+import pyproj
 from rasterio import mask as msk
 from rasterio.warp import Resampling, reproject
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
 from shapely.ops import transform
+from pymongo.collection import Collection
 
 from etc_workflow.execution_mode import ExecutionMode
+from etc_workflow.exceptions import NoSentinelException
+from etc_workflow.minio import MinioConnection
+from etc_workflow.config import settings
+from etc_workflow.rasterpoint import RasterPoint
+from etc_workflow.utilities.geometries import (
+    _project_shape,
+    _convert_3D_2D,
+    _get_corners_geometry
+)
 
 def _read_raster(
     band_path: str,
@@ -100,6 +117,131 @@ def _read_raster(
         with rasterio.open(path_to_disk, "w", **kwargs) as dst_file:
             dst_file.write(band)
     return band
+
+def _get_raster_filename_from_path(raster_path):
+    """
+    Get a filename from a raster's path
+    """
+    return raster_path.split("/")[-1]
+
+
+def _get_raster_name_from_path(raster_path):
+    """
+    Get a raster's name from a raster's path
+    """
+    raster_filename = _get_raster_filename_from_path(raster_path)
+    return raster_filename.split(".")[0].split("_")[0]
+
+
+def _get_spatial_resolution_raster(raster_path):
+    """
+    Get a raster's spatial resolution from a raster's path
+    """
+    kwargs = _get_kwargs_raster(raster_path)
+    return kwargs["transform"][0]
+
+
+def _get_kwargs_raster(raster_path):
+    """
+    Get a raster's metadata from a raster's path
+    """
+    with rasterio.open(raster_path) as raster_file:
+        kwargs = raster_file.meta
+        return kwargs
+
+def _get_product_rasters_paths(
+    product_metadata: dict, minio_client: MinioConnection, minio_bucket: str
+) -> Tuple[Iterable[str], Iterable[bool]]:
+    """
+    Get the paths to all rasters of a product in minio.
+    Another list of boolean is returned, it points out if each raster is a sentinel band or not (e.g. index).
+    """
+    product_title = product_metadata["title"]
+    product_dir = None
+
+    if minio_bucket == settings.MINIO_BUCKET_NAME_PRODUCTS:
+        year = product_metadata["date"].strftime("%Y")
+        month = product_metadata["date"].strftime("%B")
+        product_dir = f"{year}/{month}/{product_title}"
+
+    elif minio_bucket == settings.MINIO_BUCKET_NAME_COMPOSITES:
+        product_dir = product_title
+
+    bands_dir = f"{product_dir}/raw/"
+    indexes_dir = f"{product_dir}/indexes/{product_title}/"
+
+    bands_paths = minio_client.list_objects(minio_bucket, prefix=bands_dir)
+    indexes_path = minio_client.list_objects(minio_bucket, prefix=indexes_dir)
+
+    rasters = []
+    is_band = []
+    for index_path in indexes_path:
+        rasters.append(index_path.object_name)
+        is_band.append(False)
+    for band_path in bands_paths:
+        rasters.append(band_path.object_name)
+        is_band.append(True)
+
+    return (rasters, is_band)
+
+def _download_sample_band_by_tile(tile: str, minio_client: MinioConnection, mongo_collection: Collection):
+    """
+    Having a tile, download a 10m sample sentinel band of any related product.
+    """
+    product_metadata = mongo_collection.find_one({"title": {"$regex": f"_T{tile}_"}})
+    product_title = product_metadata["title"]
+    sample_band_path = _download_sample_band_by_title(product_title, minio_client, mongo_collection)
+    return sample_band_path
+
+def _download_sample_band_by_title(
+    title: str, minio_client: MinioConnection, mongo_collection: Collection
+):
+    """
+    Having a title of a product, download a 10m sample sentinel band of the product.
+    """
+    product_metadata = mongo_collection.find_one({"title": title})
+
+    product_path = str(Path(settings.TMP_DIR, title))
+    minio_bucket_product = settings.MINIO_BUCKET_NAME_PRODUCTS
+    rasters_paths, is_band = _get_product_rasters_paths(
+        product_metadata, minio_client, minio_bucket=minio_bucket_product
+    )
+    sample_band_paths_minio = list(compress(rasters_paths, is_band))
+    for sample_band_path_minio in sample_band_paths_minio:
+        sample_band_path = str(
+            Path(product_path, _get_raster_filename_from_path(sample_band_path_minio))
+        )
+        minio_client.fget_object(minio_bucket_product, sample_band_path_minio, str(sample_band_path))
+        if _get_spatial_resolution_raster(sample_band_path) == 10:
+            return sample_band_path
+
+    # If no bands of 10m is available in minio
+    raise NoSentinelException(f"Either data of product {title} wasn't found in MinIO or 10m bands weren't found for that product.")
+
+
+def _filter_rasters_paths_by_features_used(
+    rasters_paths: List[str], is_band: List[bool], used_columns: List[str], season: str
+) -> Tuple[Iterable[str], Iterable[bool]]:
+    """
+    Filter a list of rasters paths by a list of raster names (obtained in feature reduction).
+    """
+    pc_raster_paths = []
+    season_used_columns = []
+    already_read = []
+    is_band_pca = []
+    for pc_column in used_columns:
+        if season in pc_column:
+            season_used_columns.append(pc_column.split("_")[-1])
+    for i, raster_path in enumerate(rasters_paths):
+        raster_name = _get_raster_name_from_path(raster_path)
+        raster_name = raster_name.split("_")[-1]
+        if any(x == raster_name for x in season_used_columns) and (
+            raster_name not in already_read
+        ):
+            pc_raster_paths.append(raster_path)
+            is_band_pca.append(is_band[i])
+            already_read.append(raster_name)
+    return (pc_raster_paths, is_band_pca)
 
 def _crop_as_sentinel_raster(execution_mode: ExecutionMode, raster_path: str, sentinel_path: str) -> str:
     """
@@ -253,3 +395,86 @@ def _rescale_band(
         kwargs = new_kwargs
 
     return band, kwargs
+
+def _sentinel_raster_to_polygon(sentinel_raster_path: str):
+    """
+    Read a raster and return its bounds as polygon.
+    """
+    (
+        top_left,
+        top_right,
+        bottom_left,
+        bottom_right,
+    ) = _get_corners_raster(sentinel_raster_path)
+    sentinel_raster_polygon_json = json.loads(
+        f'{{"coordinates": [[[{top_left.lon}, {top_left.lat}], [{top_right.lon}, {top_right.lat}], [{bottom_right.lon}, {bottom_right.lat}], [{bottom_left.lon}, {bottom_left.lat}], [{top_left.lon}, {top_left.lat}]]], "type": "Polygon"}}'
+    )
+    sentinel_raster_polygon = Polygon.from_bounds(
+        top_left.lon, top_left.lat, bottom_right.lon, bottom_right.lat
+    )
+    return sentinel_raster_polygon, sentinel_raster_polygon_json
+
+def _get_corners_raster(
+    band_path: Path,
+) -> Tuple[RasterPoint, RasterPoint, RasterPoint, RasterPoint]:
+    """
+    Given a band path, it is opened with rasterio and its bounds are extracted with shapely's transform.
+
+    Returns the raster's corner latitudes and longitudes, along with the band's size.
+    """
+    final_crs = pyproj.CRS("epsg:4326")
+
+    band = _read_raster(band_path)
+    kwargs = _get_kwargs_raster(band_path)
+    init_crs = kwargs["crs"]
+
+    project = pyproj.Transformer.from_crs(init_crs, final_crs, always_xy=True).transform
+
+    tl_lon, tl_lat = transform(project, Point(kwargs["transform"] * (0, 0))).bounds[0:2]
+
+    tr_lon, tr_lat = transform(
+        project, Point(kwargs["transform"] * (band.shape[2] - 1, 0))
+    ).bounds[0:2]
+
+    bl_lon, bl_lat = transform(
+        project, Point(kwargs["transform"] * (0, band.shape[1] - 1))
+    ).bounds[0:2]
+
+    br_lon, br_lat = transform(
+        project, Point(kwargs["transform"] * (band.shape[2] - 1, band.shape[1] - 1))
+    ).bounds[0:2]
+
+    tl = RasterPoint(tl_lat, tl_lon)
+    tr = RasterPoint(tr_lat, tr_lon)
+    bl = RasterPoint(bl_lat, bl_lon)
+    br = RasterPoint(br_lat, br_lon)
+    return (
+        tl,
+        tr,
+        bl,
+        br,
+    )
+
+def _normalize(matrix, value1, value2):
+    """
+    Normalize a numpy matrix with linear function using a range for the normalization.
+    Parameters:
+        matrix (np.ndarray) : Matrix to normalize.
+        value1 (float) : Value mapped to -1 in normalization.
+        value2 (float) : Value mapped to 1 in normalization.
+
+    Returns:
+        normalized_matrix (np.ndarray) : Matrix normalized.
+
+    """
+    try:
+        matrix = matrix.astype(dtype=np.float32)
+        matrix[matrix == -np.inf] = np.nan
+        matrix[matrix == np.inf] = np.nan
+        # calculate linear function
+        m = 2.0 / (value2 - value1)
+        n = 1.0 - m * value2
+        normalized_matrix = m * matrix + n
+    except Exception:
+        normalized_matrix = matrix
+    return normalized_matrix

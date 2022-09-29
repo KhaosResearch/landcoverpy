@@ -1,19 +1,15 @@
 import json
 from os.path import join
-from typing import Collection, List
-import numpy as np
 from operator import mul
+from typing import Collection, List
+
+import numpy as np
 
 from etc_workflow.config import settings
-from etc_workflow.utilities.utils import (
-    _connect_mongo_products_collection,
-    _get_minio,
-    _get_products_by_tile_and_date,
-    _safe_minio_execute,
-    _read_raster,
-    _download_sample_band_by_title,
-    get_season_dict
-)
+from etc_workflow.minio import MinioConnection
+from etc_workflow.mongo import MongoConnection
+from etc_workflow.utilities.utils import get_season_dict, get_products_by_tile_and_date
+from etc_workflow.utilities.raster import _read_raster, _download_sample_band_by_title
 
 
 def _get_dict_of_products_by_tile(tiles: List[str], mongo_collection: Collection, seasons: dict):
@@ -37,7 +33,7 @@ def _get_dict_of_products_by_tile(tiles: List[str], mongo_collection: Collection
         products_by_tiles[tile] = {}
         for season in seasons:
             start_date, end_date = seasons[season]
-            product_metadata_cursor = _get_products_by_tile_and_date(
+            product_metadata_cursor = get_products_by_tile_and_date(
                 tile, mongo_collection, start_date, end_date, cloud_percentage=settings.MAX_CLOUD
             )
             products = list(product_metadata_cursor)[:5] # The workflow only takes into account the first five
@@ -67,7 +63,7 @@ def _get_nodata_percentage(product_title: str, mongo_collection: Collection):
 
     """
 
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
     sample_band = _download_sample_band_by_title(
         product_title, minio_client, mongo_collection
     )
@@ -93,11 +89,11 @@ def get_quality_map_nodata(tiles: List[str]):
         tiles (List[str]): List of tiles used to compute the quality map
     """
 
-    mongo = _connect_mongo_products_collection()
-    minio_client = _get_minio()
+    mongo_client = MongoConnection()
+    minio_client = MinioConnection()
 
     products_by_tiles = _get_dict_of_products_by_tile(
-        tiles=tiles, mongo_collection=mongo, seasons=get_season_dict()
+        tiles=tiles, mongo_collection=mongo_client.get_collection_object(), seasons=get_season_dict()
     )
 
     tile_metadata_name = "no_data.json"
@@ -106,8 +102,7 @@ def get_quality_map_nodata(tiles: List[str]):
     with open(tile_metadata_path, "w") as f:
         json.dump(products_by_tiles, f)
 
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_TILE_METADATA,
         object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{tile_metadata_name}",
         file_path=tile_metadata_path,
@@ -122,13 +117,12 @@ def get_log_from_quality_map(quality_map_local_path: str = None):
         quality_map_local_path (str): Local path of the quality_map, if it is None, "no_data.json" is looked for in Minio.
     """
 
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
 
     if quality_map_local_path is None:
         tile_metadata_name = "no_data.json"
         quality_map_local_path = join(settings.TMP_DIR,tile_metadata_name)
-        _safe_minio_execute(
-            func=minio_client.fget_object,
+        minio_client.fget_object(
             bucket_name=settings.MINIO_BUCKET_TILE_METADATA,
             object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{tile_metadata_name}",
             file_path=quality_map_local_path

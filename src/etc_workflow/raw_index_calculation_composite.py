@@ -2,11 +2,10 @@ import shutil
 from pathlib import Path
 
 from greensenti.band_arithmetic import *
-from minio import Minio
-from pymongo import MongoClient
 
-from etc_workflow.utilities import utils
 from etc_workflow.config import settings
+from etc_workflow.minio import MinioConnection
+from etc_workflow.mongo import MongoConnection
 
 
 def _get_indexes_dict():
@@ -53,13 +52,9 @@ def calculate_raw_indexes(uid: str):
     minio_bucket_name = settings.MINIO_BUCKET_NAME_COMPOSITES
 
     # Connect with mongo
-    mongo_client = MongoClient(
-        "mongodb://" + str(settings.MONGO_HOST) + ":" + str(settings.MONGO_PORT) + "/",
-        username=settings.MONGO_USERNAME,
-        password=settings.MONGO_PASSWORD,
-    )
-    mongo_db = mongo_client[settings.MONGO_DB]
-    mongo_col = mongo_db[settings.MONGO_COMPOSITES_COLLECTION]
+    mongo_client = MongoConnection()
+    mongo_client.set_collection(settings.MONGO_COMPOSITES_COLLECTION)
+    mongo_col = mongo_client.get_collection_object()
 
     # Search product metadata in Mongo
     product_data = mongo_col.find_one({"id": uid})
@@ -79,12 +74,7 @@ def calculate_raw_indexes(uid: str):
         return ([f for f in Path(unzip_folder).glob("*" + pattern + ".tif")])[0]
 
     # Connect with minio
-    client = Minio(
-        str(settings.MINIO_HOST) + ":" + str(settings.MINIO_PORT),
-        access_key=settings.MINIO_ACCESS_KEY,
-        secret_key=settings.MINIO_SECRET_KEY,
-        secure=False,
-    )
+    client = MinioConnection()
 
     # Create folder to store tif files
     indexes_folder = unzip_folder + "/INDEXES"
@@ -208,8 +198,7 @@ def calculate_raw_indexes(uid: str):
         tif_meta_minio_path = metadata_path + tif_minio_path
         band_meta_minio_path = "minio://" + minio_bucket_name + "/" + bands_dir
 
-        utils._safe_minio_execute(
-            func=client.fput_object,
+        client.fput_object(
             bucket_name=minio_bucket_name,
             object_name=tif_minio_path,
             file_path=indexes_folder + "/" + index_name + ".tif",

@@ -7,13 +7,13 @@ import rasterio
 from rasterio.warp import Resampling, reproject
 
 from etc_workflow.config import settings
-from etc_workflow.utilities.utils import _get_minio, _safe_minio_execute
+from etc_workflow.minio import MinioConnection
 
 
 def rescale_predictions(resolutions: Iterable[int]):
 
 
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
 
     # List all classifications in minio
     classified_tiles_cursor = minio_client.list_objects(
@@ -30,8 +30,7 @@ def rescale_predictions(resolutions: Iterable[int]):
             settings.TMP_DIR, "classifications_10m", classification_filename
         )
 
-        _safe_minio_execute(
-            func=minio_client.fget_object,
+        minio_client.fget_object(
             bucket_name=settings.MINIO_BUCKET_CLASSIFICATIONS,
             object_name=classification_path,
             file_path=local_classification_path,
@@ -81,8 +80,7 @@ def rescale_predictions(resolutions: Iterable[int]):
             with rasterio.open(local_rescaled_path, "w", **out_kwargs) as dst_file:
                 dst_file.write(raster)
 
-            _safe_minio_execute(
-                func=minio_client.fput_object,
+            minio_client.fput_object(
                 bucket_name=settings.MINIO_BUCKET_CLASSIFICATIONS,
                 object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{res}m/{classification_filename}",
                 file_path=local_rescaled_path,
