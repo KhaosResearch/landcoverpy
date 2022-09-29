@@ -6,7 +6,7 @@ from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.model_training import train_model_land_cover, train_model_forest
 from etc_workflow.utilities.plot_spectral_signature import compute_spectral_signature_plot
 from etc_workflow.workflow import workflow
-from etc_workflow.utilities.utils import get_list_of_tiles_in_mediterranean_basin
+from etc_workflow.utilities.aoi_tiles import get_list_of_tiles_in_mediterranean_basin
 
 
 def run_compute_training_dataset_distributed():
