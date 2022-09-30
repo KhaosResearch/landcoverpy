@@ -45,3 +45,5 @@ def _quality_map(tiles: List[str]):
 
     with open(str(Path(settings.TMP_DIR,'quality_map.json')), 'w') as f:
         json.dump(json_file, f)
+    
+    minio_client.fput_object(settings.MINIO_BUCKET_TILE_METADATA, str(Path(settings.MINIO_DATA_FOLDER_NAME,'quality_map.json')), str(Path(settings.TMP_DIR,'quality_map.json')), content_type="application/json")
