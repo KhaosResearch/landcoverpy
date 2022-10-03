@@ -30,14 +30,14 @@ def retry(n_retries: int, delay: int):
                     250
                 )
                 try:
-                    f =  func(*args, **kwargs)
+                    f = func(*args, **kwargs)
+                    signal.alarm(0)
+                    return f
                 except (RuntimeMinioException, MinioException, HTTPError) as e:
                     print(f"MinIO-related error. Retrying in one minute. Trace:\n{e}")
                     signal.alarm(0)
                     time.sleep(delay)
                     attempt += 1
-            signal.alarm(0)
-            return f
         return _wrapper_safe_minio_execute
     return _safe_minio_execute
             

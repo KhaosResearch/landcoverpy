@@ -81,7 +81,7 @@ def _get_country_tiles(sentinel_api: SentinelAPI, countries: list):
         footprint = geojson_to_wkt(geojson)
 
         start_date = datetime(2021, 1, 1)
-        end_date = datetime(2021, 1, 20)
+        end_date = datetime(2021, 1, 6)
 
         products = sentinel_api.query(
             area=footprint,
