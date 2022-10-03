@@ -1,4 +1,4 @@
-def get_list_of_tiles_in_iberican_peninsula():
+def get_list_of_tiles_in_iberian_peninsula():
     tiles = [
        '29SLC', '29SLD', '29SMA', '29SMB',
        '29SMC', '29SMD', '29SNA', '29SNB', '29SNC', '29SND', '29SPA',
