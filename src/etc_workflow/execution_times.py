@@ -12,7 +12,7 @@ from etc_workflow.workflow import  _process_tile
 from etc_workflow.config import settings
 from etc_workflow.model_training import train_model_land_cover
 from etc_workflow.utils import (
-    get_list_of_tiles_in_spain,
+    get_list_of_tiles_in_iberian_peninsula,
     _connect_mongo_products_collection,
     _connect_mongo_composites_collection,
     _group_polygons_by_tile,
@@ -44,7 +44,7 @@ def _time_composite():
 
     seasons = get_season_dict()
 
-    tiles = get_list_of_tiles_in_spain()
+    tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
     products_available = _get_products_by_tile_and_date(tile, mongo_products, seasons["spring"][0], seasons["autumn"][1], 100)
@@ -67,7 +67,7 @@ def time_training_dataset(client: Client = None):
 
     minio = _get_minio()
 
-    tiles = get_list_of_tiles_in_spain()
+    tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
     geojson_files = []
@@ -125,7 +125,7 @@ def time_predicting_tile(client: Client = None):
 
     minio = _get_minio()
 
-    tiles = get_list_of_tiles_in_spain()
+    tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
     print("Predicting tiles")
