@@ -34,14 +34,14 @@ def _quality_map(tiles: List[str]):
             os.remove(product_path)
 
         if (objects_length == 0):
-            object = _download_sample_band_by_tile(tile, minio_client=minio_client, mongo_collection=mongo_client.get_collection_object())
+            _object = _download_sample_band_by_tile(tile, minio_client=minio_client, mongo_collection=mongo_client.get_collection_object())
             polygon_dict = {"type": "Feature", "properties": {}, "geometry": {"type": "Polygon"}}
-            _, json_d = _sentinel_raster_to_polygon(object)
+            _, json_d = _sentinel_raster_to_polygon(_object)
             polygon_dict["properties"]["nodata"] = "1"
             polygon_dict["geometry"] = json_d
             json_file["features"].append(polygon_dict)
         
-            os.remove(object)
+            os.remove(_object)
 
     with open(str(Path(settings.TMP_DIR,'quality_map.json')), 'w') as f:
         json.dump(json_file, f)
