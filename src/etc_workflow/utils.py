@@ -1545,7 +1545,7 @@ def get_list_of_tiles_in_iberian_peninsula():
        '30STF', '30STG', '30STH', '30STJ', '30SUE', '30SUF', '30SUG',
        '30SUH', '30SUJ', '30SVF', '30SVG', '30SVH', '30SVJ', '30SWF',
        '30SWG', '30SWH', '30SWJ', '30SXF', '30SXG', '30SXH', '30SXJ',
-       '30SYG', '30SYH', '30SYJ', '30TPU', '30TTK', '30TTL', '30TTM',
+       '30SYG', '30SYH', '30SYJ', '30TUP', '30TTK', '30TTL', '30TTM',
        '30TUK', '30TUL', '30TUM', '30TUN', '30TVK', '30TVL', '30TVM',
        '30TVN', '30TVP', '30TWK', '30TWL', '30TWM', '30TWN', '30TWP',
        '30TXK', '30TXL', '30TXM', '30TXN', '30TYK', '30TYL', '30TYM',
