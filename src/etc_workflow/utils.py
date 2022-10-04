@@ -1557,9 +1557,7 @@ def get_list_of_tiles_in_iberian_peninsula():
 
 def get_list_of_tiles_in_mediterranean_basin():
     tiles = [
-       '27RYL', '27RYM', '27RYN', '28RBR', '28RBS', '28RBT', '28RCR',
-       '28RCS', '28RDR', '28RDS', '28RER', '28RES', '28RET', '28RFQ',
-       '28RFR', '28RFS', '28RFT', '28RGR', '28RGS', '29RKL', '29RKM',
+       '28RFQ', '28RFR', '28RFS', '28RGR', '28RGS', '29RKL', '29RKM',
        '29RKN', '29RLL', '29RLM', '29RLN', '29RLP', '29RLQ', '29RMM',
        '29RMN', '29RMP', '29RMQ', '29RNM', '29RNN', '29RNP', '29RNQ',
        '29RPN', '29RPP', '29RPQ', '29RQP', '29RQQ', '29SLC', '29SLD',
