@@ -228,7 +228,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
     product_per_season = {
         "spring": list(product_metadata_cursor_spring)[-settings.MAX_PRODUCTS_COMPOSITE:],
-        "autumn": list(product_metadata_cursor_autumn)[-settings.MAX_PRODUCTS_COMPOSITE:],
+        "autumn": list(product_metadata_cursor_autumn)[:settings.MAX_PRODUCTS_COMPOSITE],
         "summer": list(product_metadata_cursor_summer)[-settings.MAX_PRODUCTS_COMPOSITE:],
     }
 

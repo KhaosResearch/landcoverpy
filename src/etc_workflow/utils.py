@@ -14,6 +14,7 @@ from typing import Callable, Iterable, List, Tuple
 from zipfile import ZipFile
 
 from bs4 import BeautifulSoup 
+from bson.son import SON
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -134,6 +135,9 @@ def _get_products_by_tile_and_date(
                     },
                 }
             },
+            {
+                "$sort": {"date":-1}
+            }
         ]
     )
 
