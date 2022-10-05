@@ -88,7 +88,7 @@ def _group_polygons_by_tile(*geojson_files: str) -> dict:
             small_geojson = {"type": "FeatureCollection", "features": [feature]}
             geometry = small_geojson["features"][0]["geometry"]
             properties = small_geojson["features"][0]["properties"]
-            classification_label = geojson_file.split("_")[2]
+            classification_label = geojson_file.split("_")[2].split(".")[0]
             intersection_tiles = _get_mgrs_from_geometry(geometry)
 
             for tile in intersection_tiles:
