@@ -86,6 +86,9 @@ def get_products_by_tile_and_date(
                     },
                 }
             },
+            {
+                "$sort": {"date":-1}
+            },
         ]
     )
 
