@@ -362,7 +362,7 @@ def _crop_as_sentinel_raster(execution_mode: ExecutionMode, raster_path: str, se
 
 def _rescale_band(
     band: np.ndarray,
-    kwargs: dict, 
+    kwargs: dict,
     spatial_resol: int,
     band_name: str
 ):
@@ -370,15 +370,15 @@ def _rescale_band(
 
     if img_resolution != spatial_resol:
         scale_factor = img_resolution / spatial_resol
-        
+
         new_kwargs = kwargs.copy()
         new_kwargs["height"] = int(kwargs["height"] * scale_factor)
         new_kwargs["width"] = int(kwargs["width"] * scale_factor)
         new_kwargs["transform"] = rasterio.Affine(
-        spatial_resol, 0.0, kwargs["transform"][2], 0.0, -spatial_resol, kwargs["transform"][5])
+        spatial_resol, kwargs["transform"][1], kwargs["transform"][2], kwargs["transform"][3], -spatial_resol, kwargs["transform"][5])
 
         rescaled_raster = np.ndarray(
-            shape=(new_kwargs["height"], new_kwargs["width"]), dtype=np.float32)
+            shape=(kwargs["count"], new_kwargs["height"], new_kwargs["width"]), dtype=np.float32)
 
         print(f"Rescaling raster {band_name}, from: {img_resolution}m to {str(spatial_resol)}.0m")
         reproject(
@@ -391,7 +391,7 @@ def _rescale_band(
             dst_crs=new_kwargs["crs"],
             resampling=Resampling.nearest,
         )
-        band = rescaled_raster.reshape((new_kwargs["count"], *rescaled_raster.shape))
+        band = rescaled_raster
         kwargs = new_kwargs
 
     return band, kwargs
