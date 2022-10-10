@@ -5,11 +5,11 @@ from typing import Collection, List
 
 import numpy as np
 
-from etc_workflow.config import settings
-from etc_workflow.minio import MinioConnection
-from etc_workflow.mongo import MongoConnection
-from etc_workflow.utilities.utils import get_season_dict, get_products_by_tile_and_date
-from etc_workflow.utilities.raster import _read_raster, _download_sample_band_by_title
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.mongo import MongoConnection
+from bd_lc_mediterranean.utilities.utils import get_season_dict, get_products_by_tile_and_date
+from bd_lc_mediterranean.utilities.raster import _read_raster, _download_sample_band_by_title
 
 
 def _get_dict_of_products_by_tile(tiles: List[str], mongo_collection: Collection, seasons: dict):

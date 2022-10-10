@@ -1,10 +1,10 @@
-# BD-LC-Mediterranean: Big Data Land Cover of the Mediterranean bassin
+# BD-LC-mediterranean: Big Data Land Cover of the Mediterranean bassin
 
 Land cover and forest classification workflow aimed to be able to scale to cover the Mediterranean bassin.
 
 ## Installation
 From PyPi:
-`$ python -m pip install BD_LC_Mediterranean`
+`$ python -m pip install bd_lc_mediterranean`
 
 From source:
 `$ make install`

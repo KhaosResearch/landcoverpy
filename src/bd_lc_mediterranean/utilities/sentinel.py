@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sentinelsat.sentinel import SentinelAPI
 
-from etc_workflow.config import settings
+from bd_lc_mediterranean.config import settings
 
 
 def _get_sentinel():

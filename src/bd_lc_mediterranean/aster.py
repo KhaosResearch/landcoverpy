@@ -8,13 +8,13 @@ from pymongo.collection import Collection
 from rasterio import merge
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
-from etc_workflow.config import settings
-from etc_workflow.exceptions import NoAsterException
-from etc_workflow.execution_mode import ExecutionMode
-from etc_workflow.minio import MinioConnection
-from etc_workflow.rasterpoint import RasterPoint
-from etc_workflow.utilities.geometries import _get_bound, _gps_to_latlon
-from etc_workflow.utilities.raster import (
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.exceptions import NoAsterException
+from bd_lc_mediterranean.execution_mode import ExecutionMode
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.rasterpoint import RasterPoint
+from bd_lc_mediterranean.utilities.geometries import _get_bound, _gps_to_latlon
+from bd_lc_mediterranean.utilities.raster import (
     _crop_as_sentinel_raster,
     _download_sample_band_by_tile,
     _get_corners_raster,

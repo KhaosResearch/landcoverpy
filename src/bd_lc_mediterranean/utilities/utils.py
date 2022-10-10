@@ -14,9 +14,9 @@ from shapely.geometry import Point
 from shapely.ops import transform
 from sklearn.decomposition import PCA
 
-from etc_workflow.config import settings
-from etc_workflow.minio import MinioConnection
-from etc_workflow.utilities.raster import (
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.utilities.raster import (
     _get_product_rasters_paths,
     _get_raster_filename_from_path,
     _read_raster,

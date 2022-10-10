@@ -2,8 +2,8 @@ from os.path import join
 
 import pandas as pd
 
-from etc_workflow.config import settings
-from etc_workflow.minio import MinioConnection
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
 
 
 def postprocess_dataset(input_dataset: str, output_land_cover_dataset: str, forest_classification: bool = False, output_dataset_forest: str = None):

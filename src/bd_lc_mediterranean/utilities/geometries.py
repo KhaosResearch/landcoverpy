@@ -13,7 +13,7 @@ from sentinelsat.sentinel import read_geojson
 from shapely.geometry import MultiPolygon, Polygon, shape
 from shapely.ops import transform
 
-from etc_workflow.rasterpoint import RasterPoint
+from bd_lc_mediterranean.rasterpoint import RasterPoint
 
 
 def _kmz_to_geojson(kmz_file: str) -> str:

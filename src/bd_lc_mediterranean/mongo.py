@@ -1,7 +1,7 @@
 from pymongo import MongoClient
 from pymongo.collection import Collection
 
-from etc_workflow.config import settings
+from bd_lc_mediterranean.config import settings
 
 
 class MongoConnection():

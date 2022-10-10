@@ -12,12 +12,12 @@ from rasterio.warp import Resampling, reproject
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform
 
-from etc_workflow.config import settings
-from etc_workflow.exceptions import NoSentinelException
-from etc_workflow.execution_mode import ExecutionMode
-from etc_workflow.minio import MinioConnection
-from etc_workflow.rasterpoint import RasterPoint
-from etc_workflow.utilities.geometries import (
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.exceptions import NoSentinelException
+from bd_lc_mediterranean.execution_mode import ExecutionMode
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.rasterpoint import RasterPoint
+from bd_lc_mediterranean.utilities.geometries import (
     _convert_3D_2D,
     _get_corners_geometry,
     _project_shape,

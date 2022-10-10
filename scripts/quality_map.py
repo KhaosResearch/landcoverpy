@@ -1,7 +1,7 @@
-from etc_workflow.config import settings
-from etc_workflow.minio import MinioConnection
-from etc_workflow.mongo import MongoConnection
-from etc_workflow.utilities.raster import _sentinel_raster_to_polygon, _download_sample_band_by_tile
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.mongo import MongoConnection
+from bd_lc_mediterranean.utilities.raster import _sentinel_raster_to_polygon, _download_sample_band_by_tile
 from typing import List
 from pathlib import Path
 

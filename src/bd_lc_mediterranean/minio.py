@@ -6,8 +6,8 @@ from minio import Minio
 from minio.error import MinioException
 from urllib3.exceptions import HTTPError
 
-from etc_workflow.config import settings
-from etc_workflow.exceptions import RuntimeMinioException
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.exceptions import RuntimeMinioException
 
 
 # Signal used for simulating a time-out in minio connections.

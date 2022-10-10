@@ -8,11 +8,11 @@ from pymongo.collection import Collection
 import pandas as pd
 from sentinelsat.sentinel import SentinelAPI, geojson_to_wkt, read_geojson
 
-from etc_workflow.config import settings
-from etc_workflow.minio import MinioConnection
-from etc_workflow.mongo import MongoConnection
-from etc_workflow.utilities.sentinel import _get_sentinel
-from etc_workflow.utilities.utils import (
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.mongo import MongoConnection
+from bd_lc_mediterranean.utilities.sentinel import _get_sentinel
+from bd_lc_mediterranean.utilities.utils import (
     get_products_by_tile_and_date,
     get_season_dict,
 )

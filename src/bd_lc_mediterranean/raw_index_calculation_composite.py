@@ -3,9 +3,9 @@ from pathlib import Path
 
 from greensenti.band_arithmetic import *
 
-from etc_workflow.config import settings
-from etc_workflow.minio import MinioConnection
-from etc_workflow.mongo import MongoConnection
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.mongo import MongoConnection
 
 
 def _get_indexes_dict():

@@ -6,8 +6,8 @@ import numpy as np
 import rasterio
 from rasterio.warp import Resampling, reproject
 
-from etc_workflow.config import settings
-from etc_workflow.minio import MinioConnection
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
 
 
 def rescale_predictions(resolutions: Iterable[int]):

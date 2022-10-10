@@ -7,8 +7,8 @@ from numpy.lib.function_base import cov
 import pandas as pd
 import seaborn as sns
 
-from etc_workflow.config import settings
-from etc_workflow.minio import MinioConnection
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
 
 def _jeffreys_matusita_distance(mu1, sigma1, mu2, sigma2):
     """
