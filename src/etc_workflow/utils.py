@@ -1540,23 +1540,21 @@ def _remove_tiles_already_processed_in_training(tiles_in_training: List[str]):
 
 def get_list_of_tiles_in_iberian_peninsula():
     tiles = [
-       '29SLC', '29SLD', '29SMA', '29SMB',
-       '29SMC', '29SMD', '29SNA', '29SNB', '29SNC', '29SND', '29SPA',
-       '29SPB', '29SPC', '29SPD', '29SQA', '29SQB', '29SQC', '29SQD',
-       '29SQV', '29THN', '29TME', '29TMF', '29TMG', '29TNE', '29TNF',
-       '29TNG', '29TNH', '29TNJ', '29TPE', '29TPF', '29TPG', '29TPH',
-       '29TPJ', '29TQE', '29TQF', '29TQG', '29TQH', '29TQJ', '30STE',
-       '30STF', '30STG', '30STH', '30STJ', '30SUE', '30SUF', '30SUG',
-       '30SUH', '30SUJ', '30SVF', '30SVG', '30SVH', '30SVJ', '30SWF',
-       '30SWG', '30SWH', '30SWJ', '30SXF', '30SXG', '30SXH', '30SXJ',
-       '30SYG', '30SYH', '30SYJ', '30TUP', '30TTK', '30TTL', '30TTM',
-       '30TUK', '30TUL', '30TUM', '30TUN', '30TVK', '30TVL', '30TVM',
-       '30TVN', '30TVP', '30TWK', '30TWL', '30TWM', '30TWN', '30TWP',
-       '30TXK', '30TXL', '30TXM', '30TXN', '30TYK', '30TYL', '30TYM',
-       '30TYN', '31SBC', '31SBD', '31SCC', '31SCD', '31SDD', '31SED',
-       '31TBE', '31TBF', '31TBG', '31TCF', '31TCG', '31TCH', '31TDE',
-       '31TDF', '31TDG', '31TEE', '31TFE'
-       ]
+        '29SLC', '29SLD', '29SMC', '29SMD', '29SNA', '29SNB', '29SNC',
+        '29SND', '29SPA', '29SPB', '29SPC', '29SPD', '29SQA', '29SQB',
+        '29SQC', '29SQD', '29SQV', '29THN', '29TME', '29TMH', '29TNE',
+        '29TNF', '29TNG', '29TNH', '29TNJ', '29TPE', '29TPF', '29TPG',
+        '29TPH', '29TPJ', '29TQE', '29TQF', '29TQG', '29TQH', '29TQJ',
+        '30STE', '30STF', '30STG', '30STH', '30STJ', '30SUE', '30SUF',
+        '30SUG', '30SUH', '30SUJ', '30SVF', '30SVG', '30SVH', '30SVJ',
+        '30SWF', '30SWG', '30SWH', '30SWJ', '30SXF', '30SXG', '30SXH',
+        '30SXJ', '30SYH', '30SYJ', '30TTK', '30TTL', '30TTM', '30TUK',
+        '30TUL', '30TUM', '30TUN', '30TUP', '30TVK', '30TVL', '30TVM',
+        '30TVN', '30TVP', '30TWK', '30TWL', '30TWM', '30TWN', '30TWP',
+        '30TXK', '30TXL', '30TXM', '30TXN', '30TYK', '30TYL', '30TYM',
+        '30TYN', '31SBC', '31SBD', '31TBE', '31TBF', '31TBG', '31TCF',
+        '31TCG', '31TCH', '31TDF', '31TDG'
+        ]
     return tiles
 
 def get_list_of_tiles_in_mediterranean_basin():

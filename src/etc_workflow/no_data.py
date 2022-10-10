@@ -40,7 +40,7 @@ def _get_dict_of_products_by_tile(tiles: List[str], mongo_collection: Collection
             product_metadata_cursor = _get_products_by_tile_and_date(
                 tile, mongo_collection, start_date, end_date, cloud_percentage=settings.MAX_CLOUD
             )
-            products = list(product_metadata_cursor)[:5] # The workflow only takes into account the first five
+            products = list(product_metadata_cursor)
 
             dict_products = {}
             # Generate a dictionary of the products set with title as key and no data percentage as value
