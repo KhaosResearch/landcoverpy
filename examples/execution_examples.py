@@ -36,8 +36,8 @@ def run_model_training():
 
     compute_spectral_signature_plot(
         land_cover_dataset,
-        out_plot_path="/mnt/home/anmabur/etc-uma/etc-scripts/images/plot.png",
-        out_legend_path="/mnt/home/anmabur/etc-uma/etc-scripts/images/legend.png",
+        out_plot_path="../plot.png",
+        out_legend_path="../legend.png",
         classes_showed=["water", "wetland", "closedForest", "shrubland"],
     )
 
