@@ -9,6 +9,9 @@ release:
 
 clean:
 	@rm -rf build dist .eggs *.egg-info
+
+format: clean
+	@python -m isort --profile black src/
 	
 .DEFAULT_GOAL :=
 all: clean build release install

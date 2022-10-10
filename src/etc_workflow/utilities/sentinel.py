@@ -4,6 +4,7 @@ from sentinelsat.sentinel import SentinelAPI
 
 from etc_workflow.config import settings
 
+
 def _get_sentinel():
     """
     Initialize Sentinel client

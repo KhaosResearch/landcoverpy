@@ -1,19 +1,20 @@
 import json
 import warnings
+from functools import partial
 from typing import Callable
+from zipfile import ZipFile
 
 import geopandas as gpd
 import numpy as np
 import pyproj
 from bs4 import BeautifulSoup
 from mgrs import MGRS
-from functools import partial
-from sentinelsat.sentinel import  read_geojson
+from sentinelsat.sentinel import read_geojson
 from shapely.geometry import MultiPolygon, Polygon, shape
 from shapely.ops import transform
-from zipfile import ZipFile
 
 from etc_workflow.rasterpoint import RasterPoint
+
 
 def _kmz_to_geojson(kmz_file: str) -> str:
     """

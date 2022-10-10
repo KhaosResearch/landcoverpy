@@ -1,27 +1,28 @@
 import json
+from itertools import compress
 from pathlib import Path
 from typing import Iterable, List, Tuple
-from itertools import compress
 
 import numpy as np
-import rasterio
 import pyproj
+import rasterio
+from pymongo.collection import Collection
 from rasterio import mask as msk
 from rasterio.warp import Resampling, reproject
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform
-from pymongo.collection import Collection
 
-from etc_workflow.execution_mode import ExecutionMode
-from etc_workflow.exceptions import NoSentinelException
-from etc_workflow.minio import MinioConnection
 from etc_workflow.config import settings
+from etc_workflow.exceptions import NoSentinelException
+from etc_workflow.execution_mode import ExecutionMode
+from etc_workflow.minio import MinioConnection
 from etc_workflow.rasterpoint import RasterPoint
 from etc_workflow.utilities.geometries import (
-    _project_shape,
     _convert_3D_2D,
-    _get_corners_geometry
+    _get_corners_geometry,
+    _project_shape,
 )
+
 
 def _read_raster(
     band_path: str,

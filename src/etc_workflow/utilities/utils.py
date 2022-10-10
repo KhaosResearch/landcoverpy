@@ -22,6 +22,7 @@ from etc_workflow.utilities.raster import (
     _read_raster,
 )
 
+
 def get_season_dict():
     spring_start = datetime.strptime(settings.SPRING_START, '%Y-%m-%d')
     spring_end = datetime.strptime(settings.SPRING_END, '%Y-%m-%d')

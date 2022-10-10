@@ -1,6 +1,8 @@
 from pymongo import MongoClient
 from pymongo.collection import Collection
+
 from etc_workflow.config import settings
+
 
 class MongoConnection():
     "Simple MongoBD class including some useful methods"

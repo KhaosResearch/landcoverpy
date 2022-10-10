@@ -13,15 +13,12 @@ from etc_workflow.exceptions import NoAsterException
 from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.minio import MinioConnection
 from etc_workflow.rasterpoint import RasterPoint
+from etc_workflow.utilities.geometries import _get_bound, _gps_to_latlon
 from etc_workflow.utilities.raster import (
     _crop_as_sentinel_raster,
     _download_sample_band_by_tile,
     _get_corners_raster,
     _get_kwargs_raster,
-)
-from etc_workflow.utilities.geometries import (
-    _gps_to_latlon,
-    _get_bound,
 )
 
 

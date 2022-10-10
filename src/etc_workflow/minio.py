@@ -1,13 +1,14 @@
 import signal
 import time
 from typing import Callable
-from urllib3.exceptions import HTTPError
 
 from minio import Minio
 from minio.error import MinioException
+from urllib3.exceptions import HTTPError
 
 from etc_workflow.config import settings
 from etc_workflow.exceptions import RuntimeMinioException
+
 
 # Signal used for simulating a time-out in minio connections.
 def _timeout_handler(signum, frame):

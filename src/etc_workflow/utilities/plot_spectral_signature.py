@@ -10,7 +10,6 @@ from etc_workflow.config import settings
 from etc_workflow.minio import MinioConnection
 
 
-
 def _plot_dataset(
     dataset: pd.DataFrame, out_plot_path: str, out_legend_path: str, target_column: str
 ):

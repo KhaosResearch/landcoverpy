@@ -13,7 +13,6 @@ from etc_workflow import raw_index_calculation_composite
 from etc_workflow.config import settings
 from etc_workflow.execution_mode import ExecutionMode
 from etc_workflow.minio import MinioConnection
-from etc_workflow.utilities.sentinel import _sentinel_date_to_datetime
 from etc_workflow.utilities.raster import (
     _get_kwargs_raster,
     _get_product_rasters_paths,
@@ -22,6 +21,8 @@ from etc_workflow.utilities.raster import (
     _get_spatial_resolution_raster,
     _read_raster,
 )
+from etc_workflow.utilities.sentinel import _sentinel_date_to_datetime
+
 
 def _composite(
     band_paths: List[str], method: str = "median", cloud_masks: List[np.ndarray] = None
