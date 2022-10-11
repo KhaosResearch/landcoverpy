@@ -15,7 +15,7 @@ from distributed import Client
 from bd_lc_mediterranean.aster import get_dem_from_tile
 from bd_lc_mediterranean.composite import _create_composite, _get_composite
 from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.exceptions import EtcWorkflowException, NoSentinelException
+from bd_lc_mediterranean.exceptions import WorkflowExecutionException, NoSentinelException
 from bd_lc_mediterranean.execution_mode import ExecutionMode
 from bd_lc_mediterranean.minio import MinioConnection
 from bd_lc_mediterranean.mongo import MongoConnection
@@ -113,18 +113,18 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
             for tile in tiles:
                 try:
                     _process_tile(tile, execution_mode, polygons_per_tile[tile], used_columns)
-                except EtcWorkflowException as e:
+                except WorkflowExecutionException as e:
                     print(e)
         else:
             for tile in tiles:
                 try:
                     _process_tile(tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns)
-                except EtcWorkflowException as e:
+                except WorkflowExecutionException as e:
                     print(e)
             for tile in tiles_forest:
                 try:
                     _process_tile(tile, ExecutionMode.FOREST_PREDICTION, polygons_per_tile[tile], used_columns)
-                except EtcWorkflowException as e:
+                except WorkflowExecutionException as e:
                     print(e)
 
 

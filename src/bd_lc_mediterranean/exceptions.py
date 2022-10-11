@@ -1,11 +1,11 @@
-class EtcWorkflowException(Exception):
-    """A base class for EtcWorkflow exceptions."""
+class WorkflowExecutionException(Exception):
+    """A base class for WorkflowExecution exceptions."""
 
-class NoAsterException(EtcWorkflowException):
+class NoAsterException(WorkflowExecutionException):
     """Raised when there is no Aster products available"""
 
-class NoSentinelException(EtcWorkflowException):
+class NoSentinelException(WorkflowExecutionException):
     """Raised when there is no Sentinel-2 products available"""
 
-class RuntimeMinioException(EtcWorkflowException):
+class RuntimeMinioException(WorkflowExecutionException):
     """Raised when there is no Sentinel-2 products available"""
