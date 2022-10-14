@@ -10,7 +10,7 @@ import json
 import rasterio
 import numpy as np
 
-def _quality_map(tiles: List[str]):
+def quality_map(tiles: List[str]):
     minio_client = MinioConnection()
     mongo_client = MongoConnection()
     json_file = {"type": "FeatureCollection", "features": []}
@@ -29,6 +29,7 @@ def _quality_map(tiles: List[str]):
                 band = band_file.read()
                 nodata = (1*(np.count_nonzero(band == 0)))/band.size
                 polygon_dict["properties"]["nodata"] = "%.2f" % nodata
+                polygon_dict["properties"]["tile"] = tile
                 polygon_dict["geometry"] = json_d
                 json_file["features"].append(polygon_dict)
             os.remove(product_path)
@@ -38,6 +39,7 @@ def _quality_map(tiles: List[str]):
             polygon_dict = {"type": "Feature", "properties": {}, "geometry": {"type": "Polygon"}}
             _, json_d = _sentinel_raster_to_polygon(_object)
             polygon_dict["properties"]["nodata"] = "1"
+            polygon_dict["properties"]["tile"] = tile
             polygon_dict["geometry"] = json_d
             json_file["features"].append(polygon_dict)
         
