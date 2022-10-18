@@ -1,15 +1,19 @@
 import json
+import os 
+from pathlib import Path
 from os.path import join
 from operator import mul
 from typing import Collection, List
 
 import numpy as np
+import rasterio
 
 from bd_lc_mediterranean.config import settings
 from bd_lc_mediterranean.minio import MinioConnection
 from bd_lc_mediterranean.mongo import MongoConnection
 from bd_lc_mediterranean.utilities.utils import get_season_dict, get_products_by_tile_and_date
-from bd_lc_mediterranean.utilities.raster import _read_raster, _download_sample_band_by_title
+from bd_lc_mediterranean.utilities.raster import _read_raster, _download_sample_band_by_title, _sentinel_raster_to_polygon, _download_sample_band_by_tile
+
 
 
 def _get_dict_of_products_by_tile(tiles: List[str], mongo_collection: Collection, seasons: dict):
@@ -96,7 +100,7 @@ def get_quality_map_nodata(tiles: List[str]):
         tiles=tiles, mongo_collection=mongo_client.get_collection_object(), seasons=get_season_dict()
     )
 
-    tile_metadata_name = "no_data.json"
+    tile_metadata_name = "quality_map_nodata.json"
     tile_metadata_path = join(settings.TMP_DIR, tile_metadata_name)
 
     with open(tile_metadata_path, "w") as f:
@@ -109,9 +113,9 @@ def get_quality_map_nodata(tiles: List[str]):
         content_type="text/json",
     )
 
-def get_log_from_quality_map(quality_map_local_path: str = None):
+def get_log_from_quality_map_nodata(quality_map_local_path: str = None):
     """
-    Extract a log file from a quality map.
+    Extract a log file from the nodata quality map. The log file make a summary about possible lack of data in certain tiles.
 
     Parameters:
         quality_map_local_path (str): Local path of the quality_map, if it is None, "no_data.json" is looked for in Minio.
@@ -175,5 +179,56 @@ def get_log_from_quality_map(quality_map_local_path: str = None):
             f.write(f"Tile {tile} in {season}\n")
 
                     
+def quality_map_classified_tiles(tiles: List[str]):
+    """
+    Compute a quality map (geojson) including percentage of nodata in classified tiles.
 
+    Parameters:
+        tiles (List[str]): List of tiles used to compute the quality map
+    """
+    minio_client = MinioConnection()
+    mongo_client = MongoConnection()
+    json_file = {"type": "FeatureCollection", "features": []}
+
+    for tile in tiles: 
+        product_path = str(Path(settings.TMP_DIR, "classification_"))
+        product_path = product_path + tile + ".tif"
+        objects = minio_client.list_objects(settings.MINIO_BUCKET_CLASSIFICATIONS, prefix=settings.MINIO_DATA_FOLDER_NAME + "/classification_" + tile + ".tif")
+        objects_length = len(list(objects))
+
+        if (objects_length == 1): 
+            minio_client.fget_object(settings.MINIO_BUCKET_CLASSIFICATIONS, settings.MINIO_DATA_FOLDER_NAME + "/classification_" + tile + ".tif", product_path)
+            polygon_dict = {"type": "Feature", "properties": {}, "geometry": {"type": "Polygon"}}
+            with rasterio.open(product_path) as band_file:
+                _, json_d = _sentinel_raster_to_polygon(product_path)
+                band = band_file.read()
+                nodata = (1*(np.count_nonzero(band == 0)))/band.size
+                polygon_dict["properties"]["nodata"] = "%.2f" % nodata
+                polygon_dict["properties"]["tile"] = tile
+                polygon_dict["geometry"] = json_d
+                json_file["features"].append(polygon_dict)
+            os.remove(product_path)
+
+        if (objects_length == 0):
+            _object = _download_sample_band_by_tile(tile, minio_client=minio_client, mongo_collection=mongo_client.get_collection_object())
+            polygon_dict = {"type": "Feature", "properties": {}, "geometry": {"type": "Polygon"}}
+            _, json_d = _sentinel_raster_to_polygon(_object)
+            polygon_dict["properties"]["nodata"] = "1"
+            polygon_dict["properties"]["tile"] = tile
+            polygon_dict["geometry"] = json_d
+            json_file["features"].append(polygon_dict)
+        
+            os.remove(_object)
+
+    geojson_filename = 'quality_map_classified_tiles.geojson'
+
+    with open(join(settings.TMP_DIR,geojson_filename), 'w') as f:
+        json.dump(json_file, f)
+    
+    minio_client.fput_object(
+        settings.MINIO_BUCKET_TILE_METADATA,
+        join(settings.MINIO_DATA_FOLDER_NAME, geojson_filename),
+        join(settings.TMP_DIR, geojson_filename),
+        content_type="application/json"
+    )
     
