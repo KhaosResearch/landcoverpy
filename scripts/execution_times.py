@@ -13,7 +13,7 @@ from bd_lc_mediterranean.execution_mode import ExecutionMode
 from bd_lc_mediterranean.model_training import train_model_land_cover
 from bd_lc_mediterranean.mongo import MongoConnection
 from bd_lc_mediterranean.minio import MinioConnection
-from bd_lc_mediterranean.utilities.aoi_tiles import get_list_of_tiles_in_spain
+from bd_lc_mediterranean.utilities.aoi_tiles import get_list_of_tiles_in_iberian_peninsula
 from bd_lc_mediterranean.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
 from bd_lc_mediterranean.utilities.utils import get_products_by_tile_and_date, get_season_dict
 from bd_lc_mediterranean.workflow import  _process_tile
@@ -38,7 +38,7 @@ def _time_composite():
 
     seasons = get_season_dict()
 
-    tiles = get_list_of_tiles_in_spain()
+    tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
     products_available = get_products_by_tile_and_date(tile, mongo_products, seasons["spring"][0], seasons["autumn"][1], 100)
@@ -63,7 +63,7 @@ def time_training_dataset(client: Client = None):
 
     minio = MinioConnection()
 
-    tiles = get_list_of_tiles_in_spain()
+    tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
     geojson_files = []
@@ -120,7 +120,7 @@ def time_predicting_tile(client: Client = None):
 
     minio = MinioConnection()
 
-    tiles = get_list_of_tiles_in_spain()
+    tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
     print("Predicting tiles")
