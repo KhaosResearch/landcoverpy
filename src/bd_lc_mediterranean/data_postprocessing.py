@@ -1,10 +1,9 @@
 from os.path import join
 
-import collections
 import pandas as pd
 
-from etc_workflow.config import settings
-from etc_workflow.utils import _get_minio, _safe_minio_execute
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
 
 
 def postprocess_dataset(input_dataset: str, output_land_cover_dataset: str, forest_classification: bool = False, output_dataset_forest: str = None):
@@ -20,12 +19,11 @@ def postprocess_dataset(input_dataset: str, output_land_cover_dataset: str, fore
             + Postprocess the dataset for forest classification
             + Write resulting dataset to Minio as `output_dataset_forest`
     """
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
 
     input_file_path = join(settings.TMP_DIR, input_dataset)
 
-    _safe_minio_execute(
-        func=minio_client.fget_object,
+    minio_client.fget_object(
         bucket_name=settings.MINIO_BUCKET_DATASETS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, input_dataset),
         file_path=input_file_path,
@@ -38,8 +36,7 @@ def postprocess_dataset(input_dataset: str, output_land_cover_dataset: str, fore
 
     df_land_cover.to_csv(output_file_path, index=False)
 
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_DATASETS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, output_land_cover_dataset),
         file_path=output_file_path,
@@ -54,8 +51,7 @@ def postprocess_dataset(input_dataset: str, output_land_cover_dataset: str, fore
 
         df_forest.to_csv(output_file_path, index=False)
 
-        _safe_minio_execute(
-            func=minio_client.fput_object,
+        minio_client.fput_object(
             bucket_name=settings.MINIO_BUCKET_DATASETS,
             object_name=join(settings.MINIO_DATA_FOLDER_NAME, output_dataset_forest),
             file_path=output_file_path,

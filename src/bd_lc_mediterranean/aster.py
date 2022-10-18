@@ -4,23 +4,21 @@ from typing import Callable, List
 
 import numpy as np
 import rasterio
-from minio import Minio
 from pymongo.collection import Collection
 from rasterio import merge
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
-from etc_workflow.config import settings
-from etc_workflow.exceptions import NoAsterException
-from etc_workflow.execution_mode import ExecutionMode
-from etc_workflow.rasterpoint import RasterPoint
-from etc_workflow.utils import (
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.exceptions import NoAsterException
+from bd_lc_mediterranean.execution_mode import ExecutionMode
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.rasterpoint import RasterPoint
+from bd_lc_mediterranean.utilities.geometries import _get_bound, _gps_to_latlon
+from bd_lc_mediterranean.utilities.raster import (
     _crop_as_sentinel_raster,
     _download_sample_band_by_tile,
-    _get_bound,
     _get_corners_raster,
     _get_kwargs_raster,
-    _gps_to_latlon,
-    _safe_minio_execute,
 )
 
 
@@ -37,7 +35,7 @@ def _get_bucket_by_name(dem_name: str) -> str:
 
 
 def _gather_aster(
-    minio_client: Minio,
+    minio_client: MinioConnection,
     minio_bucket: str,
     left_bound: Callable,
     right_bound: Callable,
@@ -76,7 +74,7 @@ def _gather_aster(
 
 
 def _merge_dem(
-    dem_paths: List[Path], outpath: str, minio_client: Minio, dem_name: str
+    dem_paths: List[Path], outpath: str, minio_client: MinioConnection, dem_name: str
 ) -> Path:
     """
     Given a list of DEM paths and the corresponding product's geometry, merges them into a single raster.
@@ -90,8 +88,7 @@ def _merge_dem(
             bucket, prefix=dem_path, recursive=True
         ):
             file_object = file.object_name
-            _safe_minio_execute(
-                func=minio_client.fget_object,
+            minio_client.fget_object(
                 bucket_name=bucket,
                 object_name=file_object,
                 file_path=str(Path(outpath, file_object)),
@@ -159,7 +156,7 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
 
 
 def get_dem_from_tile(
-    execution_mode: ExecutionMode, tile: str, mongo_collection: Collection, minio_client: Minio, dem_name: str
+    execution_mode: ExecutionMode, tile: str, mongo_collection: Collection, minio_client: MinioConnection, dem_name: str
 ):
     """
     Create both aspect and slope rasters merging aster products and proyecting them to sentinel rasters.

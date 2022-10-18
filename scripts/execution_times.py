@@ -1,28 +1,22 @@
 import random
 import json
 from datetime import datetime
-
-from distributed import Client
-from glob import glob
 from os.path import join
 from pathlib import Path
 
-from etc_workflow.execution_mode import ExecutionMode
-from etc_workflow.workflow import  _process_tile
-from etc_workflow.config import settings
-from etc_workflow.model_training import train_model_land_cover
-from etc_workflow.utils import (
-    get_list_of_tiles_in_spain,
-    _connect_mongo_products_collection,
-    _connect_mongo_composites_collection,
-    _group_polygons_by_tile,
-    _get_products_by_tile_and_date,
-    get_season_dict,
-    _safe_minio_execute,
-    _get_minio,
-    _create_composite,
-    _kmz_to_geojson,
-)
+from distributed import Client
+from glob import glob
+
+from bd_lc_mediterranean.composite import _create_composite
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.execution_mode import ExecutionMode
+from bd_lc_mediterranean.model_training import train_model_land_cover
+from bd_lc_mediterranean.mongo import MongoConnection
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.utilities.aoi_tiles import get_list_of_tiles_in_iberian_peninsula
+from bd_lc_mediterranean.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
+from bd_lc_mediterranean.utilities.utils import get_products_by_tile_and_date, get_season_dict
+from bd_lc_mediterranean.workflow import  _process_tile
 
 def time_composite(client: Client = None):
     if client is not None:
@@ -37,17 +31,17 @@ def time_composite(client: Client = None):
 def _time_composite():
     """Returns the execution time of the method `utils._create_composite` using random products."""
 
-    mongo_products = _connect_mongo_products_collection()
-    mongo_composites = _connect_mongo_composites_collection()
+    mongo_client = MongoConnection()
+    mongo_products = mongo_client.get_collection_object()
 
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
 
     seasons = get_season_dict()
 
-    tiles = get_list_of_tiles_in_spain()
+    tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
-    products_available = _get_products_by_tile_and_date(tile, mongo_products, seasons["spring"][0], seasons["autumn"][1], 100)
+    products_available = get_products_by_tile_and_date(tile, mongo_products, seasons["spring"][0], seasons["autumn"][1], 100)
     products_available = list(products_available)
 
     size_sample = random.randint(2, 5)
@@ -56,6 +50,8 @@ def _time_composite():
     bucket_products = settings.MINIO_BUCKET_NAME_PRODUCTS
     bucket_composites = settings.MINIO_BUCKET_NAME_COMPOSITES
 
+    mongo_client.set_collection(settings.MONGO_COMPOSITES_COLLECTION)
+    mongo_composites = mongo_client.get_collection_object()
 
     start_time = datetime.now()
     _create_composite(products_subset, minio_client, bucket_products, bucket_composites, mongo_composites, "training")
@@ -65,9 +61,9 @@ def _time_composite():
 def time_training_dataset(client: Client = None):
     """Returns the execution time of the method `workflow._process_tile` in a random tile (training)."""
 
-    minio = _get_minio()
+    minio = MinioConnection()
 
-    tiles = get_list_of_tiles_in_spain()
+    tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
     geojson_files = []
@@ -84,8 +80,7 @@ def time_training_dataset(client: Client = None):
     metadata_filename = "metadata.json"
     metadata_filepath = join(settings.TMP_DIR, settings.LAND_COVER_MODEL_FOLDER, metadata_filename)
 
-    _safe_minio_execute(
-        func=minio.fget_object,
+    minio.fget_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, settings.LAND_COVER_MODEL_FOLDER, metadata_filename),
         file_path=metadata_filepath,
@@ -123,9 +118,9 @@ def time_train_model(client: Client = None):
 def time_predicting_tile(client: Client = None):
     """Returns the execution time of the method `workflow._process_tile` in a random tile (predicting)."""
 
-    minio = _get_minio()
+    minio = MinioConnection()
 
-    tiles = get_list_of_tiles_in_spain()
+    tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
     print("Predicting tiles")
@@ -136,8 +131,7 @@ def time_predicting_tile(client: Client = None):
     metadata_filename = "metadata.json"
     metadata_filepath = join(settings.TMP_DIR, settings.LAND_COVER_MODEL_FOLDER, metadata_filename)
 
-    _safe_minio_execute(
-        func=minio.fget_object,
+    minio.fget_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, settings.LAND_COVER_MODEL_FOLDER, metadata_filename),
         file_path=metadata_filepath,

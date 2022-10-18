@@ -6,8 +6,8 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot
 
-from etc_workflow.config import settings
-from etc_workflow.utils import _get_minio, _safe_minio_execute
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
 
 
 def _plot_dataset(
@@ -153,10 +153,9 @@ def compute_spectral_signature_plot(
 
     dataset_path = join(settings.TMP_DIR, input_dataset)
 
-    minio_client = _get_minio()
+    minio_client = MinioConnection()
 
-    _safe_minio_execute(
-        func=minio_client.fget_object,
+    minio_client.fget_object(
         bucket_name=settings.MINIO_BUCKET_DATASETS,
         object_name=join(settings.MINIO_DATA_FOLDER_NAME, input_dataset),
         file_path=dataset_path,
