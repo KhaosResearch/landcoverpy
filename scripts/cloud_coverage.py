@@ -2,21 +2,20 @@ import datetime
 import json
 from datetime import datetime
 from os.path import join
-from typing import Collection, List
+from typing import List
+from pymongo.collection import Collection
 
 import pandas as pd
 from sentinelsat.sentinel import SentinelAPI, geojson_to_wkt, read_geojson
 
-from etc_workflow.config import settings
-from etc_workflow.utils import (
-    _connect_mongo_products_collection,
-    _get_minio,
-    _get_products_by_tile_and_date,
-    _get_sentinel,
-    _safe_minio_execute,
+from bd_lc_mediterranean.config import settings
+from bd_lc_mediterranean.minio import MinioConnection
+from bd_lc_mediterranean.mongo import MongoConnection
+from bd_lc_mediterranean.utilities.sentinel import _get_sentinel
+from bd_lc_mediterranean.utilities.utils import (
+    get_products_by_tile_and_date,
     get_season_dict,
 )
-
 
 def _get_available_products(tiles: dict, mongo_collection: Collection, seasons: dict):
     """
@@ -36,7 +35,7 @@ def _get_available_products(tiles: dict, mongo_collection: Collection, seasons: 
     for tile in tiles:
         for season in seasons:
             start_date, end_date = seasons[season]
-            product_metadata_cursor = _get_products_by_tile_and_date(
+            product_metadata_cursor = get_products_by_tile_and_date(
                 tile, mongo_collection, start_date, end_date, cloud_percentage=101
             )
             products = list(product_metadata_cursor)
@@ -53,81 +52,67 @@ def _get_available_products(tiles: dict, mongo_collection: Collection, seasons: 
     return tiles
 
 
-def _get_country_tiles(sentinel_api: SentinelAPI, countries: list):
+def _get_tiles_in_geojson(sentinel_api: SentinelAPI, geojson_path: str):
     """
-    Get set of tiles for a given area.
+    Get set of tiles for a given area defined in a geojson.
 
     Parameters:
         sentinel_api (SentinelAPI): Sentinel api access data.
-        countries (list): Set of countries to get tiles of.
+        geojson (str): Geojson path to get tiles of. Due to Sentinel-2 limitations, it has to be an small one
 
     """
 
-    minio_client = _get_minio()
-    tiles_by_country = {}
+    tiles_aoi = {}
 
-    for country in countries:
-        # Read geojson of the given country
+    geojson = read_geojson(geojson_path)
+    footprint = geojson_to_wkt(geojson)
 
-        geojson_filename = str.lower(country) + ".geojson"
-        geojson_path = join(settings.TMP_DIR, "countries", geojson_filename)
+    start_date = datetime(2021, 1, 1)
+    end_date = datetime(2021, 1, 10)
 
-        _safe_minio_execute(
-            func=minio_client.fget_object,
-            bucket_name=settings.MINIO_BUCKET_GEOJSONS,
-            object_name=join("countries", geojson_filename),
-            file_path=geojson_path,
-        )
+    products = sentinel_api.query(
+        area=footprint,
+        filename="S2*",
+        producttype="S2MSI2A",
+        platformname="Sentinel-2",
+        cloudcoverpercentage=(0, 100),
+        date=(start_date, end_date),
+        order_by="cloudcoverpercentage, +beginposition",
+        limit=None,
+    )
 
-        geojson = read_geojson(geojson_path)
-        footprint = geojson_to_wkt(geojson)
+    products_df = sentinel_api.to_dataframe(products)
 
-        start_date = datetime(2021, 1, 1)
-        end_date = datetime(2021, 1, 20)
+    # Get list of unique tiles in the given area.
+    tiles = pd.Series(products_df["title"]).str[39:44]
+    tiles = pd.unique(tiles)
 
-        products = sentinel_api.query(
-            area=footprint,
-            filename="S2*",
-            producttype="S2MSI2A",
-            platformname="Sentinel-2",
-            cloudcoverpercentage=(0, 100),
-            date=(start_date, end_date),
-            order_by="cloudcoverpercentage, +beginposition",
-            limit=None,
-        )
+    # Add tiles to the dictionary
+    for tile in tiles:
+        tiles_aoi[tile] = {}
 
-        products_df = sentinel_api.to_dataframe(products)
-
-        # Get list of unique tiles in the given area.
-        tiles = pd.Series(products_df["title"]).str[39:44]
-        tiles = pd.unique(tiles)
-
-        # Add tiles to the dictionary
-        for tile in tiles:
-            tiles_by_country[tile] = {}
-
-    return tiles_by_country
+    return tiles_aoi
 
 
-def compute_cloud_coverage(countries: List[str]):
+def compute_cloud_coverage(geojson_path: str):
     """
-    Computes the cloud coverage for a list of tiles included in several countries.
+    Computes the cloud coverage for a list of tiles included in a geojson.
 
     Parameters:
         countries (List[str]): List of countries included.
 
     """
 
-    mongo = _connect_mongo_products_collection()
-    minio_client = _get_minio()
+    mongo_client = MongoConnection()
+    minio_client = MinioConnection()
+    mongo_collection = mongo_client.get_collection_object()
     sentinel_api = _get_sentinel()
-    # tiles = _get_country_tiles(sentinel_api, countries, order_by_country)
-    tiles = _get_country_tiles(sentinel_api, countries)
+    tiles = _get_tiles_in_geojson(sentinel_api, geojson_path)
 
     seasons = get_season_dict()
 
     tiles_by_country = _get_available_products(
-        mongo_collection=mongo, tiles=tiles, seasons=seasons
+        mongo_collection=mongo_collection, tiles=tiles, seasons=seasons
     )
 
     tile_metadata_name = "cloud_coverage.json"
@@ -136,8 +121,7 @@ def compute_cloud_coverage(countries: List[str]):
     with open(tile_metadata_path, "w") as f:
         json.dump(tiles_by_country, f)
 
-    _safe_minio_execute(
-        func=minio_client.fput_object,
+    minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_TILE_METADATA,
         object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{tile_metadata_name}",
         file_path=tile_metadata_path,

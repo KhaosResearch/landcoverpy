@@ -1,4 +1,3 @@
-import string
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,8 +5,6 @@ import pandas as pd
 import seaborn as sn
 from matplotlib.collections import QuadMesh
 from sklearn.metrics import confusion_matrix
-from os.path import join
-from etc_workflow.config import settings
 
 
 def _write_cells(
