@@ -21,12 +21,5 @@ def _sentinel_date_to_datetime(date: str):
     """
     Parse a string date (YYYYMMDDTHHMMSS) to a sentinel datetime
     """
-    date_datetime = datetime(
-        int(date[0:4]),
-        int(date[4:6]),
-        int(date[6:8]),
-        int(date[9:11]),
-        int(date[11:13]),
-        int(date[13:15]),
-    )
+    date_datetime = datetime.strptime(date, '%Y%m%dT%H%M%S')
     return date_datetime
