@@ -88,31 +88,21 @@ def _read_raster(
             with memfile.open(**kwargs) as memfile_band:
                 memfile_band.write(band)
                 projected_geometry = _convert_3D_2D(projected_geometry)
-                masked_band, _ = msk.mask(
+                masked_band, masked_transform = msk.mask(
                     memfile_band, shapes=[projected_geometry], crop=True, nodata=np.nan
                 )
                 masked_band = masked_band.astype(np.float32)
+                kwargs = memfile_band.meta.copy()
                 band = masked_band
 
-        new_kwargs = kwargs.copy()
-        corners = _get_corners_geometry(mask_geometry)
-        top_left_corner = corners["top_left"]
-        top_left_corner = (top_left_corner[1], top_left_corner[0])
-        project = pyproj.Transformer.from_crs(
-            pyproj.CRS.from_epsg(4326), new_kwargs["crs"], always_xy=True
-        ).transform
-        top_left_corner = transform(project, Point(top_left_corner))
-        new_kwargs["transform"] = rasterio.Affine(
-            new_kwargs["transform"][0],
-            0.0,
-            top_left_corner.x,
-            0.0,
-            new_kwargs["transform"][4],
-            top_left_corner.y,
+        kwargs.update(
+            {
+                "driver": "GTiff",
+                "height": band.shape[1],
+                "width": band.shape[2],
+                "transform": masked_transform,
+            }
         )
-        new_kwargs["width"] = band.shape[2]
-        new_kwargs["height"] = band.shape[1]
-        kwargs = new_kwargs
 
     if path_to_disk is not None:
         with rasterio.open(path_to_disk, "w", **kwargs) as dst_file:
