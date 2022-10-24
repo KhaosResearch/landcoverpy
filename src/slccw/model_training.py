@@ -9,9 +9,9 @@ from sklearn.feature_selection import RFE
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.minio import MinioConnection
-from bd_lc_mediterranean.utilities.confusion_matrix import compute_confusion_matrix
+from slccw.config import settings
+from slccw.minio import MinioConnection
+from slccw.utilities.confusion_matrix import compute_confusion_matrix
 
 
 def _feature_reduction(

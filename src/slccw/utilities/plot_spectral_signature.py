@@ -6,8 +6,8 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot
 
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.minio import MinioConnection
+from slccw.config import settings
+from slccw.minio import MinioConnection
 
 
 def _plot_dataset(

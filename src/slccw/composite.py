@@ -9,11 +9,11 @@ import rasterio
 from pymongo.collection import Collection
 from scipy.ndimage import convolve
 
-from bd_lc_mediterranean import raw_index_calculation_composite
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.execution_mode import ExecutionMode
-from bd_lc_mediterranean.minio import MinioConnection
-from bd_lc_mediterranean.utilities.raster import (
+from slccw import raw_index_calculation_composite
+from slccw.config import settings
+from slccw.execution_mode import ExecutionMode
+from slccw.minio import MinioConnection
+from slccw.utilities.raster import (
     _get_kwargs_raster,
     _get_product_rasters_paths,
     _get_raster_filename_from_path,
@@ -21,7 +21,7 @@ from bd_lc_mediterranean.utilities.raster import (
     _get_spatial_resolution_raster,
     _read_raster,
 )
-from bd_lc_mediterranean.utilities.sentinel import _sentinel_date_to_datetime
+from slccw.utilities.sentinel import _sentinel_date_to_datetime
 
 
 def _composite(

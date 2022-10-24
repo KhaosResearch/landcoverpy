@@ -8,11 +8,11 @@ from typing import Collection, List
 import numpy as np
 import rasterio
 
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.minio import MinioConnection
-from bd_lc_mediterranean.mongo import MongoConnection
-from bd_lc_mediterranean.utilities.utils import get_season_dict, get_products_by_tile_and_date
-from bd_lc_mediterranean.utilities.raster import _read_raster, _download_sample_band_by_title, _sentinel_raster_to_polygon, _download_sample_band_by_tile
+from slccw.config import settings
+from slccw.minio import MinioConnection
+from slccw.mongo import MongoConnection
+from slccw.utilities.utils import get_season_dict, get_products_by_tile_and_date
+from slccw.utilities.raster import _read_raster, _download_sample_band_by_title, _sentinel_raster_to_polygon, _download_sample_band_by_tile
 
 
 

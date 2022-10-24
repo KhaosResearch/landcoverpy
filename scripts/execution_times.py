@@ -7,16 +7,16 @@ from pathlib import Path
 from distributed import Client
 from glob import glob
 
-from bd_lc_mediterranean.composite import _create_composite
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.execution_mode import ExecutionMode
-from bd_lc_mediterranean.model_training import train_model_land_cover
-from bd_lc_mediterranean.mongo import MongoConnection
-from bd_lc_mediterranean.minio import MinioConnection
-from bd_lc_mediterranean.utilities.aoi_tiles import get_list_of_tiles_in_iberian_peninsula
-from bd_lc_mediterranean.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
-from bd_lc_mediterranean.utilities.utils import get_products_by_tile_and_date, get_season_dict
-from bd_lc_mediterranean.workflow import  _process_tile
+from slccw.composite import _create_composite
+from slccw.config import settings
+from slccw.execution_mode import ExecutionMode
+from slccw.model_training import train_model_land_cover
+from slccw.mongo import MongoConnection
+from slccw.minio import MinioConnection
+from slccw.utilities.aoi_tiles import get_list_of_tiles_in_iberian_peninsula
+from slccw.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
+from slccw.utilities.utils import get_products_by_tile_and_date, get_season_dict
+from slccw.workflow import  _process_tile
 
 def time_composite(client: Client = None):
     if client is not None:

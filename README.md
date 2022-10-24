@@ -1,10 +1,10 @@
-# BD-LC-mediterranean: Big Data Land Cover of the Mediterranean bassin
+# SLCCW: Scalable Land Cover Classification Workflow
 
-Land cover and forest classification workflow aimed to be able to scale to cover the Mediterranean bassin.
+A Scalable Land Cover Classification Workflow aimed to be able to scale to cover the Mediterranean bassin.
 
 ## Installation
 From PyPi:
-`$ python -m pip install bd_lc_mediterranean`
+`$ python -m pip install slccw`
 
 From source:
 `$ make install`
