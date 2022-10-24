@@ -11,7 +11,7 @@ From source:
 
 ## Usage
 
-Usage examples can be found at the [examples](examples) folder.
+Usage examples can be found at the [notebooks](notebooks) folder.
 
 ## License
 This project is licensed under the MIT license. See the [LICENSE](LICENSE) file for more info.
