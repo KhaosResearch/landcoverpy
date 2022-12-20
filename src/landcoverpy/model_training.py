@@ -9,9 +9,9 @@ from sklearn.feature_selection import RFE
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
-from slccw.config import settings
-from slccw.minio import MinioConnection
-from slccw.utilities.confusion_matrix import compute_confusion_matrix
+from landcoverpy.config import settings
+from landcoverpy.minio import MinioConnection
+from landcoverpy.utilities.confusion_matrix import compute_confusion_matrix
 
 
 def _feature_reduction(

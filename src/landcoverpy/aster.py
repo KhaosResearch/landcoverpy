@@ -8,13 +8,13 @@ from pymongo.collection import Collection
 from rasterio import merge
 from rasterio.warp import Resampling, calculate_default_transform, reproject
 
-from slccw.config import settings
-from slccw.exceptions import NoAsterException
-from slccw.execution_mode import ExecutionMode
-from slccw.minio import MinioConnection
-from slccw.rasterpoint import RasterPoint
-from slccw.utilities.geometries import _get_bound, _gps_to_latlon
-from slccw.utilities.raster import (
+from landcoverpy.config import settings
+from landcoverpy.exceptions import NoAsterException
+from landcoverpy.execution_mode import ExecutionMode
+from landcoverpy.minio import MinioConnection
+from landcoverpy.rasterpoint import RasterPoint
+from landcoverpy.utilities.geometries import _get_bound, _gps_to_latlon
+from landcoverpy.utilities.raster import (
     _crop_as_sentinel_raster,
     _download_sample_band_by_tile,
     _get_corners_raster,

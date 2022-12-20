@@ -1,10 +1,10 @@
-# SLCCW: Scalable Land Cover Classification Workflow
+# LandCoverPy, a scalable land cover classification workflow
 
-A Scalable Land Cover Classification Workflow aimed to be able to scale to cover the Mediterranean bassin.
+A scalable land cover classification workflow aimed to be able to scale to cover the Mediterranean bassin.
 
 ## Installation
 From PyPi:
-`$ python -m pip install slccw`
+`$ python -m pip install landcoverpy`
 
 From source:
 `$ make install`

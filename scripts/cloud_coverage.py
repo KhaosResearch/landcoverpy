@@ -8,11 +8,11 @@ from pymongo.collection import Collection
 import pandas as pd
 from sentinelsat.sentinel import SentinelAPI, geojson_to_wkt, read_geojson
 
-from slccw.config import settings
-from slccw.minio import MinioConnection
-from slccw.mongo import MongoConnection
-from slccw.utilities.sentinel import _get_sentinel
-from slccw.utilities.utils import (
+from landcoverpy.config import settings
+from landcoverpy.minio import MinioConnection
+from landcoverpy.mongo import MongoConnection
+from landcoverpy.utilities.sentinel import _get_sentinel
+from landcoverpy.utilities.utils import (
     get_products_by_tile_and_date,
     get_season_dict,
 )

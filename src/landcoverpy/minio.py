@@ -6,8 +6,8 @@ from minio import Minio
 from minio.error import MinioException
 from urllib3.exceptions import HTTPError
 
-from slccw.config import settings
-from slccw.exceptions import RuntimeMinioException
+from landcoverpy.config import settings
+from landcoverpy.exceptions import RuntimeMinioException
 
 
 # Signal used for simulating a time-out in minio connections.

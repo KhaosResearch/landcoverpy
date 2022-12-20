@@ -1,7 +1,7 @@
 from pymongo import MongoClient
 from pymongo.collection import Collection
 
-from slccw.config import settings
+from landcoverpy.config import settings
 
 
 class MongoConnection():

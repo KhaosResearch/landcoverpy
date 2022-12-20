@@ -7,8 +7,8 @@ from numpy.lib.function_base import cov
 import pandas as pd
 import seaborn as sns
 
-from slccw.config import settings
-from slccw.minio import MinioConnection
+from landcoverpy.config import settings
+from landcoverpy.minio import MinioConnection
 
 def _jeffreys_matusita_distance(mu1, sigma1, mu2, sigma2):
     """

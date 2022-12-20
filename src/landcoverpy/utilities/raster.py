@@ -12,12 +12,12 @@ from rasterio.warp import Resampling, reproject
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform
 
-from slccw.config import settings
-from slccw.exceptions import NoSentinelException
-from slccw.execution_mode import ExecutionMode
-from slccw.minio import MinioConnection
-from slccw.rasterpoint import RasterPoint
-from slccw.utilities.geometries import (
+from landcoverpy.config import settings
+from landcoverpy.exceptions import NoSentinelException
+from landcoverpy.execution_mode import ExecutionMode
+from landcoverpy.minio import MinioConnection
+from landcoverpy.rasterpoint import RasterPoint
+from landcoverpy.utilities.geometries import (
     _convert_3D_2D,
     _get_corners_geometry,
     _project_shape,

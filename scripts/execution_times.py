@@ -7,16 +7,16 @@ from pathlib import Path
 from distributed import Client
 from glob import glob
 
-from slccw.composite import _create_composite
-from slccw.config import settings
-from slccw.execution_mode import ExecutionMode
-from slccw.model_training import train_model_land_cover
-from slccw.mongo import MongoConnection
-from slccw.minio import MinioConnection
-from slccw.utilities.aoi_tiles import get_list_of_tiles_in_iberian_peninsula
-from slccw.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
-from slccw.utilities.utils import get_products_by_tile_and_date, get_season_dict
-from slccw.workflow import  _process_tile
+from landcoverpy.composite import _create_composite
+from landcoverpy.config import settings
+from landcoverpy.execution_mode import ExecutionMode
+from landcoverpy.model_training import train_model_land_cover
+from landcoverpy.mongo import MongoConnection
+from landcoverpy.minio import MinioConnection
+from landcoverpy.utilities.aoi_tiles import get_list_of_tiles_in_iberian_peninsula
+from landcoverpy.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
+from landcoverpy.utilities.utils import get_products_by_tile_and_date, get_season_dict
+from landcoverpy.workflow import  _process_tile
 
 def time_composite(client: Client = None):
     if client is not None:
