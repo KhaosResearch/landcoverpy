@@ -1,4 +1,5 @@
 # LandCoverPy, a scalable land cover classification workflow
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7462308.svg)](https://doi.org/10.5281/zenodo.7462308)
 
 A scalable land cover classification workflow aimed to be able to scale to cover the Mediterranean bassin.
 
