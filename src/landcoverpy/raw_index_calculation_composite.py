@@ -3,9 +3,9 @@ from pathlib import Path
 
 from greensenti.band_arithmetic import *
 
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.minio import MinioConnection
-from bd_lc_mediterranean.mongo import MongoConnection
+from landcoverpy.config import settings
+from landcoverpy.minio import MinioConnection
+from landcoverpy.mongo import MongoConnection
 
 
 def _get_indexes_dict():

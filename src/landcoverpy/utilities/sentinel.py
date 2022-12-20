@@ -2,7 +2,7 @@ from datetime import datetime
 
 from sentinelsat.sentinel import SentinelAPI
 
-from bd_lc_mediterranean.config import settings
+from landcoverpy.config import settings
 
 
 def _get_sentinel():

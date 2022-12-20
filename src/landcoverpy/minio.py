@@ -6,8 +6,8 @@ from minio import Minio
 from minio.error import MinioException
 from urllib3.exceptions import HTTPError
 
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.exceptions import RuntimeMinioException
+from landcoverpy.config import settings
+from landcoverpy.exceptions import RuntimeMinioException
 
 
 # Signal used for simulating a time-out in minio connections.

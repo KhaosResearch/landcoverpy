@@ -4,8 +4,8 @@ import numpy as np
 import rasterio
 from rasterio.warp import Resampling, reproject
 
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.minio import MinioConnection
+from landcoverpy.config import settings
+from landcoverpy.minio import MinioConnection
 
 
 def rescale_predictions(res: int):

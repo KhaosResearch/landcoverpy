@@ -12,15 +12,15 @@ import pandas as pd
 import rasterio
 from distributed import Client
 
-from bd_lc_mediterranean.aster import get_dem_from_tile
-from bd_lc_mediterranean.composite import _create_composite, _get_composite
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.exceptions import WorkflowExecutionException, NoSentinelException
-from bd_lc_mediterranean.execution_mode import ExecutionMode
-from bd_lc_mediterranean.minio import MinioConnection
-from bd_lc_mediterranean.mongo import MongoConnection
-from bd_lc_mediterranean.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
-from bd_lc_mediterranean.utilities.raster import (
+from landcoverpy.aster import get_dem_from_tile
+from landcoverpy.composite import _create_composite, _get_composite
+from landcoverpy.config import settings
+from landcoverpy.exceptions import WorkflowExecutionException, NoSentinelException
+from landcoverpy.execution_mode import ExecutionMode
+from landcoverpy.minio import MinioConnection
+from landcoverpy.mongo import MongoConnection
+from landcoverpy.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
+from landcoverpy.utilities.raster import (
     _download_sample_band_by_tile,
     _filter_rasters_paths_by_features_used,
     _get_kwargs_raster,
@@ -29,7 +29,7 @@ from bd_lc_mediterranean.utilities.raster import (
     _get_raster_name_from_path,
     _read_raster,
 )
-from bd_lc_mediterranean.utilities.utils import (
+from landcoverpy.utilities.utils import (
     _check_tiles_not_predicted_in_training,
     _get_forest_masks,
     _mask_polygons_by_tile,

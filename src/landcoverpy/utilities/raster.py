@@ -12,12 +12,12 @@ from rasterio.warp import Resampling, reproject
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform
 
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.exceptions import NoSentinelException
-from bd_lc_mediterranean.execution_mode import ExecutionMode
-from bd_lc_mediterranean.minio import MinioConnection
-from bd_lc_mediterranean.rasterpoint import RasterPoint
-from bd_lc_mediterranean.utilities.geometries import (
+from landcoverpy.config import settings
+from landcoverpy.exceptions import NoSentinelException
+from landcoverpy.execution_mode import ExecutionMode
+from landcoverpy.minio import MinioConnection
+from landcoverpy.rasterpoint import RasterPoint
+from landcoverpy.utilities.geometries import (
     _convert_3D_2D,
     _get_corners_geometry,
     _project_shape,
@@ -88,31 +88,21 @@ def _read_raster(
             with memfile.open(**kwargs) as memfile_band:
                 memfile_band.write(band)
                 projected_geometry = _convert_3D_2D(projected_geometry)
-                masked_band, _ = msk.mask(
+                masked_band, masked_transform = msk.mask(
                     memfile_band, shapes=[projected_geometry], crop=True, nodata=np.nan
                 )
                 masked_band = masked_band.astype(np.float32)
+                kwargs = memfile_band.meta.copy()
                 band = masked_band
 
-        new_kwargs = kwargs.copy()
-        corners = _get_corners_geometry(mask_geometry)
-        top_left_corner = corners["top_left"]
-        top_left_corner = (top_left_corner[1], top_left_corner[0])
-        project = pyproj.Transformer.from_crs(
-            pyproj.CRS.from_epsg(4326), new_kwargs["crs"], always_xy=True
-        ).transform
-        top_left_corner = transform(project, Point(top_left_corner))
-        new_kwargs["transform"] = rasterio.Affine(
-            new_kwargs["transform"][0],
-            0.0,
-            top_left_corner.x,
-            0.0,
-            new_kwargs["transform"][4],
-            top_left_corner.y,
+        kwargs.update(
+            {
+                "driver": "GTiff",
+                "height": band.shape[1],
+                "width": band.shape[2],
+                "transform": masked_transform,
+            }
         )
-        new_kwargs["width"] = band.shape[2]
-        new_kwargs["height"] = band.shape[1]
-        kwargs = new_kwargs
 
     if path_to_disk is not None:
         with rasterio.open(path_to_disk, "w", **kwargs) as dst_file:

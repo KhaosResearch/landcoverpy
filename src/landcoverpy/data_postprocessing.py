@@ -2,8 +2,8 @@ from os.path import join
 
 import pandas as pd
 
-from bd_lc_mediterranean.config import settings
-from bd_lc_mediterranean.minio import MinioConnection
+from landcoverpy.config import settings
+from landcoverpy.minio import MinioConnection
 
 
 def postprocess_dataset(input_dataset: str, output_land_cover_dataset: str, forest_classification: bool = False, output_dataset_forest: str = None):
