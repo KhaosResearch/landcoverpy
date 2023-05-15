@@ -43,3 +43,5 @@ images/
 *.jp2
 
 *.egg-info
+
+.python-version
