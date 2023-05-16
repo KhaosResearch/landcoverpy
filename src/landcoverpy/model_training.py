@@ -1,7 +1,7 @@
-import json
-from os.path import join
 
-import joblib
+from os.path import join
+import time
+from geopy.geocoders import Nominatim
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -9,9 +9,8 @@ from sklearn.feature_selection import RFE
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
-from landcoverpy.config import settings
-from landcoverpy.minio import MinioConnection
-from landcoverpy.utilities.confusion_matrix import compute_confusion_matrix
+from config import settings
+from utilities.confusion_matrix import compute_confusion_matrix
 
 
 def _feature_reduction(
@@ -34,28 +33,46 @@ def _feature_reduction(
     return used_columns
 
 
-def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
+def get_country(lat, lon):
+        # Crear un objeto geolocalizador
+        geolocator = Nominatim(user_agent="my_geocoder")
+        location = geolocator.reverse(f"{lat}, {lon}", exactly_one=True)
+        if location is not None:
+            return location.raw['address'].get('country',  '')
+        else:
+            return None
+        
+
+def save_df_with_countries(df):
+    df["country"] = df.apply(lambda i: get_country(i['latitude'], i['longitude']), axis=1)
+    time.sleep(1)
+    return df
+
+def train_model_land_cover(n_jobs: int = 2):
     """Trains a Random Forest model using a land cover dataset."""
 
-    training_dataset_path = join(settings.TMP_DIR, land_cover_dataset)
 
-    minio_client = MinioConnection()
-
-    minio_client.fget_object(
-        bucket_name=settings.MINIO_BUCKET_DATASETS,
-        object_name=join(settings.MINIO_DATA_FOLDER_NAME, land_cover_dataset),
-        file_path=training_dataset_path,
-    )
-
-    train_df = pd.read_csv(training_dataset_path)
+    train_df = pd.read_csv("/home/irene/Working_dir/landcoverpy/data/dataset_postprocessed.csv")
     train_df = train_df.replace([np.inf, -np.inf], np.nan)
     train_df = train_df.fillna(np.nan)
     train_df = train_df.dropna()
 
-    minio_folder = settings.LAND_COVER_MODEL_FOLDER
+    train_df_head = train_df.head(20).copy()
 
-    y_train_data = train_df["class"]
-    x_train_data = train_df.drop(
+    df_with_country = save_df_with_countries(train_df_head)
+    
+    # Aplicar la función a las columnas de latitud y longitud en el dataframe
+    #train_df["country"] = train_df.apply(lambda i: get_country(i['latitude'], i['longitude']), axis=1)
+    # train_df_head["country"] = train_df_head.apply(lambda i: get_country(i['latitude'], i['longitude']), axis=1)
+    # time.sleep(1)
+
+
+
+    train_grouped = df_with_country.groupby("country").apply(lambda x: x.reset_index(drop=True))
+
+
+    y_train_data = train_grouped["class"]
+    x_train_data = train_grouped.drop(
         [
             "class",
             "latitude",
@@ -63,13 +80,16 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
             "spring_product_name",
             "autumn_product_name",
             "summer_product_name",
+            "country"
         ],
         axis=1,
     )
 
+
+
     used_columns = _feature_reduction(x_train_data, y_train_data)
 
-    reduced_x_train_data = train_df[used_columns]
+    reduced_x_train_data = train_grouped[used_columns]
     X_train, X_test, y_train, y_test = train_test_split(
         reduced_x_train_data, y_train_data, test_size=0.15
     )
@@ -77,152 +97,55 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
     # Train model
     clf = RandomForestClassifier(n_jobs=n_jobs)
     X_train = X_train.reindex(columns=used_columns)
-    print(X_train)
+    
+ 
     clf.fit(X_train, y_train)
-    y_true = clf.predict(X_test)
+
+    print("X_test",X_test)
 
     labels = y_train_data.unique()
+    for country, df_test_country in X_test.groupby("country"):
+        # Obtén las características (X) y las etiquetas (y) para el país actual
+        X_country = df_test_country
+        y_country = y_test[df_test_country.index]
+        y_country1 = y_test[country]
 
-    confusion_image_filename = "confusion_matrix.png"
-    out_image_path = join(settings.TMP_DIR, confusion_image_filename)
-    compute_confusion_matrix(y_true, y_test, labels, out_image_path=out_image_path)
+       
 
-    # Save confusion matrix image to minio
-    minio_client.fput_object(
-        bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_folder, confusion_image_filename),
-        file_path=out_image_path,
-        content_type="image/png",
-    )
+        print("ffffff",y_country)
+        #print("jjj", y_country)
+        
+        # Realiza las predicciones para el país actual utilizando tu modelo entrenado
+        y_pred_pais = clf.predict(X_country)
+        print("SDFG", y_pred_pais)
+        
+     
 
-    model_name = "model.joblib"
-    model_path = join(settings.TMP_DIR, model_name)
-    joblib.dump(clf, model_path)
+        confusion_image_filename = f"/home/irene/Working_dir/landcoverpy/confusion_matrix_{country}.png"
 
-    # Save model to minio
-    minio_client.fput_object(
-        bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_name}",
-        file_path=model_path,
-        content_type="mlmodel/randomforest",
-    )
+        #out_image_path = join(settings.TMP_DIR, confusion_image_filename)
+        compute_confusion_matrix(y_pred_pais, y_country, labels, out_image_path=confusion_image_filename)
+        
 
-    model_metadata = {
-        "model": str(type(clf)),
-        "n_jobs": n_jobs,
-        "used_columns": list(used_columns),
-        "classes": list(labels)
-    }
 
-    model_metadata_name = "metadata.json"
-    model_metadata_path = join(settings.TMP_DIR, model_metadata_name)
+    # for pais in unique_countries:
+    #     Filtrar el conjunto de prueba solo para el país actual
+    #     X_pais = X_test[y_test == pais]
+    #     y_pais = y_test[y_test == pais]
+    #     print(X_pais)
 
-    with open(model_metadata_path, "w") as f:
-        json.dump(model_metadata, f)
+    #     Predecir las etiquetas para el país actual
+    #     y_pred_pais = clf.predict(X_pais)
 
-    minio_client.fput_object(
-        bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_metadata_name}",
-        file_path=model_metadata_path,
-        content_type="text/json",
-    )
 
-def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_jobs: int = 2):
-    """Trains a Random Forest model using a forest dataset."""
+    #     confusion_image_filename = f"confusion_matrix_{pais}.png"
 
-    training_dataset_path = join(settings.TMP_DIR, forest_dataset)
+    #     out_image_path = join(settings.TMP_DIR, confusion_image_filename)
+    #     compute_confusion_matrix(y_pred_pais, y_test, labels, out_image_path=out_image_path)
 
-    minio_client = MinioConnection()
 
-    minio_client.fget_object(
-        bucket_name=settings.MINIO_BUCKET_DATASETS,
-        object_name=join(settings.MINIO_DATA_FOLDER_NAME, forest_dataset),
-        file_path=training_dataset_path,
-    )
 
-    train_df = pd.read_csv(training_dataset_path)
-    train_df = train_df.replace([np.inf, -np.inf], np.nan)
-    train_df = train_df.fillna(np.nan)
-    train_df = train_df.dropna()
 
-    minio_folder = ''
-    if use_open_forest:
-        train_df = train_df[train_df["class"] == "openForest"]
-        minio_folder = settings.OPEN_FOREST_MODEL_FOLDER
-    else:
-        train_df = train_df[train_df["class"] != "openForest"]
-        minio_folder = settings.DENSE_FOREST_MODEL_FOLDER
 
-    y_train_data = train_df["forest_type"]
-    x_train_data = train_df.drop(
-        [
-            "class",
-            "latitude",
-            "longitude",
-            "spring_product_name",
-            "autumn_product_name",
-            "summer_product_name",
-            "forest_type",
-        ],
-        axis=1,
-    )
 
-    used_columns = _feature_reduction(x_train_data, y_train_data)
-
-    reduced_x_train_data = train_df[used_columns]
-    X_train, X_test, y_train, y_test = train_test_split(
-        reduced_x_train_data, y_train_data, test_size=0.30
-    )
-
-    # Train model
-    clf = RandomForestClassifier(n_jobs=n_jobs)
-    X_train = X_train.reindex(columns=used_columns)
-    print(X_train)
-    clf.fit(X_train, y_train)
-    y_true = clf.predict(X_test)
-
-    labels = y_train_data.unique()
-
-    confusion_image_filename = "confusion_matrix.png"
-    out_image_path = join(settings.TMP_DIR, confusion_image_filename)
-    compute_confusion_matrix(y_true, y_test, labels, out_image_path=out_image_path)
-
-    # Save confusion matrix image to minio
-    minio_client.fput_object(
-        bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_folder, confusion_image_filename),
-        file_path=out_image_path,
-        content_type="image/png",
-    )
-
-    model_name = "model.joblib"
-    model_path = join(settings.TMP_DIR, model_name)
-    joblib.dump(clf, model_path)
-
-    # Save model to minio
-    minio_client.fput_object(
-        bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_name}",
-        file_path=model_path,
-        content_type="mlmodel/randomforest",
-    )
-
-    model_metadata = {
-        "model": str(type(clf)),
-        "n_jobs": n_jobs,
-        "used_columns": list(used_columns),
-        "classes": list(labels)
-    }
-    model_metadata_name = "metadata.json"
-    model_metadata_path = join(settings.TMP_DIR, model_metadata_name)
-
-    with open(model_metadata_path, "w") as f:
-        json.dump(model_metadata, f)
-
-    minio_client.fput_object(
-        bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{model_metadata_name}",
-        file_path=model_metadata_path,
-        content_type="text/json",
-    )
-
+train_model_land_cover(2)
