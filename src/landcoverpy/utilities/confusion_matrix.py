@@ -108,6 +108,7 @@ def _write_cells(
 
 def _compute_matrix(
     df_cm,
+    country,
     annot=True,
     cmap="Oranges",
     fmt=".2f",
@@ -209,20 +210,21 @@ def _compute_matrix(
         ax.text(item["x"], item["y"], item["text"], **item["kw"])
 
     # titles and legends
-    ax.set_title("Confusion matrix", fontweight="bold", fontsize=17)
+    ax.set_title(f"Confusion matrix {country}", fontweight="bold", fontsize=17)
     ax.set_xlabel(xlbl, fontweight="bold", fontsize=16)
     ax.set_ylabel(ylbl, fontweight="bold", fontsize=16)
 
     plt.savefig(out_image_path, bbox_inches="tight")
 
 
-def compute_confusion_matrix(y_true, y_test, labels, out_image_path):
+def compute_confusion_matrix(y_true, y_test, labels, country, out_image_path):
 
     """
         Create confusion matrix structure and make sure it scales properly based on the number of classes.
     """
 
     df_cm = pd.DataFrame(confusion_matrix(y_true, y_test, labels=labels))
+
 
     # Save the matrix in csv format in case it is needed (is not uploaded to MinIO)
 
@@ -233,5 +235,5 @@ def compute_confusion_matrix(y_true, y_test, labels, out_image_path):
 
     df_len = len(df_cm) + 1
 
-    _compute_matrix(df_cm, cmap="Oranges", out_image_path=out_image_path, figsize=(df_len, df_len))
+    _compute_matrix(df_cm, country, cmap="Oranges", out_image_path=out_image_path, figsize=(df_len, df_len))
     
