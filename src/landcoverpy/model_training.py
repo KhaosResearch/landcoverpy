@@ -11,6 +11,9 @@ from sklearn.model_selection import train_test_split
 import geocoder
 from config import settings
 from utilities.confusion_matrix import compute_confusion_matrix
+import geopandas as gpd
+from shapely.geometry import Point
+import os 
 
 
 def _feature_reduction(
@@ -32,21 +35,43 @@ def _feature_reduction(
 
     return used_columns
 
+import geocoder
+
 
 def get_country(lat, lon):
-        time.sleep(1)
-        #Crear un objeto geolocalizador
-        geolocator = Nominatim(user_agent="my_geocoder")
-        location = geolocator.reverse(f"{lat}, {lon}", language='en')
-        if location is not None:
-            return location.raw['address'].get('country',  '')
-        else:
-            return None
+        # time.sleep(1)
+        # #Crear un objeto geolocalizador
+        # geolocator = Nominatim(user_agent="my_geocoder")
+        # location = geolocator.reverse(f"{lat}, {lon}", language='en')
+        # if location is not None:
+        #     return location.raw['address'].get('country',  '')
+        # else:
+        #     return None
+    location = geocoder.osm([lat, lon], method='reverse')
+    
+    if location.ok:
+        country = location.country
+        return country
+    else:
+        return None
 
         
 
-def save_df_with_countries(df):
-    df["country"] = df.apply(lambda i: get_country(i['latitude'], i['longitude']), axis=1)
+
+
+
+def verificar_coordenadas(geodf, row):
+    latitude = row['latitude']
+    longitude = row['longitude']
+
+    for index, feature in geodf.iterrows():
+        if feature['geometry'].contains(Point(longitude, latitude)):
+            return feature['name']
+    
+    return None
+
+def save_df_with_countries(df, gdf):
+    df['country'] = df.apply(lambda row: verificar_coordenadas(gdf, row), axis=1)
     
     df.to_csv("./data/dataset_postprocessed_with_country.csv")
     return df
@@ -58,14 +83,21 @@ def train_model_land_cover(n_jobs: int = 2):
     train_df = pd.read_csv("./data/dataset_postprocessed.csv")
     train_df = train_df.replace([np.inf, -np.inf], np.nan)
     train_df = train_df.fillna(np.nan)
-    train_df_head = train_df.dropna()
+    train_df= train_df.dropna()
 
-    #train_df_head = train_df.head(20).copy()
+    df_with_country = train_df.head(20).copy()
 
+
+
+    gdf = gpd.read_file('./geojson/global.json')
+    
+
+    
+    
     #Just run once to save the df
-    df_with_country = save_df_with_countries(train_df_head)
+    df_with_country = save_df_with_countries(train_df, gdf)
+    
     #df_with_country = pd.read_csv("./data/dataset_postprocessed_with_country.csv")
-
 
     train_grouped = df_with_country.groupby("country").apply(lambda x: x.reset_index(drop=True))
 
