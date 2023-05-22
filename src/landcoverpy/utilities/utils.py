@@ -286,7 +286,7 @@ def _mask_polygons_by_tile(
             kwargs["transform"], tr_point.x, tr_point.y
         )
 
-        forest_type = polygons_in_tile[geometry_id]["properties"].get("form_arb_d", None)
+        forest_type = polygons_in_tile[geometry_id]["properties"].get("Forest_Typ", None)
 
         label_lon_lat = _label_neighbours(
             kwargs["height"],

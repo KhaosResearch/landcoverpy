@@ -171,7 +171,7 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
 
     reduced_x_train_data = train_df[used_columns]
     X_train, X_test, y_train, y_test = train_test_split(
-        reduced_x_train_data, y_train_data, test_size=0.30
+        reduced_x_train_data, y_train_data, test_size=0.15
     )
 
     # Train model

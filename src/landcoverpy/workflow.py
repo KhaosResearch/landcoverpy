@@ -447,6 +447,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         clf = joblib.load(model_path)
 
         predictions = clf.predict(tile_df)
+        predictions = predictions.astype(str)
 
         predictions[nodata_rows] = "nodata"
         predictions = np.reshape(
@@ -513,12 +514,15 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         clf_dense_forest = joblib.load(join(settings.TMP_DIR, minio_models_folders_dense, model_name))
 
         predictions_open = clf_open_forest.predict(tile_df)
+        predictions_open = predictions_open.astype(str)
+
         predictions_dense = clf_dense_forest.predict(tile_df)
+        predictions_dense = predictions_dense.astype(str)
 
         forest_type_vector = forest_mask.flatten()
 
-        predictions = np.where(forest_type_vector==1, "D - " + predictions_dense, "noforest")
-        predictions = np.where(forest_type_vector==2, "O - " + predictions_open, predictions)
+        predictions = np.where(forest_type_vector==1, np.char.add("D - ", predictions_dense), "noforest")
+        predictions = np.where(forest_type_vector==2, np.char.add("O - ", predictions_open), predictions)
 
         predictions[nodata_rows] = "nodata"
 
@@ -530,61 +534,14 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         mapping = {
             'nodata': 0,
             'noforest': 1,
-            'O - Acebuchales (Olea europaea var. Sylvestris)': 101,
-            'O - Encinares (Quercus ilex)': 102,
-            'O - Enebrales (Juniperus spp.)': 103,
-            'O - Melojares (Quercus pyrenaica)': 104,
-            'O - Mezcla de coníferas y frondosas': 105,
-            'O - Otras coníferas': 106,
-            'O - Otras frondosas': 107,
-            'O - Pinar de pino albar (Pinus sylvestris)': 108,
-            'O - Pinar de pino carrasco (Pinus halepensis)': 109,
-            'O - Pinar de pino negro (Pinus uncinata)': 110,
-            'O - Pinar de pino piñonero (Pinus pinea)': 111,
-            'O - Pinar de pino salgareño (Pinus nigra)': 112,
-            'O - Pinares de pino pinaster': 113,
-            'O - Quejigares (Quercus faginea)': 114,
-            'O - Robledales de Q. robur y/o Q. petraea': 115,
-            'O - Robledales de roble pubescente (Quercus humilis)': 116,
-            'O - Sabinares albares (Juniperus thurifera)': 117,
-            'O - Sabinares de Juniperus phoenicea': 118,
-            'D - Plantacion - Choperas y plataneras de producción': 201,
-            'D - Plantacion - Eucaliptales': 202,
-            'D - Plantacion - Otras coníferas alóctonas de producción (Larix spp.: Pseudotsuga spp.: etc)': 203,
-            'D - Plantacion - Otras especies de producción en mezcla': 204,
-            'D - Plantacion - Pinar de pino albar (Pinus sylvestris)': 205,
-            'D - Plantacion - Pinar de pino carrasco (Pinus halepensis)': 206,
-            'D - Plantacion - Pinar de pino piñonero (Pinus pinea)': 207,
-            'D - Plantacion - Pinar de pino radiata': 208,
-            'D - Plantacion - Pinar de pino salgareño (Pinus nigra)': 209,
-            'D - Plantacion - Pinares de pino pinaster': 210,
-            'D - Abedulares (Betula spp.)': 211,
-            'D - Abetales (Abies alba)': 212,
-            'D - Acebedas (Ilex aquifolium)': 213,
-            'D - Acebuchales (Olea europaea var. Sylvestris)': 214,
-            'D - Alcornocales (Quercus suber)': 215,
-            'D - Avellanedas (Corylus avellana)': 216,
-            'D - Bosque ribereño': 217,
-            'D - Castañares (Castanea sativa)': 218,
-            'D - Encinares (Quercus ilex)': 219,
-            'D - Fresnedas (Fraxinus spp.)': 220,
-            'D - Hayedos (Fagus sylvatica)': 221,
-            'D - Madroñales (Arbutus unedo)': 222,
-            'D - Melojares (Quercus pyrenaica)': 223,
-            'D - Mezcla de coníferas y frondosas': 224,
-            'D - Pinar de pino albar (Pinus sylvestris)': 225,
-            'D - Pinar de pino canario (Pinus canariensis)': 226,
-            'D - Pinar de pino carrasco (Pinus halepensis)': 227,
-            'D - Pinar de pino negro (Pinus uncinata)': 228,
-            'D - Pinar de pino piñonero (Pinus pinea)': 229,
-            'D - Pinar de pino radiata': 230,
-            'D - Pinar de pino salgareño (Pinus nigra)': 231,
-            'D - Pinares de pino pinaster': 232,
-            'D - Pinsapares (Abies pinsapo)': 233,
-            'D - Quejigares (Quercus faginea)': 234,
-            'D - Quejigares de Quercus canariensis': 235,
-            'D - Robledales de Q. robur y/o Q. petraea': 236,
-            'D - Robledales de roble pubescente (Quercus humilis)': 237
+            'O - 0': 100,
+            'O - 4': 101,
+            'O - 5': 102,
+            'O - 6': 103,
+            'D - 0': 200,
+            'D - 1': 201,
+            'D - 2': 202,
+            'D - 3': 203
         }
 
         for class_, value in mapping.items():
