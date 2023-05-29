@@ -110,126 +110,35 @@ def postprocess_dataset_forest(df: pd.DataFrame):
     Postprocess the dataset for forest classification:
         - Filter by land cover classes `mixedForest`, `treePlantation`, `riparianForest`, `closedForest` and `openForest`
         - Remove pixels without `forest_type` value and "No arbolado" values
-        - Change class of pixels that fulfil (`forest_type` == "Otras especies de producción en mezcla" or "Eucaliptales") to "treePlantation"
-        - If land cover class is openForest:
-            + ["Sabinares de Juniperus phoenicea", "Sabinares de Juniperus phoenicea ssp. Turbinata"] -> `Sabinares de Juniperus phoenicea`
-            + ["Pinares de pino pinaster en región atlántica", "Pinar de pino pinaster en región mediterránea"] -> Pinar de pino pinaster
-            + ["Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Alpina", "Mezcla de coníferas con frondosas, autoctónas con alóctonas", "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Mediterránea", "Arbolado disperso coníferas y frondosas", "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Atlántica", "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Macaronésica" ] -> "Mezcla de coníferas y frondosas"
-            + ["Arbolado disperso  de coníferas", "Mezcla de coníferas autóctonas en la región biogeográfica Mediterránea"] -> "Otras coníferas"
-            + ["Bosques mixtos de frondosas autóctonas en region biogeográfica atlántica", "Bosques mixtos de frondosas autóctonas en region biogeográfica mediterranea", "Bosque mixto de frondosas autóctonas en la región biogeográfica Alpina" "Arbolado disperso de frondosas", "Otras mezclas de frondosas autóctonas macaronésicas", "Frondosas alóctonas con  autóctonas"] -> "Otras frondosas"
-            + Remove classes that have less than 5*9 pixels
-        - If land cover class is treePlantation:
-            + ["Pinares de pino pinaster en región atlántica", "Pinar de pino pinaster en región mediterránea"] -> Pinar de pino pinaster
-            + Remove classes that have less than 5*9 pixels
-            + Forest classification label has to be converted to ["plantacion" + `forest_type`]
-        - Else (dense not plantation):
-            + ["Pinar de pino pinaster en región mediterránea", "Pinares de pino pinaster en región atlántica"] -> "Pinar de pino pinaster"
-            + ["Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Atlántica", "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Alpina", "Mezcla de coníferas con frondosas, autoctónas con alóctonas" y "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Mediterránea"] -> `Mezcla de coníferas y frondosas`
         - Shuffle the whole dataset
     """
 
     df_all_forests = df[df["class"].isin(["mixedForest", "treePlantation", "riparianForest", "closedForest", "openForest"])]
     df_all_forests = df_all_forests[~((df_all_forests["forest_type"].isna()) | (df_all_forests["forest_type"] == "No arbolado"))]
-
-    df_all_forests.loc[df_all_forests["forest_type"]=="Otras especies de producción en mezcla", "class"] = "treePlantation"
-    df_all_forests.loc[df_all_forests["forest_type"]=="Eucaliptales", "class"] = "treePlantation"
-
+    
     # Open forest part
     df_open_forest = df_all_forests[df_all_forests["class"] == "openForest"].copy()
 
     print("\nHistogram of classes in open forest input dataset\n")
     print(*sorted(df_open_forest["forest_type"].value_counts().to_dict().items()), sep="\n")
 
-    df_open_forest["forest_type"] = df_open_forest["forest_type"].replace(
-        to_replace=["Sabinares de Juniperus phoenicea", "Sabinares de Juniperus phoenicea ssp. Turbinata"], 
-        value="Sabinares de Juniperus phoenicea"
+    df_open_forest_encinares = df_open_forest[df_open_forest["forest_type"] == 'Encinares (Quercus ilex)'].copy()
+    df_open_forest_not_encinared = df_open_forest[df_open_forest["forest_type"] != 'Encinares (Quercus ilex)'].copy()
+    df_open_forest_encinares = df_open_forest_encinares.drop_duplicates(subset=["longitude", "latitude"]).reset_index(
+        drop=True
     )
-    df_open_forest["forest_type"] = df_open_forest["forest_type"].replace(
-        to_replace=["Pinares de pino pinaster en región atlántica", "Pinar de pino pinaster en región mediterránea"], 
-        value="Pinares de pino pinaster"
-    )
-    df_open_forest["forest_type"] = df_open_forest["forest_type"].replace(
-        to_replace=[
-            "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Alpina",
-            "Mezcla de coníferas con frondosas, autoctónas con alóctonas",
-            "Arbolado disperso coníferas y frondosas",
-            "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Atlántica",
-            "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Macaronésica",
-            "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Mediterránea"
-        ], 
-        value="Mezcla de coníferas y frondosas"
-    )
-    df_open_forest["forest_type"] = df_open_forest["forest_type"].replace(
-        to_replace=["Arbolado disperso  de coníferas", "Mezcla de coníferas autóctonas en la región biogeográfica Mediterránea"], 
-        value="Otras coníferas"
-    )
-    df_open_forest["forest_type"] = df_open_forest["forest_type"].replace(
-        to_replace=[
-            "Bosques mixtos de frondosas autóctonas en region biogeográfica atlántica",
-            "Bosques mixtos de frondosas autóctonas en region biogeográfica mediterranea",
-            "Bosque mixto de frondosas autóctonas en la región biogeográfica Alpina",
-            "Arbolado disperso de frondosas",
-            "Otras mezclas de frondosas autóctonas macaronésicas",
-            "Frondosas alóctonas con  autóctonas"
-        ], 
-        value="Otras frondosas"
-    )
-
-    classes_to_remove = []
-    classes_without_enough_data = list(df_open_forest["forest_type"].value_counts().loc[lambda x : x<5*9].index.values)
-    classes_to_remove = classes_to_remove + classes_without_enough_data
-    df_open_forest = df_open_forest[~df_open_forest["forest_type"].isin(classes_to_remove)]
+    df_open_forest = pd.concat([df_open_forest_not_encinared, df_open_forest_encinares])
 
     print("\nHistogram of classes in open forest output dataset\n")
-    print(*sorted(df_open_forest["forest_type"].value_counts().to_dict().items()), sep="\n")
-
-    # Tree plantation part
-    df_tree_plantation = df_all_forests[df_all_forests["class"] == "treePlantation"].copy()
-
-    print("\nHistogram of classes in tree plantation input dataset\n")
-    print(*sorted(df_tree_plantation["forest_type"].value_counts().to_dict().items()), sep="\n")
-
-    df_tree_plantation["forest_type"] = df_tree_plantation["forest_type"].replace(
-        to_replace=["Pinares de pino pinaster en región atlántica", "Pinar de pino pinaster en región mediterránea"], 
-        value="Pinares de pino pinaster"
-    )
-    classes_to_remove = []
-    classes_without_enough_data = list(df_tree_plantation["forest_type"].value_counts().loc[lambda x : x<5*9].index.values)
-    classes_to_remove = classes_to_remove + classes_without_enough_data
-    df_tree_plantation = df_tree_plantation[~df_tree_plantation["forest_type"].isin(classes_to_remove)]
-    df_tree_plantation["forest_type"] = df_tree_plantation["forest_type"].apply(lambda x : "Plantacion - " + str(x))
-
-    print("\nHistogram of classes in tree plantation output dataset\n")
-    print(*sorted(df_tree_plantation["forest_type"].value_counts().to_dict().items()), sep="\n")
+    print(*sorted(df_open_forest["forest_type"].value_counts().to_dict().items()), sep=",\n")
 
     # Dense forest part
-    df_dense_forest = df_all_forests[~df_all_forests["class"].isin(["treePlantation", "openForest"])].copy()
+    df_dense_forest = df_all_forests[~df_all_forests["class"].isin(["openForest"])].copy()
 
     print("\nHistogram of classes in dense forest input dataset\n")
     print(*sorted(df_dense_forest["forest_type"].value_counts().to_dict().items()), sep="\n")
 
-    df_dense_forest["forest_type"] = df_dense_forest["forest_type"].replace(
-        to_replace=["Pinares de pino pinaster en región atlántica", "Pinar de pino pinaster en región mediterránea"], 
-        value="Pinares de pino pinaster"
-    )
-
-    df_dense_forest["forest_type"] = df_dense_forest["forest_type"].replace(
-        to_replace=[
-            "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Alpina",
-            "Mezcla de coníferas con frondosas, autoctónas con alóctonas",
-            "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Mediterránea",
-            "Mezcla de coníferas y frondosas autóctonas en la región biogeográfica Atlántica"
-        ], 
-        value="Mezcla de coníferas y frondosas"
-    )
-    
-    #classes_to_remove = []
-    #df_dense_forest = df_dense_forest[~df_dense_forest["forest_type"].isin(classes_to_remove)]
-
-    print("\nHistogram of classes in dense forest output dataset\n")
-    print(*sorted(df_dense_forest["forest_type"].value_counts().to_dict().items()), sep="\n")
-
-    df = pd.concat([df_dense_forest, df_tree_plantation, df_open_forest])
+    df = pd.concat([df_dense_forest, df_open_forest])
 
     # Shuffle dataframe
     df = df.sample(frac=1).reset_index(drop=True)

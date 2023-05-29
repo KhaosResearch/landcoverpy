@@ -1,3 +1,12 @@
+def get_list_of_tiles_in_andalusia():
+   tiles = [
+      '29SBP', '30STG', '29SQB', '29SQA', '30STF', '29SQC', '30STH', 
+      '30SUH', '30SUG', '30SUF', '30SVF', '30SVG', '30SVH', '30SWH', 
+      '30SWG', '30SWF'
+   ]
+
+   return tiles
+
 def get_list_of_tiles_in_iberian_peninsula():
    tiles = [
       '29SLC', '29SLD', '29SMC', '29SMD', '29SNA', '29SNB', '29SNC',
