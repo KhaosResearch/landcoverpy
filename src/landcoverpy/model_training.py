@@ -127,7 +127,7 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
         content_type="text/json",
     )
 
-def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_jobs: int = 2):
+def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_jobs: int = 2, n_trees: int = 100, max_depth: int = None, min_samples_leaf: int = 1):
     """Trains a Random Forest model using a forest dataset."""
 
     training_dataset_path = join(settings.TMP_DIR, forest_dataset)
@@ -171,11 +171,11 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
 
     reduced_x_train_data = train_df[used_columns]
     X_train, X_test, y_train, y_test = train_test_split(
-        reduced_x_train_data, y_train_data, test_size=0.30
+        reduced_x_train_data, y_train_data, test_size=0.15
     )
 
     # Train model
-    clf = RandomForestClassifier(n_jobs=n_jobs)
+    clf = RandomForestClassifier(n_jobs=n_jobs, n_estimators=n_trees, max_depth=max_depth, min_samples_leaf=min_samples_leaf)
     X_train = X_train.reindex(columns=used_columns)
     print(X_train)
     clf.fit(X_train, y_train)
@@ -198,6 +198,9 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
     model_name = "model.joblib"
     model_path = join(settings.TMP_DIR, model_name)
     joblib.dump(clf, model_path)
+    clf = joblib.load(model_path)
+    print([estimator.get_n_leaves() for estimator in clf.estimators_])
+    print([estimator.get_depth() for estimator in clf.estimators_])
 
     # Save model to minio
     minio_client.fput_object(
@@ -210,6 +213,9 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
     model_metadata = {
         "model": str(type(clf)),
         "n_jobs": n_jobs,
+        "n_estimators": n_trees,
+        "max_depth": max_depth,
+        "min_samples_leaf": min_samples_leaf,
         "used_columns": list(used_columns),
         "classes": list(labels)
     }
@@ -225,4 +231,3 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
         file_path=model_metadata_path,
         content_type="text/json",
     )
-
