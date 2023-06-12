@@ -16,7 +16,7 @@ from landcoverpy.minio import MinioConnection
 from landcoverpy.utilities.aoi_tiles import get_list_of_tiles_in_iberian_peninsula
 from landcoverpy.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
 from landcoverpy.utilities.utils import get_products_by_tile_and_date, get_season_dict
-from landcoverpy.workflow import  _process_tile
+from landcoverpy.landcoverpy_model import  _process_tile
 
 def time_composite(client: Client = None):
     if client is not None:

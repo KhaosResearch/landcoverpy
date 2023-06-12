@@ -51,7 +51,7 @@ def _read_raster(
     with rasterio.open(band_path) as band_file:
         # Read file
         kwargs = band_file.meta
-        destination_crs = band_file.crs
+        band_crs = band_file.crs
         band = band_file.read()
 
     # Just in case...
@@ -83,7 +83,7 @@ def _read_raster(
     # This is necessary because the band is previously read to scale its resolution
     if mask_geometry:
         print(f"Cropping raster {band_name}")
-        projected_geometry = _project_shape(mask_geometry, dcs=destination_crs)
+        projected_geometry = _project_shape(mask_geometry, scs="epsg:4326", dcs=band_crs)
         with rasterio.io.MemoryFile() as memfile:
             with memfile.open(**kwargs) as memfile_band:
                 memfile_band.write(band)
@@ -107,7 +107,7 @@ def _read_raster(
     if path_to_disk is not None:
         with rasterio.open(path_to_disk, "w", **kwargs) as dst_file:
             dst_file.write(band)
-    return band
+    return band, kwargs
 
 def _get_raster_filename_from_path(raster_path):
     """
@@ -234,7 +234,7 @@ def _filter_rasters_paths_by_features_used(
             already_read.append(raster_name)
     return (pc_raster_paths, is_band_pca)
 
-def _crop_as_sentinel_raster(execution_mode: ExecutionMode, raster_path: str, sentinel_path: str) -> str:
+def _crop_as_sentinel_raster(raster_path: str, sentinel_path: str) -> str:
     """
     Crop a raster merge as a sentinel tile. The resulting image can be smaller than a sentinel tile.
 
@@ -273,7 +273,7 @@ def _crop_as_sentinel_raster(execution_mode: ExecutionMode, raster_path: str, se
     )
 
     _, sentinel_polygon = _sentinel_raster_to_polygon(sentinel_path)
-    cropped_raster = _read_raster(
+    cropped_raster, _ = _read_raster(
         raster_path, mask_geometry=sentinel_polygon, rescale=False
     )
     cropped_raster_kwargs = raster_kwargs.copy()
@@ -316,37 +316,35 @@ def _crop_as_sentinel_raster(execution_mode: ExecutionMode, raster_path: str, se
             resampling=Resampling.nearest,
         )
 
-    if execution_mode != ExecutionMode.TRAINING:
+    # For prediction, raster is filled with 0 to have equal dimensions to the Sentinel product (aster products in water are always 0).
+    # This is made only for prediction because in training pixels are obtained using latlong, it will be a waste of time.
+    # In prediction, the same dimensions are needed because the whole product is converted to a flattered array, then concatenated to a big dataframe.
 
-        # For prediction, raster is filled with 0 to have equal dimensions to the Sentinel product (aster products in water are always 0).
-        # This is made only for prediction because in training pixels are obtained using latlong, it will be a waste of time.
-        # In prediction, the same dimensions are needed because the whole product is converted to a flattered array, then concatenated to a big dataframe.
+    if (y_transform_position < y_sentinel) or (x_transform_position > x_sentinel):
 
-        if (y_transform_position < y_sentinel) or (x_transform_position > x_sentinel):
+        spatial_resolution = sentinel_kwargs["transform"][0]
+        
+        with rasterio.open(raster_path) as raster_file:
+            cropped_raster_kwargs = raster_file.meta
+            cropped_raster = raster_file.read(1) 
 
-            spatial_resolution = sentinel_kwargs["transform"][0]
-            
-            with rasterio.open(raster_path) as raster_file:
-                cropped_raster_kwargs = raster_file.meta
-                cropped_raster = raster_file.read(1) 
+        row_difference = int((y_sentinel - y_transform_position)/spatial_resolution)
+        column_difference = int((x_sentinel - x_transform_position)/spatial_resolution)
+        cropped_raster = np.roll(cropped_raster, (row_difference,-column_difference), axis=(0,1))
+        cropped_raster[:row_difference,:] = 0
+        cropped_raster[:,:column_difference] = 0
 
-            row_difference = int((y_sentinel - y_transform_position)/spatial_resolution)
-            column_difference = int((x_sentinel - x_transform_position)/spatial_resolution)
-            cropped_raster = np.roll(cropped_raster, (row_difference,-column_difference), axis=(0,1))
-            cropped_raster[:row_difference,:] = 0
-            cropped_raster[:,:column_difference] = 0
+        cropped_raster_kwargs["transform"] = rasterio.Affine(
+            sentinel_kwargs["transform"][0],
+            0.0,
+            sentinel_kwargs["transform"][2],
+            0.0,
+            sentinel_kwargs["transform"][4],
+            sentinel_kwargs["transform"][5],
+        )
 
-            cropped_raster_kwargs["transform"] = rasterio.Affine(
-                sentinel_kwargs["transform"][0],
-                0.0,
-                sentinel_kwargs["transform"][2],
-                0.0,
-                sentinel_kwargs["transform"][4],
-                sentinel_kwargs["transform"][5],
-            )
-
-            with rasterio.open(raster_path, "w", **cropped_raster_kwargs) as dst:
-                dst.write(cropped_raster.reshape(1,cropped_raster.shape[0],-1))
+        with rasterio.open(raster_path, "w", **cropped_raster_kwargs) as dst:
+            dst.write(cropped_raster.reshape(1,cropped_raster.shape[0],-1))
 
     return raster_path
 
@@ -415,8 +413,7 @@ def _get_corners_raster(
     """
     final_crs = pyproj.CRS("epsg:4326")
 
-    band = _read_raster(band_path)
-    kwargs = _get_kwargs_raster(band_path)
+    band, kwargs = _read_raster(band_path)
     init_crs = kwargs["crs"]
 
     project = pyproj.Transformer.from_crs(init_crs, final_crs, always_xy=True).transform

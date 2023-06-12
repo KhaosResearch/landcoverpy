@@ -112,7 +112,7 @@ def _filter_valid_products(products_metadata: List, minio_client: MinioConnectio
             Path(settings.TMP_DIR, product_metadata["title"], sample_band_filename)
         )
         minio_client.fget_object(bucket_products, sample_band_path, file_path)
-        sample_band = _read_raster(file_path)
+        sample_band, _ = _read_raster(file_path)
         num_pixels = np.product(sample_band.shape)
         num_nans = np.isnan(sample_band).sum()
         nan_percentage = num_nans / num_pixels

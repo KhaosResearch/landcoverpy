@@ -1,4 +1,5 @@
 import json
+import random
 from os.path import join
 
 import joblib
@@ -34,7 +35,7 @@ def _feature_reduction(
     return used_columns
 
 
-def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
+def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2, test_size: float = 0.15):
     """Trains a Random Forest model using a land cover dataset."""
 
     training_dataset_path = join(settings.TMP_DIR, land_cover_dataset)
@@ -47,17 +48,13 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
         file_path=training_dataset_path,
     )
 
-    train_df = pd.read_csv(training_dataset_path)
-    train_df = train_df.replace([np.inf, -np.inf], np.nan)
-    train_df = train_df.fillna(np.nan)
-    train_df = train_df.dropna()
-
-    minio_folder = settings.LAND_COVER_MODEL_FOLDER
-
-    y_train_data = train_df["class"]
-    x_train_data = train_df.drop(
+    df = pd.read_csv(training_dataset_path)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.fillna(np.nan)
+    df = df.dropna()
+    df["location"] = list(zip(df["latitude"], df["longitude"]))
+    df = df.drop(
         [
-            "class",
             "latitude",
             "longitude",
             "spring_product_name",
@@ -67,21 +64,39 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
         axis=1,
     )
 
-    used_columns = _feature_reduction(x_train_data, y_train_data)
+    minio_folder = settings.LAND_COVER_MODEL_FOLDER
 
-    reduced_x_train_data = train_df[used_columns]
-    X_train, X_test, y_train, y_test = train_test_split(
-        reduced_x_train_data, y_train_data, test_size=0.15
+    locations = list(set(df["location"]))
+    random.shuffle(locations)
+
+    n_locations = len(locations)
+
+    test_locations = locations[:int(test_size*n_locations) + 1]
+    train_locations = locations[int(test_size*n_locations) + 1:]
+
+    train_df = df[df["location"].isin(train_locations)]
+    test_df = df[df["location"].isin(test_locations)]
+    test_df = test_df.drop_duplicates(subset=["location"]).reset_index(
+        drop=True
     )
+
+    X_test = test_df.drop(["class","location"], axis=1)
+    X_train = train_df.drop(["class","location"], axis=1)
+    y_test = test_df["class"]
+    y_train = train_df["class"]
+
+    #used_columns = _feature_reduction(df.drop(["location","class"], axis=1), df["class"],100)
+    used_columns = ["slope","summer_AOT","spring_B01","spring_ndyi","autumn_B01","summer_ri","summer_mndwi","autumn_AOT","spring_cri1","dem","summer_B11","spring_ndvi","summer_B01","summer_moisture","summer_B12"]
 
     # Train model
     clf = RandomForestClassifier(n_jobs=n_jobs)
-    X_train = X_train.reindex(columns=used_columns)
+    X_train = X_train[used_columns]
     print(X_train)
     clf.fit(X_train, y_train)
+    X_test = X_test[used_columns]
     y_true = clf.predict(X_test)
 
-    labels = y_train_data.unique()
+    labels = df["class"].unique()
 
     confusion_image_filename = "confusion_matrix.png"
     out_image_path = join(settings.TMP_DIR, confusion_image_filename)
@@ -107,11 +122,38 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
         content_type="mlmodel/randomforest",
     )
 
+    # Save training and test dataset to minio
+    training_data_name = "training_datset.csv"
+    training_data_path = join(settings.TMP_DIR, training_data_name)
+    
+    pd.concat([X_train, y_train], axis=1).to_csv(training_data_path, index=False)
+
+    minio_client.fput_object(
+        bucket_name=settings.MINIO_BUCKET_MODELS,
+        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{training_data_name}",
+        file_path=training_data_path,
+        content_type="text/csv",
+    )
+
+    testing_data_name = "testing_dataset.csv"
+    testing_data_path = join(settings.TMP_DIR, testing_data_name)
+
+    pd.concat([X_test, y_test], axis=1).to_csv(testing_data_path, index=False)
+
+    minio_client.fput_object(
+        bucket_name=settings.MINIO_BUCKET_MODELS,
+        object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_folder}/{testing_data_name}",
+        file_path=testing_data_path,
+        content_type="text/csv",
+    )
+
+
     model_metadata = {
         "model": str(type(clf)),
         "n_jobs": n_jobs,
         "used_columns": list(used_columns),
-        "classes": list(labels)
+        "classes": list(labels),
+        "test_size": str(test_size)
     }
 
     model_metadata_name = "metadata.json"

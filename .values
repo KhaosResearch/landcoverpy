@@ -1,0 +1,107 @@
+scheduler:
+  resources: # Scheduler pod resources. See `values.yaml` for example values.
+    limits:
+      cpu: 2
+      memory: 8G
+    requests:
+      cpu: 2
+      memory: 8G
+
+worker:
+  replicas: 4 # Number of workers.
+  resources:  # Worker pod resources. See `values.yaml` for example values.
+    limits:
+      cpu: 2
+      memory: 124G
+  #    nvidia.com/gpu: 1
+    requests:
+      cpu: 2
+      memory: 124G
+  #    nvidia.com/gpu: 1
+  extraArgs: # Extra CLI arguments to be passed to the scheduler
+    - --resources
+    - "Memory=128"
+
+  env: # Environment variables. See `values.yaml` for example values.
+    - name: DASK_DISTRIBUTED__WORKER__MEMORY__TERMINATE
+      value: "0.99"
+    - name: MINIO_HOST
+      value: ***REMOVED***
+    - name: MINIO_PORT
+      value: "9000"
+    - name: MINIO_ACCESS_KEY
+      value: ***REMOVED***
+    - name: MINIO_SECRET_KEY
+      value: ***REMOVED***
+    - name: MINIO_BUCKET_NAME_PRODUCTS
+      value: etc-products
+    - name: MINIO_BUCKET_NAME_COMPOSITES
+      value: etc-composites
+    - name: MINIO_BUCKET_NAME_ASTER
+      value: aster-gdem-aspect-slope
+    - name: MINIO_BUCKET_NAME_DEM
+      value: aster-gdem-unzip
+    - name: MINIO_BUCKET_DATASETS
+      value: etc-datasets
+    - name: MINIO_BUCKET_MODELS
+      value: etc-models
+    - name: MINIO_BUCKET_GEOJSONS
+      value: etc-geojson
+    - name: MINO_BUCKET_TILE_METADATA
+      value: etc-tile-metadata
+    - name: MINIO_BUCKET_CLASSIFICATIONS
+      value: etc-classifications
+    - name: MINIO_DATA_FOLDER_NAME
+      value: corrected-data-may-2023
+    - name: MONGO_HOST
+      value: ***REMOVED***
+    - name: MONGO_PORT
+      value: "27017"
+    - name: MONGO_USERNAME
+      value: root
+    - name: MONGO_PASSWORD
+      value: ***REMOVED***
+    - name: MONGO_DB
+      value: products_database
+    - name: MONGO_PRODUCTS_COLLECTION
+      value: products_collection
+    - name: MONGO_COMPOSITES_COLLECTION
+      value: composite_collection
+    - name: SENTINEL_HOST
+      value: https://scihub.copernicus.eu/dhus
+    - name: SENTINEL_USERNAME
+      value: aghroot
+    - name: SENTINEL_PASSWORD
+      value: toorroot
+    - name: TMP_DIR
+      value: /minio_tmp
+    - name: SPRING_START
+      value: "2021-03-01"
+    - name: SPRING_END
+      value: "2021-04-30"
+    - name: SUMMER_START
+      value: "2021-06-01"
+    - name: SUMMER_END
+      value: "2021-07-31"
+    - name: AUTUMN_START
+      value: "2021-10-01"
+    - name: AUTUMN_END
+      value: "2021-11-30"
+    - name: MAX_CLOUD
+      value: "0.3"
+    - name: MAX_PRODUCTS_COMPOSITE
+      value: "8"
+    - name: LAND_COVER_MODEL_FOLDER
+      value: "land-cover"
+    - name: OPEN_FOREST_MODEL_FOLDER
+      value: "open-forest"
+    - name: DENSE_FOREST_MODEL_FOLDER
+      value: "dense-forest"
+
+  #  - name: EXTRA_CONDA_PACKAGES
+  #    value: numba xarray -c conda-forge
+    - name: EXTRA_PIP_PACKAGES
+      value: --index-url=http://khaosdev:khaosdev@***REMOVED***/simple --trusted-host ***REMOVED*** landcoverpy==1.0.0.21
+
+jupyter:
+  enabled: false # Enable/disable the bundled Jupyter notebook.
