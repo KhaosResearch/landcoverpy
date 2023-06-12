@@ -156,7 +156,7 @@ def _reproject_dem(dem_path: Path, dst_crs: str) -> Path:
 
 
 def get_dem_from_tile(
-    execution_mode: ExecutionMode, tile: str, mongo_collection: Collection, minio_client: MinioConnection, dem_name: str
+    tile: str, mongo_collection: Collection, minio_client: MinioConnection, dem_name: str
 ):
     """
     Create both aspect and slope rasters merging aster products and proyecting them to sentinel rasters.
@@ -196,6 +196,6 @@ def get_dem_from_tile(
     kwargs = _get_kwargs_raster(sample_band_path)
     r_dem_path = _reproject_dem(dem_path, str(kwargs["crs"]))
 
-    r_dem_path = _crop_as_sentinel_raster(execution_mode ,r_dem_path, sample_band_path)
+    r_dem_path = _crop_as_sentinel_raster(r_dem_path, sample_band_path)
 
     return r_dem_path
