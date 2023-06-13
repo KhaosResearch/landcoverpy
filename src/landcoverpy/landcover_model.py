@@ -1,27 +1,20 @@
-import collections
 import json
 import random
-from glob import glob
-from os.path import join
 from pathlib import Path
 from shutil import rmtree
 from datetime import timedelta
-from typing import List
 
 import joblib
 import numpy as np
 import pandas as pd
 import rasterio
-from distributed import Client
 
 from landcoverpy.aster import get_dem_from_tile
-from landcoverpy.composite import _create_composite, _get_composite
 from landcoverpy.config import settings
-from landcoverpy.exceptions import WorkflowExecutionException, NoSentinelException
-from landcoverpy.execution_mode import ExecutionMode
+from landcoverpy.exceptions import NoSentinelException
 from landcoverpy.minio import MinioConnection
 from landcoverpy.mongo import MongoConnection
-from landcoverpy.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson, _get_mgrs_from_geometry
+from landcoverpy.utilities.geometries import _get_mgrs_from_geometry
 from landcoverpy.utilities.raster import (
     _download_sample_band_by_tile,
     _filter_rasters_paths_by_features_used,
@@ -32,16 +25,11 @@ from landcoverpy.utilities.raster import (
     _read_raster,
 )
 from landcoverpy.utilities.utils import (
-    _check_tiles_not_predicted_in_training,
-    _get_forest_masks,
-    _mask_polygons_by_tile,
-    _remove_tiles_already_processed_in_training,
     get_products_by_tile_and_date,
     get_season_dict,
 )
 
-
-class LandcoverpyModel:
+class LandcoverModel:
 
     def __init__(self, model_file, used_columns):
         self.model_file = model_file
