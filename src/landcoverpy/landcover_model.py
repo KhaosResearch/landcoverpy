@@ -38,7 +38,8 @@ class LandcoverModel:
     def predict(self, geojson: str):
         geojson_dict = json.loads(geojson)
         tile = list(_get_mgrs_from_geometry(geojson_dict["features"][0]["geometry"]))[0]
-        self._predict_tile(tile, geojson_dict["features"][0]["geometry"])
+        download_url = self._predict_tile(tile, geojson_dict["features"][0]["geometry"])
+        return download_url
 
     def _predict_tile(self, tile, geojson_dict):
         if not Path(settings.TMP_DIR).exists():
