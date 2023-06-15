@@ -10,7 +10,6 @@ from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 from landcoverpy.config import settings
 from landcoverpy.exceptions import NoAsterException
-from landcoverpy.execution_mode import ExecutionMode
 from landcoverpy.minio import MinioConnection
 from landcoverpy.rasterpoint import RasterPoint
 from landcoverpy.utilities.geometries import _get_bound, _gps_to_latlon
