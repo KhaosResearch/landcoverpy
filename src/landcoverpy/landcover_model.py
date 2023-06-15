@@ -16,9 +16,7 @@ from landcoverpy.minio import MinioConnection
 from landcoverpy.mongo import MongoConnection
 from landcoverpy.utilities.geometries import _get_mgrs_from_geometry
 from landcoverpy.utilities.raster import (
-    _download_sample_band_by_tile,
     _filter_rasters_paths_by_features_used,
-    _get_kwargs_raster,
     _get_product_rasters_paths,
     _get_raster_filename_from_path,
     _get_raster_name_from_path,
@@ -120,7 +118,7 @@ class LandcoverModel:
                 # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
                 
                 band_normalize_range = normalize_range.get(dem_name, None)
-                raster, kwargs = _read_raster(
+                raster, _ = _read_raster(
                     band_path=dem_path,
                     rescale=True,
                     normalize_range=band_normalize_range,
@@ -128,10 +126,6 @@ class LandcoverModel:
                 )
                 raster_df = pd.DataFrame({dem_name: raster.flatten()})
                 tile_df = pd.concat([tile_df, raster_df], axis=1)
-
-        # Get crop mask for sentinel rasters and dataset labeled with database points in tile
-        band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
-        kwargs = _get_kwargs_raster(band_path)
 
         for season, product_metadata in product_per_season.items():
             print(season)
