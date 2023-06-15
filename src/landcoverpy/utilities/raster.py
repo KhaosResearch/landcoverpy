@@ -153,9 +153,6 @@ def _get_product_rasters_paths(
         month = product_metadata["date"].strftime("%B")
         product_dir = f"{year}/{month}/{product_title}"
 
-    elif minio_bucket == settings.MINIO_BUCKET_NAME_COMPOSITES:
-        product_dir = product_title
-
     bands_dir = f"{product_dir}/raw/"
     indexes_dir = f"{product_dir}/indexes/{product_title}/"
 
