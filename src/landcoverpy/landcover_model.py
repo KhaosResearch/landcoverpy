@@ -68,21 +68,19 @@ class LandcoverModel:
 
         print(f"Working in tile {tile}")
         # Mongo query for obtaining valid products
-        max_cloud_percentage = settings.MAX_CLOUD
-
         spring_start, spring_end = seasons["spring"]
         product_metadata_cursor_spring = get_products_by_tile_and_date(
-            tile, mongo_products_collection, spring_start, spring_end, max_cloud_percentage
+            tile, mongo_products_collection, spring_start, spring_end
         )
 
         summer_start, summer_end = seasons["summer"]
         product_metadata_cursor_summer = get_products_by_tile_and_date(
-            tile, mongo_products_collection, summer_start, summer_end, max_cloud_percentage
+            tile, mongo_products_collection, summer_start, summer_end
         )
 
         autumn_start, autumn_end = seasons["autumn"]
         product_metadata_cursor_autumn = get_products_by_tile_and_date(
-            tile, mongo_products_collection, autumn_start, autumn_end, max_cloud_percentage
+            tile, mongo_products_collection, autumn_start, autumn_end
         )
 
         product_per_season = {

@@ -26,7 +26,6 @@ def get_products_by_tile_and_date(
     mongo_collection: Collection,
     start_date: datetime,
     end_date: datetime,
-    cloud_percentage,
 ) -> Cursor:
     """
     Query to mongo for obtaining products filtered by tile, date and cloud percentage
@@ -44,7 +43,7 @@ def get_products_by_tile_and_date(
                                 "$and": [
                                     {"$eq": ["$$index.mask", None]},
                                     {"$eq": ["$$index.name", "cloud-mask"]},
-                                    {"$lt": ["$$index.value", cloud_percentage]},
+                                    {"$lt": ["$$index.value", 100]},
                                 ]
                             },
                         }
