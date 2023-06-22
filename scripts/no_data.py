@@ -72,7 +72,7 @@ def _get_nodata_percentage(product_title: str, mongo_collection: Collection):
         product_title, minio_client, mongo_collection
     )
 
-    band = _read_raster(sample_band, to_tif=False)
+    band, _ = _read_raster(sample_band, to_tif=False)
 
     # Get the number of pixel in the band
     if len(band.shape) == 2:

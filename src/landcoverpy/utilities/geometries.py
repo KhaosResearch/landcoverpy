@@ -75,21 +75,19 @@ def _postprocess_geojson_file(geojson_file: str):
     with open(geojson_file, "w", encoding='utf8') as f:
         json.dump(geojson, f, ensure_ascii=False)
 
-def _group_polygons_by_tile(*geojson_files: str) -> dict:
+def _group_polygons_by_tile(geojsons_dict: dict[str,dict]) -> dict[str,dict]:
     """
     Extracts coordinates of geometries from specific geojson files, then creates a mapping [Sentinel's tile -> List of geometries contained in that tile].
     """
     tiles = {}
 
-    for geojson_file in geojson_files:
-        geojson = read_geojson(geojson_file)
+    for classification_label, geojson in geojsons_dict.items():
 
         print(f"Querying relevant tiles for {len(geojson['features'])} features")
         for feature in geojson["features"]:
             small_geojson = {"type": "FeatureCollection", "features": [feature]}
             geometry = small_geojson["features"][0]["geometry"]
             properties = small_geojson["features"][0]["properties"]
-            classification_label = geojson_file.split("_")[2].split(".")[0]
             intersection_tiles = _get_mgrs_from_geometry(geometry)
 
             for tile in intersection_tiles:
