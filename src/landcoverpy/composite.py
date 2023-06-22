@@ -50,7 +50,7 @@ def _composite(
             composite_kwargs["nodata"] = np.nan
             composite_kwargs["driver"] = "GTiff"
 
-        band = _read_raster(band_path)
+        band, _ = _read_raster(band_path)
 
         # Remove nodata pixels
         band = np.where(band == 0, np.nan, band)
@@ -177,7 +177,7 @@ def _create_composite(
                 spatial_resolution = str(
                     int(_get_spatial_resolution_raster(temp_path_product_band))
                 )
-                scl_band = _read_raster(temp_path_product_band)
+                scl_band, _ = _read_raster(temp_path_product_band)
                 # Binarize scl band to get a cloud mask
                 cloud_mask = np.isin(scl_band, scl_cloud_values).astype(np.bool)
                 # Expand cloud mask for a more aggresive masking
@@ -193,7 +193,7 @@ def _create_composite(
                     scl_band_10m_temp_path = temp_path_product_band.replace(
                         "_20m.jp2", "_10m.jp2"
                     )
-                    cloud_mask_10m = _read_raster(
+                    cloud_mask_10m, _ = _read_raster(
                         temp_path_product_band,
                         rescale=True,
                         path_to_disk=scl_band_10m_temp_path,

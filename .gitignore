@@ -45,3 +45,4 @@ images/
 *.egg-info
 
 .python-version
+.values
