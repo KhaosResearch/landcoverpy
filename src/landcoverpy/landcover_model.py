@@ -227,7 +227,7 @@ class LandcoverModel:
 
         # When we crop a raster, rows that contains all data to Nan or Inf are those that stay outside the geometry
         out_of_geometry_rows = (~np.isfinite(tile_df)).all(axis=1)
-        prediction_metrics["nodata_pixels_percentage"] = (nodata_rows - out_of_geometry_rows) / tile_df.shape[0]
+        prediction_metrics["nodata_pixels_percentage"] = (nodata_rows - out_of_geometry_rows) / (tile_df.shape[0] - out_of_geometry_rows)
 
         predictions[nodata_rows] = "nodata"
         predictions = np.reshape(
