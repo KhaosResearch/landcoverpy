@@ -1,5 +1,4 @@
 import json
-import math
 import random
 from pathlib import Path
 from shutil import rmtree
@@ -221,13 +220,16 @@ class LandcoverModel:
 
         try:
             prediction_mean_prob = clf.predict_proba(tile_df)[~nodata_rows].max(axis=1).mean()
-            prediction_metrics["prediction_mean_prob"] = prediction_mean_prob
+            if np.isfinite(prediction_mean_prob):
+                prediction_metrics["prediction_mean_prob"] = prediction_mean_prob
+            else:
+                prediction_metrics["prediction_mean_prob"] = 0
         except Exception:
             prediction_metrics["prediction_mean_prob"] = 0
 
         # When we crop a raster, rows that contains all data to Nan or Inf are those that stay outside the geometry
         prediction_metrics["nodata_pixels_percentage"] = (int(np.sum(nodata_rows)) - out_of_geometry_n_rows) / (tile_df.shape[0] - out_of_geometry_n_rows)
-        if math.isnan(prediction_metrics["nodata_pixels_percentage"]) or (not np.isfinite(prediction_metrics["nodata_pixels_percentage"])):
+        if not np.isfinite(prediction_metrics["nodata_pixels_percentage"]):
             prediction_metrics["nodata_pixels_percentage"] = 1
 
         predictions[nodata_rows] = "nodata"
