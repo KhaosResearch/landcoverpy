@@ -36,8 +36,8 @@ class LandcoverModel:
     def predict(self, geojson: str):
         geojson_dict = json.loads(geojson)
         tile = list(_get_mgrs_from_geometry(geojson_dict["features"][0]["geometry"]))[0]
-        download_url = self._predict_tile(tile, geojson_dict["features"][0]["geometry"])
-        return download_url
+        download_url, prediction_metrics = self._predict_tile(tile, geojson_dict["features"][0]["geometry"])
+        return download_url, prediction_metrics
 
     def _predict_tile(self, tile, geojson_dict):
         if not Path(settings.TMP_DIR).exists():
@@ -212,6 +212,15 @@ class LandcoverModel:
 
         predictions = clf.predict(tile_df)
 
+        prediction_metrics = {}
+
+        prediction_mean_prob = clf.predict_proba(tile_df)[~nodata_rows].max(axis=1).mean()
+        prediction_metrics["prediction_mean_prob"] = prediction_mean_prob
+
+        # When we crop a raster, rows that contains all data to Nan or Inf are those that stay outside the geometry
+        out_of_geometry_rows = (~np.isfinite(tile_df)).all(axis=1)
+        prediction_metrics["nodata_pixels_percentage"] = (nodata_rows - out_of_geometry_rows) / tile_df.shape[0]
+
         predictions[nodata_rows] = "nodata"
         predictions = np.reshape(
             predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
@@ -268,4 +277,4 @@ class LandcoverModel:
                 rmtree(path)
 
         print(url)
-        return url
+        return url, prediction_metrics
