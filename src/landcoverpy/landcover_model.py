@@ -87,11 +87,14 @@ class LandcoverModel:
             tile, mongo_products_collection, autumn_start, autumn_end, max_cloud_percentage
         )
 
-        product_per_season = {
-            "spring": min(list(product_metadata_cursor_spring), key=lambda x: x['indexes'][0]['value']),
-            "autumn": min(list(product_metadata_cursor_autumn), key=lambda x: x['indexes'][0]['value']),
-            "summer": min(list(product_metadata_cursor_summer), key=lambda x: x['indexes'][0]['value']),
-        }
+        try:
+            product_per_season = {
+                "spring": min(list(product_metadata_cursor_spring), key=lambda x: x['indexes'][0]['value']),
+                "autumn": min(list(product_metadata_cursor_autumn), key=lambda x: x['indexes'][0]['value']),
+                "summer": min(list(product_metadata_cursor_summer), key=lambda x: x['indexes'][0]['value']),
+            }
+        except ValueError:
+            raise NoSentinelException(f"There is no valid Sentinel products for tile {tile}. Skipping it...")
 
         if (
             len(product_per_season["spring"]) == 0
@@ -211,7 +214,7 @@ class LandcoverModel:
         print(tile_df.info())
 
         nodata_rows = (~np.isfinite(tile_df)).any(axis=1)
-        out_of_geometry_n_rows = np.sum((~np.isfinite(tile_df)).all(axis=1))
+        out_of_geometry_n_rows = int(np.sum((~np.isfinite(tile_df)).all(axis=1)))
 
         # Low memory column reindex without copy taken from https://stackoverflow.com/questions/25878198/change-pandas-dataframe-column-order-in-place
         for column in self.used_columns:
@@ -223,11 +226,19 @@ class LandcoverModel:
 
         prediction_metrics = {}
 
-        prediction_mean_prob = clf.predict_proba(tile_df)[~nodata_rows].max(axis=1).mean()
-        prediction_metrics["prediction_mean_prob"] = prediction_mean_prob
+        try:
+            prediction_mean_prob = clf.predict_proba(tile_df)[~nodata_rows].max(axis=1).mean()
+            if np.isfinite(prediction_mean_prob):
+                prediction_metrics["prediction_mean_prob"] = prediction_mean_prob
+            else:
+                prediction_metrics["prediction_mean_prob"] = 0
+        except Exception:
+            prediction_metrics["prediction_mean_prob"] = 0
 
         # When we crop a raster, rows that contains all data to Nan or Inf are those that stay outside the geometry
-        prediction_metrics["nodata_pixels_percentage"] = (np.sum(nodata_rows) - out_of_geometry_n_rows) / (tile_df.shape[0] - out_of_geometry_n_rows)
+        prediction_metrics["nodata_pixels_percentage"] = (int(np.sum(nodata_rows)) - out_of_geometry_n_rows) / (tile_df.shape[0] - out_of_geometry_n_rows)
+        if not np.isfinite(prediction_metrics["nodata_pixels_percentage"]):
+            prediction_metrics["nodata_pixels_percentage"] = 1
 
         predictions[nodata_rows] = "nodata"
         predictions = np.reshape(
