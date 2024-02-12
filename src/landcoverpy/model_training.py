@@ -47,15 +47,13 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
         file_path=training_dataset_path,
     )
 
-    train_df = pd.read_csv(training_dataset_path)
-    train_df = train_df.replace([np.inf, -np.inf], np.nan)
-    train_df = train_df.fillna(np.nan)
-    train_df = train_df.dropna()
+    df = pd.read_csv(training_dataset_path)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.fillna(np.nan)
+    df = df.dropna()
 
-    minio_folder = settings.LAND_COVER_MODEL_FOLDER
-
-    y_train_data = train_df["class"]
-    x_train_data = train_df.drop(
+    y_train_data = df["class"]
+    x_train_data = df.drop(
         [
             "class",
             "latitude",
@@ -68,11 +66,26 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
     )
 
     used_columns = _feature_reduction(x_train_data, y_train_data)
+    
+    unique_locations = df.drop_duplicates(subset=["latitude","longitude"])
+    unique_locations = unique_locations[['latitude', 'longitude']]
 
-    reduced_x_train_data = train_df[used_columns]
-    X_train, X_test, y_train, y_test = train_test_split(
-        reduced_x_train_data, y_train_data, test_size=0.15
-    )
+    unique_locations = unique_locations.sample(frac=1).reset_index(drop=True)
+
+    train_size = 0.85
+
+    split_index = int(len(unique_locations) * train_size)
+
+    train_coordinates = unique_locations[:split_index]
+    test_coordinates = unique_locations[split_index:]
+
+    train_df = pd.merge(df, train_coordinates, on=['latitude', 'longitude'])
+    test_df = pd.merge(df, test_coordinates, on=['latitude', 'longitude'])
+
+    X_train = train_df[used_columns]
+    X_test = test_df[used_columns]
+    y_train = train_df['class']
+    y_test = test_df['class']
 
     # Train model
     clf = RandomForestClassifier(n_jobs=n_jobs)
@@ -86,6 +99,8 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
     confusion_image_filename = "confusion_matrix.png"
     out_image_path = join(settings.TMP_DIR, confusion_image_filename)
     compute_confusion_matrix(y_true, y_test, labels, out_image_path=out_image_path)
+
+    minio_folder = settings.LAND_COVER_MODEL_FOLDER
 
     # Save confusion matrix image to minio
     minio_client.fput_object(
@@ -140,21 +155,21 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
         file_path=training_dataset_path,
     )
 
-    train_df = pd.read_csv(training_dataset_path)
-    train_df = train_df.replace([np.inf, -np.inf], np.nan)
-    train_df = train_df.fillna(np.nan)
-    train_df = train_df.dropna()
+    df = pd.read_csv(training_dataset_path)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.fillna(np.nan)
+    df = df.dropna()
 
     minio_folder = ''
     if use_open_forest:
-        train_df = train_df[train_df["class"] == "openForest"]
+        df = df[df["class"] == "openForest"]
         minio_folder = settings.OPEN_FOREST_MODEL_FOLDER
     else:
-        train_df = train_df[train_df["class"] != "openForest"]
+        df = df[df["class"] != "openForest"]
         minio_folder = settings.DENSE_FOREST_MODEL_FOLDER
 
-    y_train_data = train_df["forest_type"]
-    x_train_data = train_df.drop(
+    y_train_data = df["forest_type"]
+    x_train_data = df.drop(
         [
             "class",
             "latitude",
@@ -169,7 +184,7 @@ def train_model_forest(forest_dataset: str, use_open_forest: bool = False ,n_job
 
     used_columns = _feature_reduction(x_train_data, y_train_data)
 
-    reduced_x_train_data = train_df[used_columns]
+    reduced_x_train_data = df[used_columns]
     X_train, X_test, y_train, y_test = train_test_split(
         reduced_x_train_data, y_train_data, test_size=0.15
     )
