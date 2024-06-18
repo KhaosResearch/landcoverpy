@@ -444,6 +444,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
         clf = joblib.load(model_path)
 
+        print(f"Predicting land cover for tile {tile}")
         predictions = clf.predict(tile_df)
 
         predictions[nodata_rows] = "nodata"
@@ -454,11 +455,6 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         
         with open(settings.LC_LABELS_FILE, "r") as f:
             lc_mapping = json.load(f)
-
-        if lc_mapping.values() != range(1, len(lc_mapping) + 1):
-            raise WorkflowExecutionException(
-                "The labels in the LC_LABELS_FILE must be consecutive integers starting from 1."
-            )
         
         if 0 in lc_mapping.values():
             print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
@@ -489,16 +485,16 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
     elif execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
 
-        model_folders = minio_client.list_objects(settings.MINIO_BUCKET_MODELS, prefix=settings.MINIO_DATA_FOLDER_NAME, recursive=False)
+        model_folders = minio_client.list_objects(settings.MINIO_BUCKET_MODELS, prefix=join(settings.MINIO_DATA_FOLDER_NAME, ''), recursive=False)
         sl_model_folder = []
         for model_folder in model_folders:
-            if model_folder.object_name.endswith('/') and model_folder.object_name != "land-cover/":
-                sl_model_folder.append(model_folder.object_name.split('/')[-1])
+            if model_folder.object_name.endswith('/') and "land-cover" not in model_folder.object_name:
+                sl_model_folder.append(model_folder.object_name.split('/')[-2])
 
         local_sl_model_locations = {}
         for minio_model_folder in sl_model_folder:
 
-            local_sl_model_path = (settings.TMP_DIR, minio_model_folder, model_name)
+            local_sl_model_path = join(settings.TMP_DIR, minio_model_folder, model_name)
 
             minio_client.fget_object(
                 bucket_name=settings.MINIO_BUCKET_MODELS,
@@ -514,6 +510,9 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             tile_df[column] = tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
 
         classifiers = {}
+
+        with open(settings.LC_LABELS_FILE, "r") as f:
+            lc_mapping = json.load(f)
 
         for sl_model in local_sl_model_locations.keys():
             classifiers[lc_mapping[sl_model]] = joblib.load(local_sl_model_locations[sl_model])
@@ -551,7 +550,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
         for class_, value in sl_mapping.items():
             encoded_sl_predictions = np.where(
-                predictions == class_, value, encoded_sl_predictions
+                sl_predictions == class_, value, encoded_sl_predictions
             )
 
         kwargs_10m["nodata"] = 0
