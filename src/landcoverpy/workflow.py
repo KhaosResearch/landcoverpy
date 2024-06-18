@@ -453,6 +453,13 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
 
         mapping = json.load(settings.LC_LABELS_FILE)
+        if mapping.values() != range(1, len(mapping) + 1):
+            raise WorkflowExecutionException(
+                "The labels in the LC_LABELS_FILE must be consecutive integers starting from 1."
+            )
+        
+        if 0 in mapping.values():
+            print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
         mapping["nodata"] = 0
 
         for class_, value in mapping.items():
@@ -533,7 +540,11 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
 
         mapping = json.load(settings.SL_LABELS_FILE)
+        if 0 in mapping.values():
+            print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
         mapping["nodata"] = 0
+        if 1 in mapping.values():
+            print("Warning: 1 is already a value in the mapping, which is reserved for NOCLASSIFIED. It will be overwritten.")
         mapping["noclassified"] = 1
 
         for class_, value in mapping.items():

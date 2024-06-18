@@ -23,7 +23,7 @@ def _kmz_to_geojson(kmz_file: str) -> str:
     """
     import fiona
     fiona.drvsupport.supported_drivers['KML'] = 'rw'
-    geojson_file = kmz_file[:-4] + ".geojson"
+    geojson_file = kmz_file.removesuffix(".kmz")+ ".geojson"
     with ZipFile(kmz_file, "r") as zip_in:
         zip_in.extractall("./databases/")
     df = gpd.read_file(filename="./databases/doc.kml", driver="KML")
@@ -59,7 +59,7 @@ def _csv_to_geojson(csv_file: str, sep: str = ";") -> str:
         "features": features
     }
     
-    geojson_file = csv_file[:-4] + ".geojson"
+    geojson_file = csv_file.removesuffix(".csv")+ ".geojson"
     with open(geojson_file, "w", encoding='utf8') as f:
         json.dump(geojson, f, ensure_ascii=False)
 
