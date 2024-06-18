@@ -451,18 +451,20 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
         )
         encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
+        
+        with open(settings.LC_LABELS_FILE, "r") as f:
+            lc_mapping = json.load(f)
 
-        mapping = json.load(settings.LC_LABELS_FILE)
-        if mapping.values() != range(1, len(mapping) + 1):
+        if lc_mapping.values() != range(1, len(lc_mapping) + 1):
             raise WorkflowExecutionException(
                 "The labels in the LC_LABELS_FILE must be consecutive integers starting from 1."
             )
         
-        if 0 in mapping.values():
+        if 0 in lc_mapping.values():
             print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
-        mapping["nodata"] = 0
+        lc_mapping["nodata"] = 0
 
-        for class_, value in mapping.items():
+        for class_, value in lc_mapping.items():
             encoded_predictions = np.where(
                 predictions == class_, value, encoded_predictions
             )
@@ -511,7 +513,6 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         for column in used_columns:
             tile_df[column] = tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
 
-        lc_mapping = json.load(settings.LC_LABELS_FILE)
         classifiers = {}
 
         for sl_model in local_sl_model_locations.keys():
@@ -538,16 +539,17 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         )
         encoded_sl_predictions = np.zeros_like(sl_predictions, dtype=np.uint8)
 
+        with open(settings.SL_LABELS_FILE, "r") as f:
+            sl_mapping = json.load(f)
 
-        mapping = json.load(settings.SL_LABELS_FILE)
-        if 0 in mapping.values():
+        if 0 in sl_mapping.values():
             print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
-        mapping["nodata"] = 0
-        if 1 in mapping.values():
+        sl_mapping["nodata"] = 0
+        if 1 in sl_mapping.values():
             print("Warning: 1 is already a value in the mapping, which is reserved for NOCLASSIFIED. It will be overwritten.")
-        mapping["noclassified"] = 1
+        sl_mapping["noclassified"] = 1
 
-        for class_, value in mapping.items():
+        for class_, value in sl_mapping.items():
             encoded_sl_predictions = np.where(
                 predictions == class_, value, encoded_sl_predictions
             )
