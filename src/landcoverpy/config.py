@@ -37,8 +37,14 @@ class _Settings(BaseSettings):
     # Temporal directory
     TMP_DIR: str = "/tmp"
 
-    # Directory containing validated datasets (.kmz or .geojson)
-    DB_DIR: str = "/data"
+    # File containing validated data (.kmz or .geojson)
+    DB_FILE: str = "/data.kmz"
+    LC_PROPERTY: str = "LC"
+    SL_PROPERTY: str = "SL"
+
+    # Files containing class labels to numbers mapping
+    LC_LABELS_FILE: str = "/lc_labels.json"
+    SL_LABELS_FILE: str = "/sl_labels.json"
 
     # For running in a distributed environment
     DASK_CLUSTER_IP: str = "0.0.0.0.0:0000"
@@ -53,11 +59,6 @@ class _Settings(BaseSettings):
 
     # Product filtering parameters
     MAX_CLOUD: float = 1.0
-
-    # Model folders in MinIO
-    LAND_COVER_MODEL_FOLDER: str = ""
-    OPEN_FOREST_MODEL_FOLDER: str = ""
-    DENSE_FOREST_MODEL_FOLDER: str = ""
 
     # Composite-related parameters
     MAX_PRODUCTS_COMPOSITE: int = 1

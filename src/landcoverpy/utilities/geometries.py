@@ -6,6 +6,7 @@ from zipfile import ZipFile
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import pyproj
 from bs4 import BeautifulSoup
 from mgrs import MGRS
@@ -13,8 +14,8 @@ from sentinelsat.sentinel import read_geojson
 from shapely.geometry import MultiPolygon, Polygon, shape
 from shapely.ops import transform
 
+from landcoverpy.config import settings
 from landcoverpy.rasterpoint import RasterPoint
-
 
 def _kmz_to_geojson(kmz_file: str) -> str:
     """
@@ -29,6 +30,38 @@ def _kmz_to_geojson(kmz_file: str) -> str:
     df.to_file(geojson_file, driver="GeoJSON")
 
     _postprocess_geojson_file(geojson_file)
+
+    return geojson_file
+
+def _csv_to_geojson(csv_file: str, sep: str = ";") -> str:
+    """
+    Columns 'latitude' and 'longitude' are required  
+    """
+    df = pd.read_csv(csv_file, sep=sep)
+
+    features = []
+    for _, row in df.iterrows():
+        feature = {
+            "type": "Feature",
+            "properties": {},
+            "geometry": {
+                "coordinates": [row['longitude'], row['latitude']],
+                "type": "Point"
+            }
+        }
+        feature["properties"][settings.LC_PROPERTY] = row[settings.LC_PROPERTY]
+        if settings.SL_PROPERTY in row and row[settings.SL_PROPERTY]:
+            feature["properties"][settings.SL_PROPERTY] = row[settings.SL_PROPERTY]
+        features.append(feature)
+    
+    geojson = {
+        "type": "FeatureCollection",
+        "features": features
+    }
+    
+    geojson_file = csv_file[:-4] + ".geojson"
+    with open(geojson_file, "w", encoding='utf8') as f:
+        json.dump(geojson, f, ensure_ascii=False)
 
     return geojson_file
 
@@ -75,34 +108,34 @@ def _postprocess_geojson_file(geojson_file: str):
     with open(geojson_file, "w", encoding='utf8') as f:
         json.dump(geojson, f, ensure_ascii=False)
 
-def _group_polygons_by_tile(*geojson_files: str) -> dict:
+    return geojson_file
+
+def _group_validated_data_points_by_tile(geojson_file: str) -> dict:
     """
-    Extracts coordinates of geometries from specific geojson files, then creates a mapping [Sentinel's tile -> List of geometries contained in that tile].
+    Extracts coordinates of geometries (only points) from specific geojson files, then creates a mapping [Sentinel's tile -> List of geometries contained in that tile].
     """
     tiles = {}
+    geojson = read_geojson(geojson_file)
 
-    for geojson_file in geojson_files:
-        geojson = read_geojson(geojson_file)
+    print(f"Querying relevant tiles for {len(geojson['features'])} features")
+    for feature in geojson["features"]:
+        geometry = feature["geometry"]
+        properties = feature["properties"]
+        intersection_tiles = _get_mgrs_from_geometry(geometry)
 
-        print(f"Querying relevant tiles for {len(geojson['features'])} features")
-        for feature in geojson["features"]:
-            small_geojson = {"type": "FeatureCollection", "features": [feature]}
-            geometry = small_geojson["features"][0]["geometry"]
-            properties = small_geojson["features"][0]["properties"]
-            classification_label = geojson_file.split("_")[2].split(".")[0]
-            intersection_tiles = _get_mgrs_from_geometry(geometry)
+        for tile in intersection_tiles:
+            if tile not in tiles:
+                tiles[tile] = []
 
-            for tile in intersection_tiles:
-                if tile not in tiles:
-                    tiles[tile] = []
-
-                tiles[tile].append(
-                    {
-                        "label": classification_label,
-                        "geometry": geometry,
-                        "properties": properties
-                    }
-                )
+            tiles[tile].append(
+                {
+                    "properties": {
+                        settings.SL_PROPERTY: properties[settings.SL_PROPERTY], 
+                        settings.LC_PROPERTY: properties[settings.LC_PROPERTY]
+                    },
+                    "geometry": geometry
+                }
+            )
     return tiles
 
 

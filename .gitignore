@@ -45,3 +45,10 @@ images/
 *.egg-info
 
 .python-version
+
+requirements.txt
+*.laz
+*.las
+*.xml
+
+1.1/
