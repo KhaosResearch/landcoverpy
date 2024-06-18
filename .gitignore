@@ -37,6 +37,7 @@ auxiliar_scripts/
 # Images
 *.png
 images/
+!static/*.png
 
 # Rasters
 *.tif
