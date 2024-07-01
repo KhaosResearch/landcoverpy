@@ -49,9 +49,12 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
     )
 
     df = pd.read_csv(training_dataset_path)
+    df = df.drop(settings.SL_PROPERTY,axis=1)
     df = df.replace([np.inf, -np.inf], np.nan)
     df = df.fillna(np.nan)
     df = df.dropna()
+
+    print(f"Training land-cover model using {len(df)} samples with unique {df[settings.LC_PROPERTY].unique()} targets")
 
     y_train_data = df[settings.LC_PROPERTY]
     x_train_data = df.drop(
