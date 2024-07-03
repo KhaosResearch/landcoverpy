@@ -14,7 +14,7 @@ from landcoverpy.model_training import train_model_land_cover
 from landcoverpy.mongo import MongoConnection
 from landcoverpy.minio import MinioConnection
 from landcoverpy.utilities.aoi_tiles import get_list_of_tiles_in_iberian_peninsula
-from landcoverpy.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
+from landcoverpy.utilities.geometries import _group_validated_data_points_by_tile, _kmz_to_geojson, _csv_to_geojson
 from landcoverpy.utilities.utils import get_products_by_tile_and_date, get_season_dict
 from landcoverpy.workflow import  _process_tile
 
@@ -66,23 +66,20 @@ def time_training_dataset(client: Client = None):
     tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
-    geojson_files = []
-    for data_class in glob(join(settings.DB_DIR, "*.kmz")):
-        if not Path.exists(Path(data_class.replace("kmz","geojson"))):
-            print(f"Parsing database to geojson: {data_class}")
-            _kmz_to_geojson(data_class)
+    data_file = settings.DB_FILE
+    if data_file.endswith(".kmz"):
+        data_file = _kmz_to_geojson(data_file)
+    if data_file.endswith(".csv"):
+        data_file = _csv_to_geojson(data_file, sep=',')
 
-    for data_class in glob(join(settings.DB_DIR, "*.geojson")):
-        print(f"Working with database {data_class}")
-        geojson_files.append(data_class)
-    polygons_per_tile = _group_polygons_by_tile(*geojson_files)
+    polygons_per_tile = _group_validated_data_points_by_tile(data_file)
 
     metadata_filename = "metadata.json"
-    metadata_filepath = join(settings.TMP_DIR, settings.LAND_COVER_MODEL_FOLDER, metadata_filename)
+    metadata_filepath = join(settings.TMP_DIR, "land-cover", metadata_filename)
 
     minio.fget_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=join(settings.MINIO_DATA_FOLDER_NAME, settings.LAND_COVER_MODEL_FOLDER, metadata_filename),
+        object_name=join(settings.MINIO_DATA_FOLDER_NAME, "land-cover", metadata_filename),
         file_path=metadata_filepath,
     )
 
@@ -129,11 +126,11 @@ def time_predicting_tile(client: Client = None):
 
     # For predictions, read the rasters used in "metadata.json".
     metadata_filename = "metadata.json"
-    metadata_filepath = join(settings.TMP_DIR, settings.LAND_COVER_MODEL_FOLDER, metadata_filename)
+    metadata_filepath = join(settings.TMP_DIR, "land-cover", metadata_filename)
 
     minio.fget_object(
         bucket_name=settings.MINIO_BUCKET_MODELS,
-        object_name=join(settings.MINIO_DATA_FOLDER_NAME, settings.LAND_COVER_MODEL_FOLDER, metadata_filename),
+        object_name=join(settings.MINIO_DATA_FOLDER_NAME, "land-cover", metadata_filename),
         file_path=metadata_filepath,
     )
 

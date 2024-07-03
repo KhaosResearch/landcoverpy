@@ -108,7 +108,7 @@ def jeffreys_matusita_analysis(
     )
     
     if is_forest:
-        class_column = "forest_type"
+        class_column = settings.SL_PROPERTY
         df = df.drop("class",axis=1)
     else:
         class_column = "class"

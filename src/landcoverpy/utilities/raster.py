@@ -19,7 +19,6 @@ from landcoverpy.minio import MinioConnection
 from landcoverpy.rasterpoint import RasterPoint
 from landcoverpy.utilities.geometries import (
     _convert_3D_2D,
-    _get_corners_geometry,
     _project_shape,
 )
 

@@ -19,7 +19,7 @@ from landcoverpy.exceptions import WorkflowExecutionException, NoSentinelExcepti
 from landcoverpy.execution_mode import ExecutionMode
 from landcoverpy.minio import MinioConnection
 from landcoverpy.mongo import MongoConnection
-from landcoverpy.utilities.geometries import _group_polygons_by_tile, _kmz_to_geojson
+from landcoverpy.utilities.geometries import _group_validated_data_points_by_tile, _kmz_to_geojson, _csv_to_geojson
 from landcoverpy.utilities.raster import (
     _download_sample_band_by_tile,
     _filter_rasters_paths_by_features_used,
@@ -30,8 +30,8 @@ from landcoverpy.utilities.raster import (
     _read_raster,
 )
 from landcoverpy.utilities.utils import (
-    _check_tiles_not_predicted_in_training,
-    _get_forest_masks,
+    _check_tiles_not_predicted,
+    _get_lc_classification,
     _mask_polygons_by_tile,
     _remove_tiles_already_processed_in_training,
     get_products_by_tile_and_date,
@@ -39,23 +39,22 @@ from landcoverpy.utilities.utils import (
 )
 
 
-def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_predict: List[str] = None):
+def workflow(
+        execution_mode: ExecutionMode, 
+        client: Client = None, 
+        tiles_to_predict: List[str] = None):
 
     predict = execution_mode != ExecutionMode.TRAINING
 
     minio = MinioConnection()
 
-    # Iterate over a set of geojson/databases (the databases may not be equal)
-    geojson_files = []
-    for data_class in glob(join(settings.DB_DIR, "*.kmz")):
-        if not Path.exists(Path(data_class.replace("kmz","geojson"))):
-            print(f"Parsing database to geojson: {data_class}")
-            _kmz_to_geojson(data_class)
+    data_file = settings.DB_FILE
+    if data_file.endswith(".kmz"):
+        data_file = _kmz_to_geojson(data_file)
+    if data_file.endswith(".csv"):
+        data_file = _csv_to_geojson(data_file, sep=',')
 
-    for data_class in glob(join(settings.DB_DIR, "*.geojson")):
-        print(f"Working with database {data_class}")
-        geojson_files.append(data_class)
-    polygons_per_tile = _group_polygons_by_tile(*geojson_files)
+    polygons_per_tile = _group_validated_data_points_by_tile(data_file)
 
     if predict:
         print("Predicting tiles")
@@ -64,18 +63,18 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
             for tile_to_predict in tiles_to_predict:
                 polygons_per_tile[tile_to_predict] = []
 
-        tiles = _check_tiles_not_predicted_in_training(list(polygons_per_tile.keys()))
+        tiles = _check_tiles_not_predicted(list(polygons_per_tile.keys()))
 
-        if execution_mode == ExecutionMode.FOREST_PREDICTION:
-            tiles_forest = _check_tiles_not_predicted_in_training(list(polygons_per_tile.keys()), forest_prediction=True)
+        if execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
+            sl_tiles = _check_tiles_not_predicted(list(polygons_per_tile.keys()), second_level_prediction=True)
 
         # For predictions, read the rasters used in "metadata.json".
         metadata_filename = "metadata.json"
-        metadata_filepath = join(settings.TMP_DIR, settings.LAND_COVER_MODEL_FOLDER, metadata_filename)
+        metadata_filepath = join(settings.TMP_DIR, "land-cover", metadata_filename)
 
         minio.fget_object(
             bucket_name=settings.MINIO_BUCKET_MODELS,
-            object_name=join(settings.MINIO_DATA_FOLDER_NAME, settings.LAND_COVER_MODEL_FOLDER, metadata_filename),
+            object_name=join(settings.MINIO_DATA_FOLDER_NAME, "land-cover", metadata_filename),
             file_path=metadata_filepath,
         )
 
@@ -94,7 +93,7 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
 
     if client is not None:
         futures = []
-        if execution_mode != ExecutionMode.FOREST_PREDICTION:
+        if execution_mode != ExecutionMode.SECOND_LEVEL_PREDICTION:
             for tile in tiles:
                 future = client.submit(_process_tile, tile, execution_mode, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
                 futures.append(future)
@@ -103,13 +102,13 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
                 future = client.submit(_process_tile, tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
                 futures.append(future)
             client.gather(futures, errors="skip")
-            for tile in tiles_forest:
-                future = client.submit(_process_tile, tile, ExecutionMode.FOREST_PREDICTION, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
+            for tile in sl_tiles:
+                future = client.submit(_process_tile, tile, ExecutionMode.SECOND_LEVEL_PREDICTION, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
                 futures.append(future)
         client.gather(futures, errors="skip")
 
     else:
-        if execution_mode != ExecutionMode.FOREST_PREDICTION:
+        if execution_mode != ExecutionMode.SECOND_LEVEL_PREDICTION:
             for tile in tiles:
                 try:
                     _process_tile(tile, execution_mode, polygons_per_tile[tile], used_columns)
@@ -121,9 +120,9 @@ def workflow(execution_mode: ExecutionMode, client: Client = None, tiles_to_pred
                     _process_tile(tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns)
                 except WorkflowExecutionException as e:
                     print(e)
-            for tile in tiles_forest:
+            for tile in sl_tiles:
                 try:
-                    _process_tile(tile, ExecutionMode.FOREST_PREDICTION, polygons_per_tile[tile], used_columns)
+                    _process_tile(tile, ExecutionMode.SECOND_LEVEL_PREDICTION, polygons_per_tile[tile], used_columns)
                 except WorkflowExecutionException as e:
                     print(e)
 
@@ -260,8 +259,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             if execution_mode==ExecutionMode.LAND_COVER_PREDICTION:
                 crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])),dtype=np.uint8)
 
-            if execution_mode==ExecutionMode.FOREST_PREDICTION:
-                forest_mask = _get_forest_masks(tile)
+            if execution_mode==ExecutionMode.SECOND_LEVEL_PREDICTION:
                 crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])),dtype=np.uint8)
 
             band_normalize_range = normalize_range.get(dem_name, None)
@@ -285,8 +283,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
     elif execution_mode==ExecutionMode.LAND_COVER_PREDICTION:
         crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])), dtype=np.uint8)
 
-    elif execution_mode==ExecutionMode.FOREST_PREDICTION:
-        forest_mask = _get_forest_masks(tile)
+    elif execution_mode==ExecutionMode.SECOND_LEVEL_PREDICTION:
         crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])), dtype=np.uint8)
 
     for season, products_metadata in product_per_season.items():
@@ -405,7 +402,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
     if not predict:
 
-        for index, label in enumerate(["class", "longitude", "latitude", "forest_type"]):
+        for index, label in enumerate([settings.LC_PROPERTY, "longitude", "latitude", settings.SL_PROPERTY]):
 
             raster_masked = np.ma.masked_array(label_lon_lat[:, :, index], mask=crop_mask)
             raster_masked = np.ma.compressed(raster_masked).flatten()
@@ -426,15 +423,16 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
     print("Dataframe information:")
     print(tile_df.info())
 
+    model_name = "model.joblib"
+
     if execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
 
-        model_name = "model.joblib"
-        minio_model_folder = settings.LAND_COVER_MODEL_FOLDER
-        model_path = join(settings.TMP_DIR, minio_model_folder, model_name)
+        lc_model_folder = "land-cover"
+        model_path = join(settings.TMP_DIR, lc_model_folder, model_name)
 
         minio_client.fget_object(
             bucket_name=settings.MINIO_BUCKET_MODELS,
-            object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_model_folder}/{model_name}",
+            object_name=join(settings.MINIO_DATA_FOLDER_NAME, lc_model_folder, model_name),
             file_path=model_path,
         )
 
@@ -446,6 +444,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
         clf = joblib.load(model_path)
 
+        print(f"Predicting land cover for tile {tile}")
         predictions = clf.predict(tile_df)
 
         predictions[nodata_rows] = "nodata"
@@ -453,20 +452,15 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
         )
         encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
+        
+        with open(settings.LC_LABELS_FILE, "r") as f:
+            lc_mapping = json.load(f)
+        
+        if 0 in lc_mapping.values():
+            print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
+        lc_mapping["nodata"] = 0
 
-        mapping = {
-            "nodata": 0,
-            "builtUp": 1,
-            "herbaceousVegetation": 2,
-            "shrubland": 3,
-            "water": 4,
-            "wetland": 5,
-            "cropland": 6,
-            "closedForest": 7,
-            "openForest": 8,
-            "bareSoil": 9
-        }
-        for class_, value in mapping.items():
+        for class_, value in lc_mapping.items():
             encoded_predictions = np.where(
                 predictions == class_, value, encoded_predictions
             )
@@ -489,19 +483,25 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             content_type="image/tif",
         )
 
-    elif execution_mode == ExecutionMode.FOREST_PREDICTION:
+    elif execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
 
-        model_name = "model.joblib"
-        minio_models_folders_open = settings.OPEN_FOREST_MODEL_FOLDER
-        minio_models_folders_dense = settings.DENSE_FOREST_MODEL_FOLDER
+        model_folders = minio_client.list_objects(settings.MINIO_BUCKET_MODELS, prefix=join(settings.MINIO_DATA_FOLDER_NAME, ''), recursive=False)
+        sl_model_folder = []
+        for model_folder in model_folders:
+            if model_folder.object_name.endswith('/') and "land-cover" not in model_folder.object_name:
+                sl_model_folder.append(model_folder.object_name.split('/')[-2])
 
-        for minio_model_folder in [minio_models_folders_open, minio_models_folders_dense]:
+        local_sl_model_locations = {}
+        for minio_model_folder in sl_model_folder:
+
+            local_sl_model_path = join(settings.TMP_DIR, minio_model_folder, model_name)
 
             minio_client.fget_object(
                 bucket_name=settings.MINIO_BUCKET_MODELS,
-                object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{minio_model_folder}/{model_name}",
-                file_path=join(settings.TMP_DIR, minio_model_folder, model_name),
+                object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_model_folder, model_name),
+                file_path=local_sl_model_path,
             )
+            local_sl_model_locations[minio_model_folder] = local_sl_model_path
 
 
         nodata_rows = (~np.isfinite(tile_df)).any(axis=1)
@@ -509,98 +509,59 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         for column in used_columns:
             tile_df[column] = tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
 
-        clf_open_forest = joblib.load(join(settings.TMP_DIR, minio_models_folders_open, model_name))
-        clf_dense_forest = joblib.load(join(settings.TMP_DIR, minio_models_folders_dense, model_name))
+        classifiers = {}
 
-        predictions_open = clf_open_forest.predict(tile_df)
-        predictions_dense = clf_dense_forest.predict(tile_df)
+        with open(settings.LC_LABELS_FILE, "r") as f:
+            lc_mapping = json.load(f)
 
-        forest_type_vector = forest_mask.flatten()
+        for sl_model in local_sl_model_locations.keys():
+            classifiers[lc_mapping[sl_model]] = joblib.load(local_sl_model_locations[sl_model])
 
-        predictions = np.where(forest_type_vector==1, "D - " + predictions_dense, "noforest")
-        predictions = np.where(forest_type_vector==2, "O - " + predictions_open, predictions)
+        lc_raster = _get_lc_classification(tile)
+        lc_raster_flattened = lc_raster.flatten()
+        
+        sl_predictions = np.empty(len(tile_df), dtype=object)
 
-        predictions[nodata_rows] = "nodata"
+        for lc_class_number , class_model in classifiers.items():
+            print(f"Second level prediction of pixels with LC class: {lc_class_number}")
+            mask_lc_class = (lc_raster_flattened == lc_class_number)
+            
+            rows_to_predict = tile_df[mask_lc_class]
+            
+            sl_predictions[mask_lc_class] = class_model.predict(rows_to_predict)
 
-        predictions = np.reshape(
-            predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
+        sl_predictions[sl_predictions == None] = "noclassified"
+        sl_predictions[nodata_rows] = "nodata"
+        
+        sl_predictions = np.reshape(
+            sl_predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
         )
-        encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
+        encoded_sl_predictions = np.zeros_like(sl_predictions, dtype=np.uint8)
 
-        mapping = {
-            'nodata': 0,
-            'noforest': 1,
-            'O - Acebuchales (Olea europaea var. Sylvestris)': 101,
-            'O - Encinares (Quercus ilex)': 102,
-            'O - Enebrales (Juniperus spp.)': 103,
-            'O - Melojares (Quercus pyrenaica)': 104,
-            'O - Mezcla de coníferas y frondosas': 105,
-            'O - Otras coníferas': 106,
-            'O - Otras frondosas': 107,
-            'O - Pinar de pino albar (Pinus sylvestris)': 108,
-            'O - Pinar de pino carrasco (Pinus halepensis)': 109,
-            'O - Pinar de pino negro (Pinus uncinata)': 110,
-            'O - Pinar de pino piñonero (Pinus pinea)': 111,
-            'O - Pinar de pino salgareño (Pinus nigra)': 112,
-            'O - Pinares de pino pinaster': 113,
-            'O - Quejigares (Quercus faginea)': 114,
-            'O - Robledales de Q. robur y/o Q. petraea': 115,
-            'O - Robledales de roble pubescente (Quercus humilis)': 116,
-            'O - Sabinares albares (Juniperus thurifera)': 117,
-            'O - Sabinares de Juniperus phoenicea': 118,
-            'D - Plantacion - Choperas y plataneras de producción': 201,
-            'D - Plantacion - Eucaliptales': 202,
-            'D - Plantacion - Otras coníferas alóctonas de producción (Larix spp.: Pseudotsuga spp.: etc)': 203,
-            'D - Plantacion - Otras especies de producción en mezcla': 204,
-            'D - Plantacion - Pinar de pino albar (Pinus sylvestris)': 205,
-            'D - Plantacion - Pinar de pino carrasco (Pinus halepensis)': 206,
-            'D - Plantacion - Pinar de pino piñonero (Pinus pinea)': 207,
-            'D - Plantacion - Pinar de pino radiata': 208,
-            'D - Plantacion - Pinar de pino salgareño (Pinus nigra)': 209,
-            'D - Plantacion - Pinares de pino pinaster': 210,
-            'D - Abedulares (Betula spp.)': 211,
-            'D - Abetales (Abies alba)': 212,
-            'D - Acebedas (Ilex aquifolium)': 213,
-            'D - Acebuchales (Olea europaea var. Sylvestris)': 214,
-            'D - Alcornocales (Quercus suber)': 215,
-            'D - Avellanedas (Corylus avellana)': 216,
-            'D - Bosque ribereño': 217,
-            'D - Castañares (Castanea sativa)': 218,
-            'D - Encinares (Quercus ilex)': 219,
-            'D - Fresnedas (Fraxinus spp.)': 220,
-            'D - Hayedos (Fagus sylvatica)': 221,
-            'D - Madroñales (Arbutus unedo)': 222,
-            'D - Melojares (Quercus pyrenaica)': 223,
-            'D - Mezcla de coníferas y frondosas': 224,
-            'D - Pinar de pino albar (Pinus sylvestris)': 225,
-            'D - Pinar de pino canario (Pinus canariensis)': 226,
-            'D - Pinar de pino carrasco (Pinus halepensis)': 227,
-            'D - Pinar de pino negro (Pinus uncinata)': 228,
-            'D - Pinar de pino piñonero (Pinus pinea)': 229,
-            'D - Pinar de pino radiata': 230,
-            'D - Pinar de pino salgareño (Pinus nigra)': 231,
-            'D - Pinares de pino pinaster': 232,
-            'D - Pinsapares (Abies pinsapo)': 233,
-            'D - Quejigares (Quercus faginea)': 234,
-            'D - Quejigares de Quercus canariensis': 235,
-            'D - Robledales de Q. robur y/o Q. petraea': 236,
-            'D - Robledales de roble pubescente (Quercus humilis)': 237
-        }
+        with open(settings.SL_LABELS_FILE, "r") as f:
+            sl_mapping = json.load(f)
 
-        for class_, value in mapping.items():
-            encoded_predictions = np.where(
-                predictions == class_, value, encoded_predictions
+        if 0 in sl_mapping.values():
+            print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
+        sl_mapping["nodata"] = 0
+        if 1 in sl_mapping.values():
+            print("Warning: 1 is already a value in the mapping, which is reserved for NOCLASSIFIED. It will be overwritten.")
+        sl_mapping["noclassified"] = 1
+
+        for class_, value in sl_mapping.items():
+            encoded_sl_predictions = np.where(
+                sl_predictions == class_, value, encoded_sl_predictions
             )
 
         kwargs_10m["nodata"] = 0
         kwargs_10m["driver"] = "GTiff"
         kwargs_10m["dtype"] = np.uint8
-        classification_name = f"forest_classification_{tile}.tif"
+        classification_name = f"sl_classification_{tile}.tif"
         classification_path = str(Path(settings.TMP_DIR, classification_name))
         with rasterio.open(
             classification_path, "w", **kwargs_10m
         ) as classification_file:
-            classification_file.write(encoded_predictions)
+            classification_file.write(encoded_sl_predictions)
         print(f"{classification_name} saved")
 
         minio_client.fput_object(

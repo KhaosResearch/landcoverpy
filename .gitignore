@@ -37,6 +37,7 @@ auxiliar_scripts/
 # Images
 *.png
 images/
+!static/*.png
 
 # Rasters
 *.tif
@@ -45,3 +46,13 @@ images/
 *.egg-info
 
 .python-version
+
+requirements.txt
+*.laz
+*.las
+*.xml
+
+1.1/
+1.2/
+
+*.json
