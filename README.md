@@ -42,5 +42,8 @@ An usage example can be found at the [main usage notebook](notebooks/main_usage.
 Example input data in different formates can be found at [validated_data](example_inputs/validated_data).
 Example label mappings can be found at [label_mappings](example_inputs/label_mappings).
 
+## Environment variables
+Most of the configuration is done through environment variables. You should create a `.env` file following the [.env.template](.env.template) file. Default values can be observed in [config.py](src/landcoverpy/config.py).
+
 ## License
 This project is licensed under the MIT license. See the [LICENSE](LICENSE) file for more info.
