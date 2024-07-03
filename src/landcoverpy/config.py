@@ -39,11 +39,14 @@ class _Settings(BaseSettings):
 
     # File containing validated data (.kmz or .geojson)
     DB_FILE: str = "/data.kmz"
+    # Column (in case of db_file is a csv) or attribute (in case of db_file is a kmz or geojson) containing the LC class labels
     LC_PROPERTY: str = "LC"
+    # Same for second level class labels
     SL_PROPERTY: str = "SL"
 
-    # Files containing class labels to numbers mapping
+    # JSON files containing LC class labels to numbers mapping (0 is reserved to nodata)
     LC_LABELS_FILE: str = "/lc_labels.json"
+    # Same for second level class labels (0 is reserved to nodata and 1 is reserved to noclassified)
     SL_LABELS_FILE: str = "/sl_labels.json"
 
     # For running in a distributed environment
@@ -60,7 +63,7 @@ class _Settings(BaseSettings):
     # Product filtering parameters
     MAX_CLOUD: float = 1.0
 
-    # Composite-related parameters
+    # Maximum number of products used in a composite
     MAX_PRODUCTS_COMPOSITE: int = 1
 
     class Config:

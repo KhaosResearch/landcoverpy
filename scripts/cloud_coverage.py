@@ -2,7 +2,6 @@ import datetime
 import json
 from datetime import datetime
 from os.path import join
-from typing import List
 from pymongo.collection import Collection
 
 import pandas as pd
@@ -97,10 +96,6 @@ def _get_tiles_in_geojson(sentinel_api: SentinelAPI, geojson_path: str):
 def compute_cloud_coverage(geojson_path: str):
     """
     Computes the cloud coverage for a list of tiles included in a geojson.
-
-    Parameters:
-        countries (List[str]): List of countries included.
-
     """
 
     mongo_client = MongoConnection()

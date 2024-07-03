@@ -8,7 +8,6 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import RFE
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
 
 from landcoverpy.config import settings
 from landcoverpy.minio import MinioConnection
@@ -35,8 +34,10 @@ def _feature_reduction(
     return used_columns
 
 
-def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
+def train_model_land_cover(n_jobs: int = 2):
     """Trains a Random Forest model using a land cover dataset."""
+
+    land_cover_dataset = "dataset.csv"
 
     training_dataset_path = join(settings.TMP_DIR, land_cover_dataset)
 
@@ -146,8 +147,10 @@ def train_model_land_cover(land_cover_dataset: str, n_jobs: int = 2):
         content_type="text/json",
     )
 
-def train_second_level_models(dataset: str, lc_classes: List[str], n_jobs: int = 2, n_trees: int = 100, max_depth: int = None, min_samples_leaf: int = 1):
+def train_second_level_models(lc_classes: List[str], n_jobs: int = 2, n_trees: int = 100, max_depth: int = None, min_samples_leaf: int = 1):
     """Trains a Random Forest model using a forest dataset."""
+
+    dataset = "dataset.csv"
 
     training_dataset_path = join(settings.TMP_DIR, dataset)
 
