@@ -41,7 +41,9 @@ def _time_composite():
     tiles = get_list_of_tiles_in_iberian_peninsula()
     tile = random.choice(tiles)
 
-    products_available = get_products_by_tile_and_date(tile, mongo_products, seasons["spring"][0], seasons["autumn"][1], 100)
+    start_date = seasons[seasons.keys()[0]][0]
+    end_date = seasons[seasons.keys()[-1]][1]
+    products_available = get_products_by_tile_and_date(tile, mongo_products, start_date, end_date, 100)
     products_available = list(products_available)
 
     size_sample = random.randint(2, 5)
