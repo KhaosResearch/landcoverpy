@@ -206,33 +206,19 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
     # Mongo query for obtaining valid products
     max_cloud_percentage = settings.MAX_CLOUD
 
-    spring_start, spring_end = seasons["spring"]
-    product_metadata_cursor_spring = get_products_by_tile_and_date(
-        tile, mongo_products_collection, spring_start, spring_end, max_cloud_percentage
-    )
+    product_per_season = {}
 
-    summer_start, summer_end = seasons["summer"]
-    product_metadata_cursor_summer = get_products_by_tile_and_date(
-        tile, mongo_products_collection, summer_start, summer_end, max_cloud_percentage
-    )
+    for season in seasons:
+        season_start, season_end = seasons[season]
+        product_metadata_cursor = get_products_by_tile_and_date(
+            tile, mongo_products_collection, season_start, season_end, max_cloud_percentage
+        )
 
-    autumn_start, autumn_end = seasons["autumn"]
-    product_metadata_cursor_autumn = get_products_by_tile_and_date(
-        tile, mongo_products_collection, autumn_start, autumn_end, max_cloud_percentage
-    )
+        # If there are more products than the maximum specified for creating a composite, take the last ones
+        product_per_season[season] = list(product_metadata_cursor)[-settings.MAX_PRODUCTS_COMPOSITE:]
 
-    product_per_season = {
-        "spring": list(product_metadata_cursor_spring)[-settings.MAX_PRODUCTS_COMPOSITE:],
-        "autumn": list(product_metadata_cursor_autumn)[:settings.MAX_PRODUCTS_COMPOSITE],
-        "summer": list(product_metadata_cursor_summer)[-settings.MAX_PRODUCTS_COMPOSITE:],
-    }
-
-    if (
-        len(product_per_season["spring"]) == 0
-        or len(product_per_season["autumn"]) == 0
-        or len(product_per_season["summer"]) == 0
-    ):
-        raise NoSentinelException(f"There is no valid Sentinel products for tile {tile}. Skipping it...")
+        if len(product_per_season[season]) == 0:
+            raise NoSentinelException(f"There is no valid Sentinel products for tile {tile} in season {season}. Skipping it...")
 
     # Dataframe for storing data of a tile
     tile_df = None

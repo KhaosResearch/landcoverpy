@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from itertools import compress
 from os.path import join
@@ -24,20 +25,16 @@ from landcoverpy.utilities.raster import (
 
 
 def get_season_dict():
-    spring_start = datetime.strptime(settings.SPRING_START, '%Y-%m-%d')
-    spring_end = datetime.strptime(settings.SPRING_END, '%Y-%m-%d')
-    summer_start = datetime.strptime(settings.SUMMER_START, '%Y-%m-%d')
-    summer_end = datetime.strptime(settings.SUMMER_END, '%Y-%m-%d')
-    autumn_start = datetime.strptime(settings.AUTUMN_START, '%Y-%m-%d')
-    autumn_end = datetime.strptime(settings.AUTUMN_END, '%Y-%m-%d')
-    
-    seasons =   {
-        "spring" : (spring_start, spring_end),
-        "summer" : (summer_start, summer_end),
-        "autumn" : (autumn_start, autumn_end)
-    }
 
-    return seasons
+    with open(settings.SEASONS_FILE) as f:
+        seasons = json.load(f)
+
+    seasons_out = {}
+    
+    for season in seasons:
+        seasons_out[season] = (datetime.strptime(seasons[season]["start"], '%Y-%m-%d'), datetime.strptime(seasons[season]["end"], '%Y-%m-%d'))
+
+    return seasons_out
 
 def get_products_by_tile_and_date(
     tile: str,
