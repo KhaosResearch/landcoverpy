@@ -1,9 +1,7 @@
 # Data
 *dataset*
-*.csv
 databases
 *.kmz
-*.geojson
 hackaton/
 
 # Environments
@@ -54,5 +52,3 @@ requirements.txt
 
 1.1/
 1.2/
-
-*.json

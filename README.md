@@ -39,6 +39,8 @@ pip install landcoverpy
 ## Usage
 
 An usage example can be found at the [main usage notebook](notebooks/main_usage.ipynb).
+Example input data in different formates can be found at [validated_data](example_inputs/validated_data).
+Example label mappings can be found at [label_mappings](example_inputs/label_mappings).
 
 ## License
 This project is licensed under the MIT license. See the [LICENSE](LICENSE) file for more info.

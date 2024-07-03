@@ -1,0 +1,47 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "properties": {
+          "LC_label": "forest",
+          "second_level_label": "pinus"
+        },
+        "geometry": {
+          "coordinates": [
+            -5.017506980442391,
+            36.8009860669072
+          ],
+          "type": "Point"
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "LC_label": "builtUp",
+          "second_level_label": "airport"
+        },
+        "geometry": {
+          "coordinates": [
+            -5.059753527425556,
+            36.87932713244453
+          ],
+          "type": "Point"
+        }
+      },
+      {
+        "type": "Feature",
+        "properties": {
+          "LC_label": "shrubland",
+          "second_level_label": "brush"
+        },
+        "geometry": {
+          "coordinates": [
+            -4.914142951746129,
+            36.84758017890698
+          ],
+          "type": "Point"
+        }
+      }
+    ]
+  }
