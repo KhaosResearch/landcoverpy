@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 from distributed import Client
+from rasterio.windows import Window
 
 from landcoverpy.aster import get_dem_from_tile
 from landcoverpy.composite import _create_composite, _get_composite
@@ -28,6 +29,8 @@ from landcoverpy.utilities.raster import (
     _get_raster_filename_from_path,
     _get_raster_name_from_path,
     _read_raster,
+    _get_block_windows_by_tile,
+    _generate_windows_from_slices_number,
 )
 from landcoverpy.utilities.utils import (
     _check_tiles_not_predicted,
@@ -42,7 +45,14 @@ from landcoverpy.utilities.utils import (
 def workflow(
         execution_mode: ExecutionMode, 
         client: Client = None, 
-        tiles_to_predict: List[str] = None):
+        tiles_to_predict: List[str] = None,
+        use_block_windows: bool = False,
+        window_slices: tuple = None):
+
+    if execution_mode == ExecutionMode.TRAINING and (use_block_windows or window_slices is not None):
+        print("Warning: Windows are not much useful in training mode, since it is already optimized for low memory usage. Consider disabling it.")
+    if window_slices is not None and use_block_windows:
+        print("Warning: if use_block_windows is enabled, window_slices will be ignored.")
 
     predict = execution_mode != ExecutionMode.TRAINING
 
@@ -95,15 +105,15 @@ def workflow(
         futures = []
         if execution_mode != ExecutionMode.SECOND_LEVEL_PREDICTION:
             for tile in tiles:
-                future = client.submit(_process_tile, tile, execution_mode, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
+                future = client.submit(_process_tile, tile, execution_mode, polygons_per_tile[tile], used_columns, use_block_windows, window_slices, resources={"Memory": 100})
                 futures.append(future)
         else:
             for tile in tiles:
-                future = client.submit(_process_tile, tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
+                future = client.submit(_process_tile, tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns, use_block_windows, window_slices, resources={"Memory": 100})
                 futures.append(future)
             client.gather(futures, errors="skip")
             for tile in sl_tiles:
-                future = client.submit(_process_tile, tile, ExecutionMode.SECOND_LEVEL_PREDICTION, polygons_per_tile[tile], used_columns, resources={"Memory": 100})
+                future = client.submit(_process_tile, tile, ExecutionMode.SECOND_LEVEL_PREDICTION, polygons_per_tile[tile], used_columns, use_block_windows, window_slices, resources={"Memory": 100})
                 futures.append(future)
         client.gather(futures, errors="skip")
 
@@ -111,18 +121,18 @@ def workflow(
         if execution_mode != ExecutionMode.SECOND_LEVEL_PREDICTION:
             for tile in tiles:
                 try:
-                    _process_tile(tile, execution_mode, polygons_per_tile[tile], used_columns)
+                    _process_tile(tile, execution_mode, polygons_per_tile[tile], used_columns, use_block_windows, window_slices)
                 except WorkflowExecutionException as e:
                     print(e)
         else:
             for tile in tiles:
                 try:
-                    _process_tile(tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns)
+                    _process_tile(tile, ExecutionMode.LAND_COVER_PREDICTION, polygons_per_tile[tile], used_columns, use_block_windows, window_slices)
                 except WorkflowExecutionException as e:
                     print(e)
             for tile in sl_tiles:
                 try:
-                    _process_tile(tile, ExecutionMode.SECOND_LEVEL_PREDICTION, polygons_per_tile[tile], used_columns)
+                    _process_tile(tile, ExecutionMode.SECOND_LEVEL_PREDICTION, polygons_per_tile[tile], used_columns, use_block_windows, window_slices)
                 except WorkflowExecutionException as e:
                     print(e)
 
@@ -172,7 +182,7 @@ def workflow(
         )
 
 
-def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
+def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None, use_block_windows=False, window_slices=None):
 
     predict = execution_mode != ExecutionMode.TRAINING
 
@@ -184,6 +194,31 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
     minio_client = MinioConnection()
     mongo_client = MongoConnection()
     mongo_products_collection = mongo_client.get_collection_object()
+
+    if use_block_windows:
+        windows = _get_block_windows_by_tile(tile, minio_client, mongo_products_collection)
+    elif window_slices is not None:
+        windows = _generate_windows_from_slices_number(tile, window_slices, minio_client, mongo_products_collection)
+    else:
+        windows = [None]
+
+    # Initialize empty output raster
+    if predict:
+        band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
+        output_kwargs = _get_kwargs_raster(band_path)
+        output_kwargs["nodata"] = 0
+        output_kwargs["driver"] = "GTiff"
+        output_kwargs["dtype"] = np.uint8
+        if execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
+            classification_name = f"classification_{tile}.tif"
+        elif execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
+            classification_name = f"sl_classification_{tile}.tif"
+        classification_path = str(Path(settings.TMP_DIR, classification_name))
+        with rasterio.open(
+            classification_path, "w", **output_kwargs
+        ) as classification_file:
+            print(f"Initilized output raster at {classification_path}")
+
 
     # Names of the indexes that are taken into account
     indexes_used = [
@@ -238,15 +273,15 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
             )
 
             # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
-            kwargs = _get_kwargs_raster(dem_path)
+            dem_kwargs = _get_kwargs_raster(dem_path)
             if execution_mode==ExecutionMode.TRAINING:
-                crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, kwargs)
+                crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, dem_kwargs)
 
             if execution_mode==ExecutionMode.LAND_COVER_PREDICTION:
-                crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])),dtype=np.uint8)
+                crop_mask = np.zeros(shape=(int(dem_kwargs["height"]), int(dem_kwargs["width"])),dtype=np.uint8)
 
             if execution_mode==ExecutionMode.SECOND_LEVEL_PREDICTION:
-                crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])),dtype=np.uint8)
+                crop_mask = np.zeros(shape=(int(dem_kwargs["height"]), int(dem_kwargs["width"])),dtype=np.uint8)
 
             band_normalize_range = normalize_range.get(dem_name, None)
             raster = _read_raster(
@@ -261,16 +296,16 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
     # Get crop mask for sentinel rasters and dataset labeled with database points in tile
     band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
-    kwargs = _get_kwargs_raster(band_path)
+    s2_band_kwargs = _get_kwargs_raster(band_path)
 
     if execution_mode==ExecutionMode.TRAINING:
-        crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, kwargs)
+        crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, s2_band_kwargs)
 
     elif execution_mode==ExecutionMode.LAND_COVER_PREDICTION:
-        crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])), dtype=np.uint8)
+        crop_mask = np.zeros(shape=(int(s2_band_kwargs["height"]), int(s2_band_kwargs["width"])), dtype=np.uint8)
 
     elif execution_mode==ExecutionMode.SECOND_LEVEL_PREDICTION:
-        crop_mask = np.zeros(shape=(int(kwargs["height"]), int(kwargs["width"])), dtype=np.uint8)
+        crop_mask = np.zeros(shape=(int(s2_band_kwargs["height"]), int(s2_band_kwargs["width"])), dtype=np.uint8)
 
     for season, products_metadata in product_per_season.items():
         print(season)
@@ -364,10 +399,6 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
                 object_name=raster_path,
                 file_path=str(temp_path),
             )
-            kwargs = _get_kwargs_raster(str(temp_path))
-            spatial_resolution = kwargs["transform"][0]
-            if spatial_resolution == 10:
-                kwargs_10m = kwargs
 
             band_normalize_range = normalize_range.get(raster_name, None)
             if is_band[i] and (band_normalize_range is None):
@@ -435,7 +466,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
 
         predictions[nodata_rows] = "nodata"
         predictions = np.reshape(
-            predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
+            predictions, (1, output_kwargs["height"], output_kwargs["width"])
         )
         encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
         
@@ -451,13 +482,8 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
                 predictions == class_, value, encoded_predictions
             )
 
-        kwargs_10m["nodata"] = 0
-        kwargs_10m["driver"] = "GTiff"
-        kwargs_10m["dtype"] = np.uint8
-        classification_name = f"classification_{tile}.tif"
-        classification_path = str(Path(settings.TMP_DIR, classification_name))
         with rasterio.open(
-            classification_path, "w", **kwargs_10m
+            classification_path, "r+", **output_kwargs
         ) as classification_file:
             classification_file.write(encoded_predictions)
         print(f"{classification_name} saved")
@@ -520,7 +546,7 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
         sl_predictions[nodata_rows] = "nodata"
         
         sl_predictions = np.reshape(
-            sl_predictions, (1, kwargs_10m["height"], kwargs_10m["width"])
+            sl_predictions, (1, output_kwargs["height"], output_kwargs["width"])
         )
         encoded_sl_predictions = np.zeros_like(sl_predictions, dtype=np.uint8)
 
@@ -539,13 +565,8 @@ def _process_tile(tile, execution_mode, polygons_in_tile, used_columns=None):
                 sl_predictions == class_, value, encoded_sl_predictions
             )
 
-        kwargs_10m["nodata"] = 0
-        kwargs_10m["driver"] = "GTiff"
-        kwargs_10m["dtype"] = np.uint8
-        classification_name = f"sl_classification_{tile}.tif"
-        classification_path = str(Path(settings.TMP_DIR, classification_name))
         with rasterio.open(
-            classification_path, "w", **kwargs_10m
+            classification_path, "r+", **output_kwargs
         ) as classification_file:
             classification_file.write(encoded_sl_predictions)
         print(f"{classification_name} saved")

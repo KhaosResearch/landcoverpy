@@ -9,6 +9,7 @@ import rasterio
 from pymongo.collection import Collection
 from rasterio import mask as msk
 from rasterio.warp import Resampling, reproject
+from rasterio.windows import Window
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform
 
@@ -182,6 +183,36 @@ def _download_sample_band_by_tile(tile: str, minio_client: MinioConnection, mong
     product_title = product_metadata["title"]
     sample_band_path = _download_sample_band_by_title(product_title, minio_client, mongo_collection)
     return sample_band_path
+
+def _get_block_windows_by_tile(tile: str, minio_client: MinioConnection, mongo_collection: Collection):
+    """
+    Having a tile, get the list of block windows of a 10m sample sentinel band of any related product.
+    """
+    sample_band_path = _download_sample_band_by_tile(tile, minio_client, mongo_collection)
+    src = rasterio.open(sample_band_path)
+    block_windows_enum = src.block_windows()
+    block_windows = [block_window[1] for block_window in block_windows_enum]
+    src.close()
+    return block_windows
+
+def _generate_windows_from_slices_number(tile: str, slices: Tuple[int, int], minio_client: MinioConnection, mongo_collection: Collection):
+    """
+    Having a tile, generate a list of windows based on the number of slices.
+    """
+    sample_kwargs = _get_kwargs_raster(_download_sample_band_by_tile(tile, minio_client, mongo_collection))
+    tile_width = sample_kwargs["width"]
+    tile_height = sample_kwargs["height"]
+    
+    slice_width = int(tile_width / slices[0])
+    slice_height = int(tile_height / slices[1])
+    
+    windows = []
+    for i in range(slices[0]):
+        for j in range(slices[1]):
+            window = Window(i * slice_width, j * slice_height, slice_width, slice_height)
+            windows.append(window)
+    
+    return windows
 
 def _download_sample_band_by_title(
     title: str, minio_client: MinioConnection, mongo_collection: Collection
