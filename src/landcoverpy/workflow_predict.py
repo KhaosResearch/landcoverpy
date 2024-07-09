@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from os.path import join
 from pathlib import Path
 from shutil import rmtree
@@ -46,6 +47,65 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
     minio_client = MinioConnection()
     mongo_client = MongoConnection()
     mongo_products_collection = mongo_client.get_collection_object()
+
+    model_name = "model.joblib"
+    lc_model_folder = "land-cover"
+
+    with open(settings.LC_LABELS_FILE, "r") as f:
+        lc_mapping = json.load(f)
+    
+    if 0 in lc_mapping.values():
+        print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
+    lc_mapping["nodata"] = 0
+
+    if execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
+        model_path = join(settings.TMP_DIR, lc_model_folder, model_name)
+
+        print("Downloading land cover model")
+        minio_client.fget_object(
+            bucket_name=settings.MINIO_BUCKET_MODELS,
+            object_name=join(settings.MINIO_DATA_FOLDER_NAME, lc_model_folder, model_name),
+            file_path=model_path,
+        )
+
+        lc_clf = joblib.load(model_path)
+
+    elif execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
+
+        model_folders = minio_client.list_objects(settings.MINIO_BUCKET_MODELS, prefix=join(settings.MINIO_DATA_FOLDER_NAME, ''), recursive=False)
+        sl_model_folder = []
+        for model_folder in model_folders:
+            if model_folder.object_name.endswith('/') and lc_model_folder not in model_folder.object_name:
+                sl_model_folder.append(model_folder.object_name.split('/')[-2])
+
+        local_sl_model_locations = {}
+        for minio_model_folder in sl_model_folder:
+
+            local_sl_model_path = join(settings.TMP_DIR, minio_model_folder, model_name)
+
+            print(f"Downloading {model_name} model")
+            minio_client.fget_object(
+                bucket_name=settings.MINIO_BUCKET_MODELS,
+                object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_model_folder, model_name),
+                file_path=local_sl_model_path,
+            )
+            local_sl_model_locations[minio_model_folder] = local_sl_model_path
+
+        with open(settings.SL_LABELS_FILE, "r") as f:
+            sl_mapping = json.load(f)
+
+        if 0 in sl_mapping.values():
+            print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
+        sl_mapping["nodata"] = 0
+        if 1 in sl_mapping.values():
+            print("Warning: 1 is already a value in the mapping, which is reserved for NOCLASSIFIED. It will be overwritten.")
+        sl_mapping["noclassified"] = 1
+
+        sl_classifiers = {}
+
+        for sl_model in local_sl_model_locations.keys():
+            sl_classifiers[lc_mapping[sl_model]] = joblib.load(local_sl_model_locations[sl_model])
+    
 
     band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
     kwargs_s2 = _get_kwargs_raster(band_path)
@@ -108,25 +168,8 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
         if len(product_per_season[season]) == 0:
             raise NoSentinelException(f"There is no valid Sentinel products for tile {tile} in season {season}. Skipping it...")
 
-    # Dataframe for storing data of a tile
-    tile_df = None
 
-    dems_raster_names = [
-        "slope",
-        "aspect",
-        "dem",
-    ]
-
-
-    # Get crop mask for sentinel rasters and dataset labeled with database points in tile
-    band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
-    s2_band_kwargs = _get_kwargs_raster(band_path)
-
-    if execution_mode==ExecutionMode.LAND_COVER_PREDICTION:
-        crop_mask = np.zeros(shape=(int(s2_band_kwargs["height"]), int(s2_band_kwargs["width"])), dtype=np.uint8)
-
-    elif execution_mode==ExecutionMode.SECOND_LEVEL_PREDICTION:
-        crop_mask = np.zeros(shape=(int(s2_band_kwargs["height"]), int(s2_band_kwargs["width"])), dtype=np.uint8)
+    rasters_by_season = defaultdict(dict)
 
     for season, products_metadata in product_per_season.items():
         print(season)
@@ -176,208 +219,173 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
             Path.mkdir(temp_product_folder)
         print(f"Processing product {product_name}")
 
-        # Read bands and indexes.
-        already_read = []
-        for i, raster_path in enumerate(rasters_paths):
-            raster_filename = _get_raster_filename_from_path(raster_path)
-            raster_name = _get_raster_name_from_path(raster_path)
-            temp_path = Path(temp_product_folder, raster_filename)
+        rasters_by_season[season]["raster_paths"] = rasters_paths
+        rasters_by_season[season]["is_band"] = is_band
+        rasters_by_season[season]["temp_product_folder"] = temp_product_folder
 
-            # Only keep bands and indexes in indexes_used
-            if (not is_band[i]) and (
-                not any(
-                    raster_name.upper() == index_used.upper()
-                    for index_used in indexes_used
+
+    dems_raster_names = [
+        "slope",
+        "aspect",
+        "dem",
+    ]
+
+    for window in windows:
+
+        window_kwargs = kwargs_s2.copy()
+        window_kwargs["width"] = window.width
+        window_kwargs["height"] = window.height
+        window_kwargs["transform"] = rasterio.windows.transform(window, kwargs_s2["transform"])
+
+        # Dataframe for storing data of a window
+        window_tile_df = None
+
+        crop_mask = np.zeros(shape=(int(window_kwargs["height"]), int(window_kwargs["width"])), dtype=np.uint8)
+
+        for season in seasons:
+            # Read bands and indexes.
+            already_read = []
+            for i, raster_path in enumerate(rasters_by_season[season]["raster_paths"]):
+                raster_filename = _get_raster_filename_from_path(raster_path)
+                raster_name = _get_raster_name_from_path(raster_path)
+                temp_path = Path(rasters_by_season[season]["temp_product_folder"], raster_filename)
+
+                # Only keep bands and indexes in indexes_used
+                if (not rasters_by_season[season]["is_band"][i]) and (
+                    not any(
+                        raster_name.upper() == index_used.upper()
+                        for index_used in indexes_used
+                    )
+                ):
+                    continue
+                # Skip bands in skip_bands
+                if rasters_by_season[season]["is_band"][i] and any(
+                    raster_name.upper() == band_skipped.upper()
+                    for band_skipped in skip_bands
+                ):
+                    continue
+                # Read only the first band to avoid duplication of different spatial resolution
+                if any(
+                    raster_name.upper() == read_raster.upper()
+                    for read_raster in already_read
+                ):
+                    continue
+                already_read.append(raster_name)
+
+                print(f"Downloading raster {raster_name} from minio into {temp_path}")
+                minio_client.fget_object(
+                    bucket_name=current_bucket,
+                    object_name=raster_path,
+                    file_path=str(temp_path),
                 )
-            ):
-                continue
-            # Skip bands in skip_bands
-            if is_band[i] and any(
-                raster_name.upper() == band_skipped.upper()
-                for band_skipped in skip_bands
-            ):
-                continue
-            # Read only the first band to avoid duplication of different spatial resolution
-            if any(
-                raster_name.upper() == read_raster.upper()
-                for read_raster in already_read
-            ):
-                continue
-            already_read.append(raster_name)
 
-            print(f"Downloading raster {raster_name} from minio into {temp_path}")
-            minio_client.fget_object(
-                bucket_name=current_bucket,
-                object_name=raster_path,
-                file_path=str(temp_path),
+                band_normalize_range = normalize_range.get(raster_name, None)
+                if rasters_by_season[season]["is_band"][i] and (band_normalize_range is None):
+                    band_normalize_range = (0, 7000)
+
+                raster = _read_raster(
+                    band_path=temp_path,
+                    rescale=True,
+                    normalize_range=band_normalize_range,
+                )
+                raster_masked = np.ma.masked_array(raster[0], mask=crop_mask)
+                raster_masked = np.ma.compressed(raster_masked)
+
+                window_raster_df = pd.DataFrame({f"{season}_{raster_name}": raster_masked})
+
+                window_tile_df = pd.concat([window_tile_df, window_raster_df], axis=1)
+
+        for dem_name in dems_raster_names:
+            # Add dem and aspect data
+            if dem_name in used_columns:
+
+                dem_path = get_dem_from_tile(
+                    execution_mode, tile, mongo_products_collection, minio_client, dem_name
+                )
+
+                # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
+                dem_kwargs = _get_kwargs_raster(dem_path)
+
+                crop_mask = np.zeros(shape=(int(dem_kwargs["height"]), int(dem_kwargs["width"])),dtype=np.uint8)
+
+                band_normalize_range = normalize_range.get(dem_name, None)
+                raster = _read_raster(
+                    band_path=dem_path,
+                    rescale=True,
+                    normalize_range=band_normalize_range
+                )
+                raster_masked = np.ma.masked_array(raster, mask=crop_mask)
+                raster_masked = np.ma.compressed(raster_masked).flatten()
+                window_raster_df = pd.DataFrame({dem_name: raster_masked})
+                window_tile_df = pd.concat([window_tile_df, window_raster_df], axis=1)
+
+
+
+        print("Dataframe information:")
+        print(window_tile_df.info())
+
+        if execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
+
+            nodata_rows = (~np.isfinite(window_tile_df)).any(axis=1)
+
+            # Low memory column reindex without copy taken from https://stackoverflow.com/questions/25878198/change-pandas-dataframe-column-order-in-place
+            for column in used_columns:
+                window_tile_df[column] = window_tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
+
+            predictions = lc_clf.predict(window_tile_df)
+
+            predictions[nodata_rows] = "nodata"
+            predictions = np.reshape(
+                predictions, (1, output_kwargs["height"], output_kwargs["width"])
             )
+            encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
 
-            band_normalize_range = normalize_range.get(raster_name, None)
-            if is_band[i] and (band_normalize_range is None):
-                band_normalize_range = (0, 7000)
+            for class_, value in lc_mapping.items():
+                encoded_predictions = np.where(
+                    predictions == class_, value, encoded_predictions
+                )
 
-            raster = _read_raster(
-                band_path=temp_path,
-                rescale=True,
-                normalize_range=band_normalize_range,
-            )
-            raster_masked = np.ma.masked_array(raster[0], mask=crop_mask)
-            raster_masked = np.ma.compressed(raster_masked)
+            with rasterio.open(
+                classification_path, "r+", **output_kwargs
+            ) as classification_file:
+                classification_file.write(encoded_predictions)
 
-            raster_df = pd.DataFrame({f"{season}_{raster_name}": raster_masked})
+        elif execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
 
-            tile_df = pd.concat([tile_df, raster_df], axis=1)
+            nodata_rows = (~np.isfinite(window_tile_df)).any(axis=1)
 
-    for dem_name in dems_raster_names:
-        # Add dem and aspect data
-        if dem_name in used_columns:
+            for column in used_columns:
+                window_tile_df[column] = window_tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
 
-            dem_path = get_dem_from_tile(
-                execution_mode, tile, mongo_products_collection, minio_client, dem_name
-            )
-
-            # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
-            dem_kwargs = _get_kwargs_raster(dem_path)
-
-            crop_mask = np.zeros(shape=(int(dem_kwargs["height"]), int(dem_kwargs["width"])),dtype=np.uint8)
-
-            band_normalize_range = normalize_range.get(dem_name, None)
-            raster = _read_raster(
-                band_path=dem_path,
-                rescale=True,
-                normalize_range=band_normalize_range
-            )
-            raster_masked = np.ma.masked_array(raster, mask=crop_mask)
-            raster_masked = np.ma.compressed(raster_masked).flatten()
-            raster_df = pd.DataFrame({dem_name: raster_masked})
-            tile_df = pd.concat([tile_df, raster_df], axis=1)
-
-    print("Dataframe information:")
-    print(tile_df.info())
-
-    model_name = "model.joblib"
-
-    if execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
-
-        lc_model_folder = "land-cover"
-        model_path = join(settings.TMP_DIR, lc_model_folder, model_name)
-
-        minio_client.fget_object(
-            bucket_name=settings.MINIO_BUCKET_MODELS,
-            object_name=join(settings.MINIO_DATA_FOLDER_NAME, lc_model_folder, model_name),
-            file_path=model_path,
-        )
-
-        nodata_rows = (~np.isfinite(tile_df)).any(axis=1)
-
-        # Low memory column reindex without copy taken from https://stackoverflow.com/questions/25878198/change-pandas-dataframe-column-order-in-place
-        for column in used_columns:
-            tile_df[column] = tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
-
-        clf = joblib.load(model_path)
-
-        print(f"Predicting land cover for tile {tile}")
-        predictions = clf.predict(tile_df)
-
-        predictions[nodata_rows] = "nodata"
-        predictions = np.reshape(
-            predictions, (1, output_kwargs["height"], output_kwargs["width"])
-        )
-        encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
-        
-        with open(settings.LC_LABELS_FILE, "r") as f:
-            lc_mapping = json.load(f)
-        
-        if 0 in lc_mapping.values():
-            print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
-        lc_mapping["nodata"] = 0
-
-        for class_, value in lc_mapping.items():
-            encoded_predictions = np.where(
-                predictions == class_, value, encoded_predictions
-            )
-
-        with rasterio.open(
-            classification_path, "r+", **output_kwargs
-        ) as classification_file:
-            classification_file.write(encoded_predictions)
-        print(f"{classification_name} saved")
-
-    elif execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
-
-        model_folders = minio_client.list_objects(settings.MINIO_BUCKET_MODELS, prefix=join(settings.MINIO_DATA_FOLDER_NAME, ''), recursive=False)
-        sl_model_folder = []
-        for model_folder in model_folders:
-            if model_folder.object_name.endswith('/') and "land-cover" not in model_folder.object_name:
-                sl_model_folder.append(model_folder.object_name.split('/')[-2])
-
-        local_sl_model_locations = {}
-        for minio_model_folder in sl_model_folder:
-
-            local_sl_model_path = join(settings.TMP_DIR, minio_model_folder, model_name)
-
-            minio_client.fget_object(
-                bucket_name=settings.MINIO_BUCKET_MODELS,
-                object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_model_folder, model_name),
-                file_path=local_sl_model_path,
-            )
-            local_sl_model_locations[minio_model_folder] = local_sl_model_path
-
-
-        nodata_rows = (~np.isfinite(tile_df)).any(axis=1)
-
-        for column in used_columns:
-            tile_df[column] = tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
-
-        classifiers = {}
-
-        with open(settings.LC_LABELS_FILE, "r") as f:
-            lc_mapping = json.load(f)
-
-        for sl_model in local_sl_model_locations.keys():
-            classifiers[lc_mapping[sl_model]] = joblib.load(local_sl_model_locations[sl_model])
-
-        lc_raster = _get_lc_classification(tile)
-        lc_raster_flattened = lc_raster.flatten()
-        
-        sl_predictions = np.empty(len(tile_df), dtype=object)
-
-        for lc_class_number , class_model in classifiers.items():
-            print(f"Second level prediction of pixels with LC class: {lc_class_number}")
-            mask_lc_class = (lc_raster_flattened == lc_class_number)
+            lc_raster = _get_lc_classification(tile)
+            lc_raster_flattened = lc_raster.flatten()
             
-            rows_to_predict = tile_df[mask_lc_class]
+            sl_predictions = np.empty(len(window_tile_df), dtype=object)
+
+            for lc_class_number , class_model in sl_classifiers.items():
+                mask_lc_class = (lc_raster_flattened == lc_class_number)
+                
+                rows_to_predict = window_tile_df[mask_lc_class]
+                
+                sl_predictions[mask_lc_class] = class_model.predict(rows_to_predict)
+
+            sl_predictions[sl_predictions == None] = "noclassified"
+            sl_predictions[nodata_rows] = "nodata"
             
-            sl_predictions[mask_lc_class] = class_model.predict(rows_to_predict)
-
-        sl_predictions[sl_predictions == None] = "noclassified"
-        sl_predictions[nodata_rows] = "nodata"
-        
-        sl_predictions = np.reshape(
-            sl_predictions, (1, output_kwargs["height"], output_kwargs["width"])
-        )
-        encoded_sl_predictions = np.zeros_like(sl_predictions, dtype=np.uint8)
-
-        with open(settings.SL_LABELS_FILE, "r") as f:
-            sl_mapping = json.load(f)
-
-        if 0 in sl_mapping.values():
-            print("Warning: 0 is already a value in the mapping, which is reserved for NODATA. It will be overwritten.")
-        sl_mapping["nodata"] = 0
-        if 1 in sl_mapping.values():
-            print("Warning: 1 is already a value in the mapping, which is reserved for NOCLASSIFIED. It will be overwritten.")
-        sl_mapping["noclassified"] = 1
-
-        for class_, value in sl_mapping.items():
-            encoded_sl_predictions = np.where(
-                sl_predictions == class_, value, encoded_sl_predictions
+            sl_predictions = np.reshape(
+                sl_predictions, (1, output_kwargs["height"], output_kwargs["width"])
             )
+            encoded_sl_predictions = np.zeros_like(sl_predictions, dtype=np.uint8)
 
-        with rasterio.open(
-            classification_path, "r+", **output_kwargs
-        ) as classification_file:
-            classification_file.write(encoded_sl_predictions)
-        print(f"{classification_name} saved")
+            for class_, value in sl_mapping.items():
+                encoded_sl_predictions = np.where(
+                    sl_predictions == class_, value, encoded_sl_predictions
+                )
+
+            with rasterio.open(
+                classification_path, "r+", **output_kwargs
+            ) as classification_file:
+                classification_file.write(encoded_sl_predictions)
 
     minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_CLASSIFICATIONS,
