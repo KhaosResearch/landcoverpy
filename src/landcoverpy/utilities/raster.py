@@ -31,6 +31,7 @@ def _read_raster(
     path_to_disk: str = None,
     normalize_range: Tuple[float, float] = None,
     to_tif: bool = True,
+    window: Window = None
 ):
     """
     Reads a raster as a numpy array.
@@ -52,7 +53,15 @@ def _read_raster(
         # Read file
         kwargs = band_file.meta
         destination_crs = band_file.crs
-        band = band_file.read()
+        band = band_file.read(window=window)
+        if window is not None:
+            kwargs.update(
+                {
+                    "height": window.height,
+                    "width": window.width,
+                    "transform": band_file.window_transform(window)
+                }
+            )
 
     # Just in case...
     if len(band.shape) == 2:
