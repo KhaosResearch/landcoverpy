@@ -6,6 +6,7 @@ from typing import Iterable, List, Tuple
 import numpy as np
 import pyproj
 import rasterio
+import rasterio.windows
 from pymongo.collection import Collection
 from rasterio import mask as msk
 from rasterio.warp import Resampling, reproject
@@ -42,11 +43,16 @@ def _read_raster(
         path_to_disk (str) : If the postprocessed (e.g. rescaled, cropped, etc.) raster wants to be saved locally, a path has to be provided
         normalize_range (Tuple[float, float]) : Values mapped to -1 and +1 in normalization. None if the raster doesn't need to be normalized
         to_tif (bool) : If the raster wants to be transformed to a GeoTiff raster (usefull when reading JP2 rasters that can only store natural numbers)
+        window (Window) : If the raster wants to be read in a window, a window object has to be provided
 
     Returns:
         band (np.ndarray) : The read raster as numpy array
 
     """
+
+    if window is not None and (mask_geometry is not None or path_to_disk is not None):
+        print("If a window is provided, the raster can't be saved to disk or cropped")
+
     band_name = _get_raster_name_from_path(str(band_path))
     print(f"Reading raster {band_name}")
     with rasterio.open(band_path) as band_file:
@@ -59,7 +65,7 @@ def _read_raster(
                 {
                     "height": window.height,
                     "width": window.width,
-                    "transform": band_file.window_transform(window)
+                    "transform": rasterio.windows.transform(window, kwargs["transform"])
                 }
             )
 

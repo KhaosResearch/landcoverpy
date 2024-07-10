@@ -8,6 +8,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import rasterio
+import rasterio.windows
 from rasterio.windows import Window
 
 from landcoverpy.aster import get_dem_from_tile
@@ -230,6 +231,17 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
         "dem",
     ]
 
+
+    dem_paths = {}
+    for dem_name in dems_raster_names:
+        # Add dem and aspect data
+        if dem_name in used_columns:
+            dem_path = get_dem_from_tile(
+                execution_mode, tile, mongo_products_collection, minio_client, dem_name
+            )
+            dem_paths[dem_name] = dem_path
+
+
     for window in windows:
 
         window_kwargs = kwargs_s2.copy()
@@ -272,12 +284,14 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
                     continue
                 already_read.append(raster_name)
 
-                print(f"Downloading raster {raster_name} from minio into {temp_path}")
-                minio_client.fget_object(
-                    bucket_name=current_bucket,
-                    object_name=raster_path,
-                    file_path=str(temp_path),
-                )
+                # download if file_path does not exist
+                if not temp_path.exists():
+                    print(f"Downloading raster {raster_name} from minio into {temp_path}")
+                    minio_client.fget_object(
+                        bucket_name=current_bucket,
+                        object_name=raster_path,
+                        file_path=str(temp_path),
+                    )
 
                 band_normalize_range = normalize_range.get(raster_name, None)
                 if rasters_by_season[season]["is_band"][i] and (band_normalize_range is None):
@@ -287,6 +301,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
                     band_path=temp_path,
                     rescale=True,
                     normalize_range=band_normalize_range,
+                    window=window
                 )
                 raster_masked = np.ma.masked_array(raster[0], mask=crop_mask)
                 raster_masked = np.ma.compressed(raster_masked)
@@ -299,20 +314,22 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
             # Add dem and aspect data
             if dem_name in used_columns:
 
-                dem_path = get_dem_from_tile(
-                    execution_mode, tile, mongo_products_collection, minio_client, dem_name
-                )
-
                 # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
-                dem_kwargs = _get_kwargs_raster(dem_path)
+                dem_kwargs = _get_kwargs_raster(dem_paths[dem_name])
 
-                crop_mask = np.zeros(shape=(int(dem_kwargs["height"]), int(dem_kwargs["width"])),dtype=np.uint8)
+                dem_kwargs_window = dem_kwargs.copy()
+                dem_kwargs_window["width"] = window.width
+                dem_kwargs_window["height"] = window.height
+                dem_kwargs_window["transform"] = rasterio.windows.transform(window, dem_kwargs["transform"])
+
+                crop_mask = np.zeros(shape=(int(dem_kwargs_window["height"]), int(dem_kwargs_window["width"])),dtype=np.uint8)
 
                 band_normalize_range = normalize_range.get(dem_name, None)
                 raster = _read_raster(
-                    band_path=dem_path,
+                    band_path=dem_paths[dem_name],
                     rescale=True,
-                    normalize_range=band_normalize_range
+                    normalize_range=band_normalize_range,
+                    window=window
                 )
                 raster_masked = np.ma.masked_array(raster, mask=crop_mask)
                 raster_masked = np.ma.compressed(raster_masked).flatten()
@@ -348,7 +365,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
             with rasterio.open(
                 classification_path, "r+", **output_kwargs
             ) as classification_file:
-                classification_file.write(encoded_predictions)
+                classification_file.write(encoded_predictions, window=window)
 
         elif execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
 
@@ -385,7 +402,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
             with rasterio.open(
                 classification_path, "r+", **output_kwargs
             ) as classification_file:
-                classification_file.write(encoded_sl_predictions)
+                classification_file.write(encoded_sl_predictions, window=window)
 
     minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_CLASSIFICATIONS,
