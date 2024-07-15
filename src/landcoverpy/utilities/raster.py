@@ -1,5 +1,4 @@
 import json
-import math
 
 from itertools import compress
 from pathlib import Path
@@ -53,11 +52,12 @@ def _read_raster(
     """
 
     if window is not None and (mask_geometry is not None or path_to_disk is not None):
-        print("If a window is provided, the raster can't be saved to disk or cropped")
+        raise ValueError("If a window is provided, mask_geometry and path_to_disk must be None")
 
     band_name = _get_raster_name_from_path(str(band_path))
-    print(f"Reading raster {band_name}")
+
     with rasterio.open(band_path) as band_file:
+
 
         spatial_resolution = _get_spatial_resolution_raster(band_path)
         if window is not None and spatial_resolution != 10:
@@ -100,7 +100,6 @@ def _read_raster(
                 path_to_disk = path_to_disk[:-3] + "tif"
 
     if normalize_range is not None:
-        print(f"Normalizing band {band_name}")
         value1, value2 = normalize_range
         band = _normalize(band, value1, value2)
 
@@ -111,7 +110,6 @@ def _read_raster(
     # Create a temporal memory file to mask the band
     # This is necessary because the band is previously read to scale its resolution
     if mask_geometry:
-        print(f"Cropping raster {band_name}")
         projected_geometry = _project_shape(mask_geometry, dcs=destination_crs)
         with rasterio.io.MemoryFile() as memfile:
             with memfile.open(**kwargs) as memfile_band:
@@ -430,7 +428,6 @@ def _rescale_band(
         rescaled_raster = np.ndarray(
             shape=(kwargs["count"], new_kwargs["height"], new_kwargs["width"]), dtype=np.float32)
 
-        print(f"Rescaling raster {band_name}, from: {img_resolution}m to {str(spatial_resol)}.0m")
         reproject(
             source=band,
             destination=rescaled_raster,

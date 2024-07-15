@@ -173,7 +173,6 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
     rasters_by_season = defaultdict(dict)
 
     for season, products_metadata in product_per_season.items():
-        print(season)
         bucket_products = settings.MINIO_BUCKET_NAME_PRODUCTS
         bucket_composites = settings.MINIO_BUCKET_NAME_COMPOSITES
         current_bucket = None
@@ -218,7 +217,6 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
         temp_product_folder = Path(settings.TMP_DIR, product_name + ".SAFE")
         if not temp_product_folder.exists():
             Path.mkdir(temp_product_folder)
-        print(f"Processing product {product_name}")
 
         rasters_by_season[season]["raster_paths"] = rasters_paths
         rasters_by_season[season]["is_band"] = is_band
@@ -249,8 +247,8 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
         window_kwargs["height"] = window.height
         window_kwargs["transform"] = rasterio.windows.transform(window, kwargs_s2["transform"])
 
-        # Dataframe for storing data of a window
-        window_tile_df = None
+        # Dict for storing data of a window (all rasters and indexes)
+        window_tile_dict = {}
 
         crop_mask = np.zeros(shape=(int(window_kwargs["height"]), int(window_kwargs["width"])), dtype=np.uint8)
 
@@ -306,9 +304,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
                 raster_masked = np.ma.masked_array(raster[0], mask=crop_mask)
                 raster_masked = np.ma.compressed(raster_masked)
 
-                window_raster_df = pd.DataFrame({f"{season}_{raster_name}": raster_masked})
-
-                window_tile_df = pd.concat([window_tile_df, window_raster_df], axis=1)
+                window_tile_dict.update({f"{season}_{raster_name}": raster_masked})
 
         for dem_name in dems_raster_names:
             # Add dem and aspect data
@@ -333,13 +329,9 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
                 )
                 raster_masked = np.ma.masked_array(raster, mask=crop_mask)
                 raster_masked = np.ma.compressed(raster_masked).flatten()
-                window_raster_df = pd.DataFrame({dem_name: raster_masked})
-                window_tile_df = pd.concat([window_tile_df, window_raster_df], axis=1)
+                window_tile_dict.update({dem_name: raster_masked})
 
-
-
-        print("Dataframe information:")
-        print(window_tile_df.info())
+        window_tile_df = pd.DataFrame(window_tile_dict)
 
         if execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
 
@@ -404,12 +396,18 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
             ) as classification_file:
                 classification_file.write(encoded_sl_predictions, window=window)
 
+        print(f"Window {window} processed, output raster {classification_path} updated")
+
     minio_client.fput_object(
         bucket_name=settings.MINIO_BUCKET_CLASSIFICATIONS,
         object_name=f"{settings.MINIO_DATA_FOLDER_NAME}/{classification_name}",
         file_path=classification_path,
         content_type="image/tif",
     )
+
+    print(f"Classification raster {classification_name} uploaded to Minio")
+    print(f"Tile {tile} processed")
+    print("Cleaning up temporary files")
 
     for path in Path(settings.TMP_DIR).glob("**/*"):
         if path.is_file():
