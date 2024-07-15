@@ -1,4 +1,6 @@
 import json
+import math
+
 from itertools import compress
 from pathlib import Path
 from typing import Iterable, List, Tuple
@@ -56,6 +58,18 @@ def _read_raster(
     band_name = _get_raster_name_from_path(str(band_path))
     print(f"Reading raster {band_name}")
     with rasterio.open(band_path) as band_file:
+
+        spatial_resolution = _get_spatial_resolution_raster(band_path)
+        if window is not None and spatial_resolution != 10:
+            # Transform the window to the actual resolution of the raster
+            scale_factor = spatial_resolution / 10
+            window = Window(
+                col_off = window.col_off / scale_factor,
+                row_off = window.row_off / scale_factor,
+                width = window.width / scale_factor,
+                height = window.height / scale_factor
+            )
+
         # Read file
         kwargs = band_file.meta
         destination_crs = band_file.crs

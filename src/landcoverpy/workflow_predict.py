@@ -116,7 +116,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
     elif window_slices is not None:
         windows = _generate_windows_from_slices_number(tile, window_slices, minio_client, mongo_products_collection)
     else:
-        windows = [Window(0, 0, kwargs_s2.width, kwargs_s2.height)]
+        windows = [Window(0, 0, kwargs_s2['width'], kwargs_s2['height'])]
 
     # Initialize empty output raster
     output_kwargs = kwargs_s2.copy()
@@ -243,7 +243,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
 
 
     for window in windows:
-
+        print(f"Processing window {window}")
         window_kwargs = kwargs_s2.copy()
         window_kwargs["width"] = window.width
         window_kwargs["height"] = window.height
@@ -353,7 +353,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
 
             predictions[nodata_rows] = "nodata"
             predictions = np.reshape(
-                predictions, (1, output_kwargs["height"], output_kwargs["width"])
+                predictions, (1, window_kwargs["height"], window_kwargs["width"])
             )
             encoded_predictions = np.zeros_like(predictions, dtype=np.uint8)
 
