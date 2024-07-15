@@ -16,7 +16,7 @@ A research article describing the methodology followed on this workflow can be f
 
 ## Installation
 
-Currently, the package is not available on PyPI, so you need to install it from the source code. To do so, you can clone the repository and install it using pip:
+The package is not available on PyPI, so you need to install it from the source code. To do so, you can clone the repository and install it using pip:
 
 ```bash
 git clone https://github.com/KhaosResearch/landcoverpy.git
@@ -28,12 +28,6 @@ For development purposes, you can install the package in editable mode:
 
 ```bash
 pip install -e .
-```
-
-In the future, the package will be available on PyPI, so you will be able to install it using pip:
-
-```bash
-pip install landcoverpy
 ```
 
 ## Usage

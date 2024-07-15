@@ -58,17 +58,8 @@ def train_model_land_cover(n_jobs: int = 2):
     print(f"Training land-cover model using {len(df)} samples with unique {df[settings.LC_PROPERTY].unique()} targets")
 
     y_train_data = df[settings.LC_PROPERTY]
-    x_train_data = df.drop(
-        [
-            settings.LC_PROPERTY,
-            "latitude",
-            "longitude",
-            "spring_product_name",
-            "autumn_product_name",
-            "summer_product_name",
-        ],
-        axis=1,
-    )
+    not_training_data_columns = [col for col in df.columns if "product_name" in col] + [settings.LC_PROPERTY, "latitude", "longitude"]
+    x_train_data = df.drop(not_training_data_columns, axis=1)
 
     used_columns = _feature_reduction(x_train_data, y_train_data)
     
@@ -174,18 +165,9 @@ def train_second_level_models(lc_classes: List[str], n_jobs: int = 2, n_trees: i
         print(f"Training {lc_class} model using {len(df_class)} samples with unique {df_class[settings.SL_PROPERTY].unique()} targets")
 
         y_train_data = df_class[settings.SL_PROPERTY]
-        x_train_data = df_class.drop(
-            [
-                settings.LC_PROPERTY,
-                settings.SL_PROPERTY,
-                "latitude",
-                "longitude",
-                "spring_product_name",
-                "autumn_product_name",
-                "summer_product_name",
-            ],
-            axis=1,
-        )
+
+        not_training_data_columns = [col for col in df_class.columns if "product_name" in col] + [settings.LC_PROPERTY, settings.SL_PROPERTY, "latitude", "longitude"]
+        x_train_data = df_class.drop(not_training_data_columns, axis=1)
 
         used_columns = _feature_reduction(x_train_data, y_train_data)
 
