@@ -84,7 +84,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
 
             local_sl_model_path = join(settings.TMP_DIR, minio_model_folder, model_name)
 
-            print(f"Downloading {model_name} model")
+            print(f"Downloading {minio_model_folder}/{model_name} model")
             minio_client.fget_object(
                 bucket_name=settings.MINIO_BUCKET_MODELS,
                 object_name=join(settings.MINIO_DATA_FOLDER_NAME, minio_model_folder, model_name),
@@ -366,7 +366,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
             for column in used_columns:
                 window_tile_df[column] = window_tile_df.pop(column).replace([np.inf, -np.inf, -np.nan], 0)
 
-            lc_raster = _get_lc_classification(tile)
+            lc_raster = _get_lc_classification(tile, window)
             lc_raster_flattened = lc_raster.flatten()
             
             sl_predictions = np.empty(len(window_tile_df), dtype=object)
@@ -375,14 +375,14 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
                 mask_lc_class = (lc_raster_flattened == lc_class_number)
                 
                 rows_to_predict = window_tile_df[mask_lc_class]
-                
-                sl_predictions[mask_lc_class] = class_model.predict(rows_to_predict)
+                if len(rows_to_predict) != 0:
+                    sl_predictions[mask_lc_class] = class_model.predict(rows_to_predict)
 
             sl_predictions[sl_predictions == None] = "noclassified"
             sl_predictions[nodata_rows] = "nodata"
             
             sl_predictions = np.reshape(
-                sl_predictions, (1, output_kwargs["height"], output_kwargs["width"])
+                sl_predictions, (1, window_kwargs["height"], window_kwargs["width"])
             )
             encoded_sl_predictions = np.zeros_like(sl_predictions, dtype=np.uint8)
 

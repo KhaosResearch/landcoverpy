@@ -14,6 +14,7 @@ from pymongo.cursor import Cursor
 from shapely.geometry import Point
 from shapely.ops import transform
 from sklearn.decomposition import PCA
+from rasterio.windows import Window
 
 from landcoverpy.config import settings
 from landcoverpy.minio import MinioConnection
@@ -326,9 +327,10 @@ def _check_tiles_not_predicted(tiles: List[str], second_level_prediction: bool =
 
     return unpredicted_tiles
 
-def _get_lc_classification(tile: str):
+def _get_lc_classification(tile: str, window: Window = None):
     """
     Get the land cover classification from a certain tile.
+    Optionally, a window can be passed to read only a portion of the raster.
     """
 
     minio_client = MinioConnection()
@@ -342,7 +344,7 @@ def _get_lc_classification(tile: str):
     )
 
     with rasterio.open(band_path) as band_file:
-        band = band_file.read()
+        band = band_file.read(window=window)
 
     return band
 
