@@ -62,18 +62,25 @@ def train_model_land_cover(n_jobs: int = 2):
     x_train_data = df.drop(not_training_data_columns, axis=1)
 
     used_columns = _feature_reduction(x_train_data, y_train_data)
-    
-    unique_locations = df.drop_duplicates(subset=["latitude","longitude"])
-    unique_locations = unique_locations[['latitude', 'longitude']]
-
-    unique_locations = unique_locations.sample(frac=1).reset_index(drop=True)
 
     train_size = 0.85
 
-    split_index = int(len(unique_locations) * train_size)
+    train_coordinates_label = []
+    test_coordinates_label = []
 
-    train_coordinates = unique_locations[:split_index]
-    test_coordinates = unique_locations[split_index:]
+    for label in y_train_data.unique():
+        df_label = df[df[settings.LC_PROPERTY] == label]
+        unique_locations_label = df_label.drop_duplicates(subset=["latitude","longitude"])
+        unique_locations_label = unique_locations_label[['latitude', 'longitude']]
+        unique_locations_label = unique_locations_label.sample(frac=1).reset_index(drop=True)
+
+        split_index_label = int(len(unique_locations_label) * train_size)
+
+        train_coordinates_label.append(unique_locations_label[:split_index_label])
+        test_coordinates_label.append(unique_locations_label[split_index_label:])
+
+    train_coordinates = pd.concat(train_coordinates_label)
+    test_coordinates = pd.concat(test_coordinates_label)
 
     train_df = pd.merge(df, train_coordinates, on=['latitude', 'longitude'])
     test_df = pd.merge(df, test_coordinates, on=['latitude', 'longitude'])
@@ -171,17 +178,24 @@ def train_second_level_models(lc_classes: List[str], n_jobs: int = 2, n_trees: i
 
         used_columns = _feature_reduction(x_train_data, y_train_data)
 
-        unique_locations = df_class.drop_duplicates(subset=["latitude","longitude"])
-        unique_locations = unique_locations[['latitude', 'longitude']]
-
-        unique_locations = unique_locations.sample(frac=1).reset_index(drop=True)
-
         train_size = 0.80
 
-        split_index = int(len(unique_locations) * train_size)
+        train_coordinates_label = []
+        test_coordinates_label = []
 
-        train_coordinates = unique_locations[:split_index]
-        test_coordinates = unique_locations[split_index:]
+        for class_label in y_train_data.unique():
+            df_class_label = df_class[df_class[settings.SL_PROPERTY] == class_label]
+            unique_locations_label = df_class_label.drop_duplicates(subset=["latitude","longitude"])
+            unique_locations_label = unique_locations_label[['latitude', 'longitude']]
+            unique_locations_label = unique_locations_label.sample(frac=1).reset_index(drop=True)
+
+            split_index_label = int(len(unique_locations_label) * train_size)
+
+            train_coordinates_label.append(unique_locations_label[:split_index_label])
+            test_coordinates_label.append(unique_locations_label[split_index_label:])
+
+        train_coordinates = pd.concat(train_coordinates_label)
+        test_coordinates = pd.concat(test_coordinates_label)
 
         train_df = pd.merge(df_class, train_coordinates, on=['latitude', 'longitude'])
         test_df = pd.merge(df_class, test_coordinates, on=['latitude', 'longitude'])
