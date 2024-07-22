@@ -306,7 +306,7 @@ def _check_tiles_not_predicted(tiles: List[str], second_level_prediction: bool =
     minio = MinioConnection()
 
     if second_level_prediction:
-        prefix = join(settings.MINIO_DATA_FOLDER_NAME, "second_level_classification")
+        prefix = join(settings.MINIO_DATA_FOLDER_NAME, "sl_classification")
     else:
         prefix = join(settings.MINIO_DATA_FOLDER_NAME, "classification")
 
