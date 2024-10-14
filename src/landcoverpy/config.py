@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class _Settings(BaseSettings):
@@ -37,29 +37,28 @@ class _Settings(BaseSettings):
     # Temporal directory
     TMP_DIR: str = "/tmp"
 
-    # Directory containing validated datasets (.kmz or .geojson)
-    DB_DIR: str = "/data"
+    # File containing validated data (.kmz or .geojson)
+    DB_FILE: str = "/data.kmz"
+    # Column (in case of db_file is a csv) or attribute (in case of db_file is a kmz or geojson) containing the LC class labels
+    LC_PROPERTY: str = "LC"
+    # Same for second level class labels
+    SL_PROPERTY: str = "SL"
+
+    # JSON files containing LC class labels to numbers mapping (0 is reserved to nodata)
+    LC_LABELS_FILE: str = "/lc_labels.json"
+    # Same for second level class labels (0 is reserved to nodata and 1 is reserved to noclassified)
+    SL_LABELS_FILE: str = "/sl_labels.json"
 
     # For running in a distributed environment
     DASK_CLUSTER_IP: str = "0.0.0.0.0:0000"
 
-    # Dates used for each season
-    SPRING_START: str = "2001-12-31"
-    SPRING_END: str = "2001-12-31"
-    SUMMER_START: str = "2001-12-31"
-    SUMMER_END: str = "2001-12-31"
-    AUTUMN_START: str = "2001-12-31"
-    AUTUMN_END: str = "2001-12-31"
+    # File containing the definition of the seasons
+    SEASONS_FILE: str = "/seasons.json"
 
     # Product filtering parameters
     MAX_CLOUD: float = 1.0
 
-    # Model folders in MinIO
-    LAND_COVER_MODEL_FOLDER: str = ""
-    OPEN_FOREST_MODEL_FOLDER: str = ""
-    DENSE_FOREST_MODEL_FOLDER: str = ""
-
-    # Composite-related parameters
+    # Maximum number of products used in a composite
     MAX_PRODUCTS_COMPOSITE: int = 1
 
     class Config:

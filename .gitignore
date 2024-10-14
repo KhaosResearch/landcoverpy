@@ -50,3 +50,9 @@ requirements.txt
 
 *.laz
 *.las
+*.xml
+
+*1.2/
+*1.1/
+*_shoufv4/
+*_shoufv5/
