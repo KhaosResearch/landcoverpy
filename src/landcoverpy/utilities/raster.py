@@ -1,4 +1,5 @@
 import json
+
 from itertools import compress
 from pathlib import Path
 from typing import Iterable, List, Tuple
@@ -6,9 +7,11 @@ from typing import Iterable, List, Tuple
 import numpy as np
 import pyproj
 import rasterio
+import rasterio.windows
 from pymongo.collection import Collection
 from rasterio import mask as msk
 from rasterio.warp import Resampling, reproject
+from rasterio.windows import Window
 from shapely.geometry import Point, Polygon
 from shapely.ops import transform
 
@@ -19,7 +22,6 @@ from landcoverpy.minio import MinioConnection
 from landcoverpy.rasterpoint import RasterPoint
 from landcoverpy.utilities.geometries import (
     _convert_3D_2D,
-    _get_corners_geometry,
     _project_shape,
 )
 
@@ -31,6 +33,7 @@ def _read_raster(
     path_to_disk: str = None,
     normalize_range: Tuple[float, float] = None,
     to_tif: bool = True,
+    window: Window = None
 ):
     """
     Reads a raster as a numpy array.
@@ -41,18 +44,44 @@ def _read_raster(
         path_to_disk (str) : If the postprocessed (e.g. rescaled, cropped, etc.) raster wants to be saved locally, a path has to be provided
         normalize_range (Tuple[float, float]) : Values mapped to -1 and +1 in normalization. None if the raster doesn't need to be normalized
         to_tif (bool) : If the raster wants to be transformed to a GeoTiff raster (usefull when reading JP2 rasters that can only store natural numbers)
+        window (Window) : If the raster wants to be read in a window, a window object has to be provided
 
     Returns:
         band (np.ndarray) : The read raster as numpy array
 
     """
+
+    if window is not None and (mask_geometry is not None or path_to_disk is not None):
+        raise ValueError("If a window is provided, mask_geometry and path_to_disk must be None")
+
     band_name = _get_raster_name_from_path(str(band_path))
-    print(f"Reading raster {band_name}")
+
     with rasterio.open(band_path) as band_file:
+
+
+        spatial_resolution = _get_spatial_resolution_raster(band_path)
+        if window is not None and spatial_resolution != 10:
+            # Transform the window to the actual resolution of the raster
+            scale_factor = spatial_resolution / 10
+            window = Window(
+                col_off = window.col_off / scale_factor,
+                row_off = window.row_off / scale_factor,
+                width = window.width / scale_factor,
+                height = window.height / scale_factor
+            )
+
         # Read file
         kwargs = band_file.meta
         destination_crs = band_file.crs
-        band = band_file.read()
+        band = band_file.read(window=window)
+        if window is not None:
+            kwargs.update(
+                {
+                    "height": window.height,
+                    "width": window.width,
+                    "transform": rasterio.windows.transform(window, kwargs["transform"])
+                }
+            )
 
     # Just in case...
     if len(band.shape) == 2:
@@ -71,7 +100,6 @@ def _read_raster(
                 path_to_disk = path_to_disk[:-3] + "tif"
 
     if normalize_range is not None:
-        print(f"Normalizing band {band_name}")
         value1, value2 = normalize_range
         band = _normalize(band, value1, value2)
 
@@ -82,7 +110,6 @@ def _read_raster(
     # Create a temporal memory file to mask the band
     # This is necessary because the band is previously read to scale its resolution
     if mask_geometry:
-        print(f"Cropping raster {band_name}")
         projected_geometry = _project_shape(mask_geometry, dcs=destination_crs)
         with rasterio.io.MemoryFile() as memfile:
             with memfile.open(**kwargs) as memfile_band:
@@ -183,6 +210,36 @@ def _download_sample_band_by_tile(tile: str, minio_client: MinioConnection, mong
     product_title = product_metadata["title"]
     sample_band_path = _download_sample_band_by_title(product_title, minio_client, mongo_collection)
     return sample_band_path
+
+def _get_block_windows_by_tile(tile: str, minio_client: MinioConnection, mongo_collection: Collection):
+    """
+    Having a tile, get the list of block windows of a 10m sample sentinel band of any related product.
+    """
+    sample_band_path = _download_sample_band_by_tile(tile, minio_client, mongo_collection)
+    src = rasterio.open(sample_band_path)
+    block_windows_enum = src.block_windows()
+    block_windows = [block_window[1] for block_window in block_windows_enum]
+    src.close()
+    return block_windows
+
+def _generate_windows_from_slices_number(tile: str, slices: Tuple[int, int], minio_client: MinioConnection, mongo_collection: Collection):
+    """
+    Having a tile, generate a list of windows based on the number of slices.
+    """
+    sample_kwargs = _get_kwargs_raster(_download_sample_band_by_tile(tile, minio_client, mongo_collection))
+    tile_width = sample_kwargs["width"]
+    tile_height = sample_kwargs["height"]
+    
+    slice_width = int(tile_width / slices[0])
+    slice_height = int(tile_height / slices[1])
+    
+    windows = []
+    for i in range(slices[0]):
+        for j in range(slices[1]):
+            window = Window(i * slice_width, j * slice_height, slice_width, slice_height)
+            windows.append(window)
+    
+    return windows
 
 def _download_sample_band_by_title(
     title: str, minio_client: MinioConnection, mongo_collection: Collection
@@ -371,7 +428,6 @@ def _rescale_band(
         rescaled_raster = np.ndarray(
             shape=(kwargs["count"], new_kwargs["height"], new_kwargs["width"]), dtype=np.float32)
 
-        print(f"Rescaling raster {band_name}, from: {img_resolution}m to {str(spatial_resol)}.0m")
         reproject(
             source=band,
             destination=rescaled_raster,

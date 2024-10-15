@@ -1,9 +1,7 @@
 # Data
 *dataset*
-*.csv
 databases
 *.kmz
-*.geojson
 hackaton/
 
 # Environments
@@ -37,6 +35,7 @@ auxiliar_scripts/
 # Images
 *.png
 images/
+!static/*.png
 
 # Rasters
 *.tif
@@ -47,7 +46,6 @@ images/
 .python-version
 
 requirements.txt
-
 *.laz
 *.las
 *.xml

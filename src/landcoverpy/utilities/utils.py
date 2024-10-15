@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from itertools import compress
 from os.path import join
@@ -13,6 +14,7 @@ from pymongo.cursor import Cursor
 from shapely.geometry import Point
 from shapely.ops import transform
 from sklearn.decomposition import PCA
+from rasterio.windows import Window
 
 from landcoverpy.config import settings
 from landcoverpy.minio import MinioConnection
@@ -24,20 +26,16 @@ from landcoverpy.utilities.raster import (
 
 
 def get_season_dict():
-    spring_start = datetime.strptime(settings.SPRING_START, '%Y-%m-%d')
-    spring_end = datetime.strptime(settings.SPRING_END, '%Y-%m-%d')
-    summer_start = datetime.strptime(settings.SUMMER_START, '%Y-%m-%d')
-    summer_end = datetime.strptime(settings.SUMMER_END, '%Y-%m-%d')
-    autumn_start = datetime.strptime(settings.AUTUMN_START, '%Y-%m-%d')
-    autumn_end = datetime.strptime(settings.AUTUMN_END, '%Y-%m-%d')
-    
-    seasons =   {
-        "spring" : (spring_start, spring_end),
-        "summer" : (summer_start, summer_end),
-        "autumn" : (autumn_start, autumn_end)
-    }
 
-    return seasons
+    with open(settings.SEASONS_FILE) as f:
+        seasons = json.load(f)
+
+    seasons_out = {}
+    
+    for season in seasons:
+        seasons_out[season] = (datetime.strptime(seasons[season]["start"], '%Y-%m-%d'), datetime.strptime(seasons[season]["end"], '%Y-%m-%d'))
+
+    return seasons_out
 
 def get_products_by_tile_and_date(
     tile: str,
@@ -273,7 +271,7 @@ def _mask_polygons_by_tile(
         # Get point and label
         geometry_raw = polygons_in_tile[geometry_id]["geometry"]["coordinates"]
         geometry = Point(geometry_raw[0], geometry_raw[1])
-        label = polygons_in_tile[geometry_id]["label"]
+        label = polygons_in_tile[geometry_id]["properties"][settings.LC_PROPERTY]
 
         # Transform point projection to original raster pojection
         project = pyproj.Transformer.from_crs(
@@ -285,8 +283,7 @@ def _mask_polygons_by_tile(
         row, column = rasterio.transform.rowcol(
             kwargs["transform"], tr_point.x, tr_point.y
         )
-
-        forest_type = polygons_in_tile[geometry_id]["properties"].get("form_arb_d", None)
+        sl_label = polygons_in_tile[geometry_id]["properties"].get(settings.SL_PROPERTY, None)
 
         label_lon_lat = _label_neighbours(
             kwargs["height"],
@@ -295,7 +292,7 @@ def _mask_polygons_by_tile(
             column,
             geometry_raw,
             label,
-            forest_type,
+            sl_label,
             label_lon_lat,
         )
 
@@ -304,12 +301,12 @@ def _mask_polygons_by_tile(
 
     return band_mask, label_lon_lat
 
-def _check_tiles_not_predicted_in_training(tiles_in_training: List[str], forest_prediction: bool = False):
+def _check_tiles_not_predicted(tiles: List[str], second_level_prediction: bool = False):
 
     minio = MinioConnection()
 
-    if forest_prediction:
-        prefix = join(settings.MINIO_DATA_FOLDER_NAME, "forest_classification")
+    if second_level_prediction:
+        prefix = join(settings.MINIO_DATA_FOLDER_NAME, "sl_classification")
     else:
         prefix = join(settings.MINIO_DATA_FOLDER_NAME, "classification")
 
@@ -326,14 +323,14 @@ def _check_tiles_not_predicted_in_training(tiles_in_training: List[str], forest_
         ]  # ...classification_99XXX.tif
         predicted_tiles.append(predicted_tile)
 
-    unpredicted_tiles = list(np.setdiff1d(tiles_in_training, predicted_tiles))
+    unpredicted_tiles = list(np.setdiff1d(tiles, predicted_tiles))
 
     return unpredicted_tiles
 
-def _get_forest_masks(tile: str):
+def _get_lc_classification(tile: str, window: Window = None):
     """
-    Get the land cover classification from a certain tile. A mask of pixels that are open forest or closed forest is returned.
-    Mask = 1 means closed forest, mask = 2 means open forest
+    Get the land cover classification from a certain tile.
+    Optionally, a window can be passed to read only a portion of the raster.
     """
 
     minio_client = MinioConnection()
@@ -347,13 +344,9 @@ def _get_forest_masks(tile: str):
     )
 
     with rasterio.open(band_path) as band_file:
-        band = band_file.read()
+        band = band_file.read(window=window)
 
-    mask = np.zeros_like(band, dtype=np.uint8)
-    mask = np.where(band == 7 , 1, mask) # closed forest, this should be get from .env
-    mask = np.where(band == 8 , 2, mask) # open forest, this should be get from .env
-
-    return mask
+    return band
 
 def _remove_tiles_already_processed_in_training(tiles_in_training: List[str]):
 
