@@ -124,7 +124,7 @@ def merge_rasters(local_paths: list[Path]) -> Path:
 
     return output_path
 
-def main(interpolating: bool = False):
+def main(interpolating: bool = False, crop: bool = False):
     """
     Reads all chunks of raster files from the MinIO bucket, merges them, and saves the result back to the bucket.
     Reads from the "rasters/{feature}/" directory and writes to "rasters/merged/feature.tif".
@@ -161,11 +161,31 @@ def main(interpolating: bool = False):
             minio_client.fput_object("pnoa-lidar", f"rasters/merged/{feature}_interpolated.tif", interpolated_merged_path)
             interpolated_merged_path.unlink()
 
+            if crop:
+                cropped_merged_path = Path(os.environ.get("TMP_DIR"), f"{feature}_interpolated_cropped.tif")
+                minio_client.fget_object("etc-products", "2021/June/S2A_MSIL2A_20210607T105621_N0300_R094_T30SUF_20210607T155717/raw/B02_10m.jp2", Path(os.environ.get("TMP_DIR"), "mask.jp2"))
+                with rasterio.open(Path(os.environ.get("TMP_DIR"), "mask.jp2")) as mask:
+                    mask_bounds = mask.bounds
+                with rasterio.open(interpolated_merged_path) as src:
+                    out_image, out_transform = rasterio.mask.mask(src, [mask_bounds], crop=True)
+                    out_meta = src.meta.copy()
+                    out_meta.update({
+                        "driver": "GTiff",
+                        "height": out_image.shape[1],
+                        "width": out_image.shape[2],
+                        "transform": out_transform,
+                        "crs": src.crs
+                    })
+                    with rasterio.open(cropped_merged_path, 'w', **out_meta) as dst:
+                        dst.write(out_image)
+                minio_client.fput_object("pnoa-lidar", f"rasters/merged/{feature}_interpolated_cropped.tif", cropped_merged_path)
+                cropped_merged_path.unlink()
+
         merged_path.unlink()
 
         print(f"Finished merging rasters for feature: {feature}")
 
 if __name__ == "__main__":
-    main(interpolating=True)
+    main(interpolating=True, crop=True)
 
 
