@@ -19,7 +19,7 @@ elevation_dir.mkdir(parents=True, exist_ok=True)
 max_height_dir.mkdir(parents=True, exist_ok=True)
 
 # Define selected features
-selected_features = [
+covariance_features = [
     "Anisotropy",
     "DemantkeVerticality",
     "Eigenentropy",
@@ -32,8 +32,19 @@ selected_features = [
     "Verticality"
 ]
 
+normal_features = [
+    "NormalX",
+    "NormalY",
+    "NormalZ",
+    "Curvature"
+]
+
+density_features = [
+    "RadialDensity"
+]
+
 # Create directories for each feature
-for feature in selected_features:
+for feature in covariance_features:
     feature_dir = Path(tmp_dir, feature)
     feature_dir.mkdir(parents=True, exist_ok=True)
 
@@ -68,8 +79,8 @@ def process_laz_file(laz_file):
     # Base pipeline for elevation and max height
     base_pipeline = [
         {"type": "readers.las", "filename": local_laz_file},
-        {"type": "filters.decimation", "step": 3},
         {"type": "filters.range", "limits": "Classification![7:7]"},
+        {"type": "filters.sample", "radius": 1.0},
         {"type": "filters.outlier", "method": "statistical", "mean_k": 8, "multiplier": 2.5},
     ]
 
@@ -78,7 +89,17 @@ def process_laz_file(laz_file):
         "type": "filters.covariancefeatures",
         "knn": 8,
         "threads": 2,
-        "feature_set": ",".join(selected_features)  # Compute only the selected features
+        "feature_set": ",".join(covariance_features)  # Compute only the selected features
+    }
+
+    normal_filter = {
+        "type": "filters.normal",
+        "knn": 8  # Adjust the K nearest neighbors value as necessary
+    }
+
+    radial_density_filter = {
+        "type": "filters.radialdensity",
+        "radius": 1.0  # Adjust the radius as needed
     }
 
     # Writers for elevation and max height
@@ -107,7 +128,7 @@ def process_laz_file(laz_file):
 
     # Build the full pipeline with covariance features
     feature_writers = []
-    for feature in selected_features:
+    for feature in covariance_features + normal_features + density_features:
         feature_out_path = str(Path(tmp_dir, feature, f"{Path(laz_file).stem}.tif"))
         feature_writer = {
             "type": "writers.gdal",
@@ -120,7 +141,7 @@ def process_laz_file(laz_file):
         feature_writers.append(feature_writer)
 
     # Combine all parts of the pipeline
-    complete_pipeline = base_pipeline + [covariance_features_filter]  + feature_writers + [elevation_writer] + list(max_height_writer)
+    complete_pipeline = base_pipeline + [covariance_features_filter] + [normal_filter] + [radial_density_filter]  + feature_writers + [elevation_writer] + list(max_height_writer)
 
     # Execute the pipeline
     pipeline_json = json.dumps({"pipeline": complete_pipeline})
@@ -128,19 +149,19 @@ def process_laz_file(laz_file):
     pipeline.execute()
 
     # Upload generated files to Minio
-    minio_client.fput_object("pnoa-lidar", str(Path("rasters", "elevation", f"{Path(laz_file).stem}.tif")), out_elevation_path)
-    minio_client.fput_object("pnoa-lidar", str(Path("rasters", "max_height", f"{Path(laz_file).stem}.tif")), out_max_height_path)
+    minio_client.fput_object("pnoa-lidar", str(Path("rasters_sam", "elevation", f"{Path(laz_file).stem}.tif")), out_elevation_path)
+    minio_client.fput_object("pnoa-lidar", str(Path("rasters_sam", "max_height", f"{Path(laz_file).stem}.tif")), out_max_height_path)
 
     # Upload feature files
-    for feature in selected_features:
+    for feature in covariance_features + normal_features + density_features:
         feature_out_path = str(Path(tmp_dir, feature, f"{Path(laz_file).stem}.tif"))
-        minio_client.fput_object("pnoa-lidar", str(Path("rasters", feature, f"{Path(laz_file).stem}.tif")), feature_out_path)
+        minio_client.fput_object("pnoa-lidar", str(Path("rasters_sam", feature, f"{Path(laz_file).stem}.tif")), feature_out_path)
 
     # Cleanup temporary files
     Path(local_laz_file).unlink()
     Path(out_elevation_path).unlink()
     Path(out_max_height_path).unlink()
-    for feature in selected_features:
+    for feature in covariance_features + normal_features + density_features:
         Path(tmp_dir, feature, f"{Path(laz_file).stem}.tif").unlink()
 
 def batch_process(tasks, batch_size):
@@ -163,24 +184,24 @@ def main():
 
     # Get processed files for each type
     processed_elevation_files = [
-        Path(obj.object_name).stem for obj in minio_client.list_objects("pnoa-lidar", prefix="rasters/elevation/", recursive=True)
+        Path(obj.object_name).stem for obj in minio_client.list_objects("pnoa-lidar", prefix="rasters_sam/elevation/", recursive=True)
     ]
 
     processed_max_height_files = [
-        Path(obj.object_name).stem for obj in minio_client.list_objects("pnoa-lidar", prefix="rasters/max_height/", recursive=True)
+        Path(obj.object_name).stem for obj in minio_client.list_objects("pnoa-lidar", prefix="rasters_sam/max_height/", recursive=True)
     ]
 
     # Get processed files for each selected feature
     processed_feature_files = {}
-    for feature in selected_features:
+    for feature in covariance_features + normal_features + density_features:
         feature_processed_files = [
-            Path(obj.object_name).stem for obj in minio_client.list_objects("pnoa-lidar", prefix=f"rasters/{feature}/", recursive=True)
+            Path(obj.object_name).stem for obj in minio_client.list_objects("pnoa-lidar", prefix=f"rasters_sam/{feature}/", recursive=True)
         ]
         processed_feature_files[feature] = set(feature_processed_files)
 
     # Determine fully processed files (intersection of all feature sets)
     fully_processed_files = set(processed_elevation_files) & set(processed_max_height_files)
-    for feature in selected_features:
+    for feature in covariance_features + normal_features + density_features:    
         fully_processed_files &= processed_feature_files[feature]
 
     # Filter LAZ files to process only the ones not fully processed
