@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from itertools import compress
 from pathlib import Path
@@ -19,6 +20,7 @@ from landcoverpy.config import settings
 from landcoverpy.exceptions import NoSentinelException
 from landcoverpy.execution_mode import ExecutionMode
 from landcoverpy.minio import MinioConnection
+from landcoverpy.mongo import MongoConnection
 from landcoverpy.rasterpoint import RasterPoint
 from landcoverpy.utilities.geometries import (
     _convert_3D_2D,
@@ -104,7 +106,7 @@ def _read_raster(
         band = _normalize(band, value1, value2)
 
     if rescale:
-        band, kwargs = _rescale_band(band, kwargs, 10, band_name)
+        band, kwargs = _rescale_band(band, kwargs, 10)
         
 
     # Create a temporal memory file to mask the band
@@ -140,15 +142,15 @@ def _get_raster_filename_from_path(raster_path):
     """
     Get a filename from a raster's path
     """
-    return raster_path.split("/")[-1]
+    return Path(raster_path).name
 
 
 def _get_raster_name_from_path(raster_path):
     """
-    Get a raster's name from a raster's path
+    Get a raster's name from a raster's path without the spatial resolution (e.g. SLC_10m.tif -> SLC)
     """
-    raster_filename = _get_raster_filename_from_path(raster_path)
-    return raster_filename.split(".")[0].split("_")[0]
+    raster_filename = Path(raster_path).stem
+    return raster_filename.split("_")[0]
 
 
 def _get_spatial_resolution_raster(raster_path):
@@ -167,38 +169,56 @@ def _get_kwargs_raster(raster_path):
         kwargs = raster_file.meta
         return kwargs
 
+def _is_composite_product(product_title: str):
+    """
+    Check if a product is a composite product.
+    """
+    is_composite_product = product_title.startswith("S2S") or product_title.startswith("S2E")
+    return is_composite_product
+
 def _get_product_rasters_paths(
-    product_metadata: dict, minio_client: MinioConnection, minio_bucket: str
+    product_metadata: dict, minio_client: MinioConnection
 ) -> Tuple[Iterable[str], Iterable[bool]]:
     """
     Get the paths to all rasters of a product in minio.
     Another list of boolean is returned, it points out if each raster is a sentinel band or not (e.g. index).
     """
-    product_title = product_metadata["title"]
-    product_dir = None
-
-    if minio_bucket == settings.MINIO_BUCKET_NAME_PRODUCTS:
-        year = product_metadata["date"].strftime("%Y")
-        month = product_metadata["date"].strftime("%B")
-        product_dir = f"{year}/{month}/{product_title}"
-
-    elif minio_bucket == settings.MINIO_BUCKET_NAME_COMPOSITES:
-        product_dir = product_title
-
-    bands_dir = f"{product_dir}/raw/"
-    indexes_dir = f"{product_dir}/indexes/{product_title}/"
-
-    bands_paths = minio_client.list_objects(minio_bucket, prefix=bands_dir)
-    indexes_path = minio_client.list_objects(minio_bucket, prefix=indexes_dir)
 
     rasters = []
     is_band = []
-    for index_path in indexes_path:
-        rasters.append(index_path.object_name)
-        is_band.append(False)
+    
+    bands_dir = product_metadata["minioBandsPath"]
+    minio_bucket = product_metadata["minioBucket"]
+    bands_paths = minio_client.list_objects(minio_bucket, prefix=bands_dir)
+
     for band_path in bands_paths:
         rasters.append(band_path.object_name)
         is_band.append(True)
+
+    try:
+        indexes_path = [
+            index_data["rasterMinioPath"]
+            for index_data in product_metadata["indexes"].values()
+        ]
+    except KeyError:
+        indexes_path = []
+
+    for index_path in indexes_path:
+        rasters.append(index_path)
+        is_band.append(False)
+
+
+    try:
+        intermediate_products_path = [
+            intermediate_product_data["rasterMinioPath"]
+            for intermediate_product_data in product_metadata["intermediateProducts"].values()
+        ]
+    except KeyError:
+        intermediate_products_path = []
+
+    for intermediate_product_path in intermediate_products_path:
+        rasters.append(intermediate_product_path)
+        is_band.append(False)
 
     return (rasters, is_band)
 
@@ -250,16 +270,15 @@ def _download_sample_band_by_title(
     product_metadata = mongo_collection.find_one({"title": title})
 
     product_path = str(Path(settings.TMP_DIR, title))
-    minio_bucket_product = settings.MINIO_BUCKET_NAME_PRODUCTS
     rasters_paths, is_band = _get_product_rasters_paths(
-        product_metadata, minio_client, minio_bucket=minio_bucket_product
+        product_metadata, minio_client
     )
     sample_band_paths_minio = list(compress(rasters_paths, is_band))
     for sample_band_path_minio in sample_band_paths_minio:
         sample_band_path = str(
             Path(product_path, _get_raster_filename_from_path(sample_band_path_minio))
         )
-        minio_client.fget_object(minio_bucket_product, sample_band_path_minio, str(sample_band_path))
+        minio_client.fget_object(product_metadata["minioBucket"], sample_band_path_minio, str(sample_band_path))
         if _get_spatial_resolution_raster(sample_band_path) == 10:
             return sample_band_path
 
@@ -411,8 +430,7 @@ def _crop_as_sentinel_raster(execution_mode: ExecutionMode, raster_path: str, se
 def _rescale_band(
     band: np.ndarray,
     kwargs: dict,
-    spatial_resol: int,
-    band_name: str
+    spatial_resol: int = 10,
 ):
     img_resolution = kwargs["transform"][0]
 

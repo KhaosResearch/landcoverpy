@@ -57,18 +57,18 @@ def _process_tile_train(tile, polygons_in_tile):
 
     print(f"Working in tile {tile}")
     # Mongo query for obtaining valid products
-    max_cloud_percentage = settings.MAX_CLOUD
+    min_useful_data_percentage = settings.MIN_USEFUL_DATA_PERCENTAGE
 
     product_per_season = {}
 
     for season in seasons:
         season_start, season_end = seasons[season]
         product_metadata_cursor = get_products_by_tile_and_date(
-            tile, mongo_products_collection, season_start, season_end, max_cloud_percentage
+            tile, mongo_products_collection, season_start, season_end, min_useful_data_percentage
         )
 
         # If there are more products than the maximum specified for creating a composite, take the last ones
-        product_per_season[season] = list(product_metadata_cursor)[-settings.MAX_PRODUCTS_COMPOSITE:]
+        product_per_season[season] = list(product_metadata_cursor)[:settings.MAX_PRODUCTS_COMPOSITE]
 
         if len(product_per_season[season]) == 0:
             raise NoSentinelException(f"There is no valid Sentinel products for tile {tile} in season {season}. Skipping it...")
@@ -112,39 +112,29 @@ def _process_tile_train(tile, polygons_in_tile):
 
     for season, products_metadata in product_per_season.items():
         print(season)
-        bucket_products = settings.MINIO_BUCKET_NAME_PRODUCTS
-        bucket_composites = settings.MINIO_BUCKET_NAME_COMPOSITES
-        current_bucket = None
 
         if len(products_metadata) == 0:
             raise NoSentinelException(f"There is no valid Sentinel products for tile {tile}. Skipping it...")
-
-        elif len(products_metadata) == 1:
-            product_metadata = products_metadata[0]
-            current_bucket = bucket_products
         else:
             # If there are multiple products for one season, use a composite.
             mongo_client.set_collection(settings.MONGO_COMPOSITES_COLLECTION)
             mongo_composites_collection = mongo_client.get_collection_object()
             products_metadata_list = list(products_metadata)
             product_metadata = _get_composite(
-                products_metadata_list, mongo_composites_collection, execution_mode
+                products_metadata_list, execution_mode
             )
             if product_metadata is None:
                 _create_composite(
                     products_metadata_list,
-                    minio_client,
-                    bucket_products,
-                    bucket_composites,
-                    mongo_composites_collection,
                     execution_mode
                 )
                 product_metadata = _get_composite(
-                    products_metadata_list, mongo_composites_collection, execution_mode
+                    products_metadata_list, execution_mode
                 )
-            current_bucket = bucket_composites
 
         product_name = product_metadata["title"]
+        minio_bucket = product_metadata["minioBucket"]
+
 
         # For validate dataset geometries, the product name is added.
         raster_product_name = np.full_like(
@@ -154,7 +144,7 @@ def _process_tile_train(tile, polygons_in_tile):
         tile_df = pd.concat([tile_df, raster_df], axis=1)
 
         (rasters_paths, is_band) = _get_product_rasters_paths(
-            product_metadata, minio_client, current_bucket
+            product_metadata, minio_client
         )
 
         temp_product_folder = Path(settings.TMP_DIR, product_name + ".SAFE")
@@ -193,7 +183,7 @@ def _process_tile_train(tile, polygons_in_tile):
 
             print(f"Downloading raster {raster_name} from minio into {temp_path}")
             minio_client.fget_object(
-                bucket_name=current_bucket,
+                bucket_name=minio_bucket,
                 object_name=raster_path,
                 file_path=str(temp_path),
             )

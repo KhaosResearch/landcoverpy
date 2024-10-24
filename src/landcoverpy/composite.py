@@ -1,4 +1,6 @@
 import traceback
+from os.path import join
+from datetime import datetime
 from hashlib import sha256
 from itertools import compress
 from pathlib import Path
@@ -9,10 +11,11 @@ import rasterio
 from pymongo.collection import Collection
 from scipy.ndimage import convolve
 
-from landcoverpy import raw_index_calculation_composite
+from landcoverpy.utilities.raw_index_calculation import calculate_raw_index
 from landcoverpy.config import settings
 from landcoverpy.execution_mode import ExecutionMode
 from landcoverpy.minio import MinioConnection
+from landcoverpy.mongo import MongoConnection
 from landcoverpy.utilities.raster import (
     _get_kwargs_raster,
     _get_product_rasters_paths,
@@ -74,59 +77,53 @@ def _composite(
 
     return (composite_out, composite_kwargs)
 
-
-def _get_id_composite(products_ids: List[str], execution_mode: ExecutionMode) -> str:
+def _get_hash_composite(products_titles: List[str], execution_mode: ExecutionMode) -> str:
     """
-    Calculate the id of a composite using its products' ids and the execution mode.
+    Calculate the hash of a composite using its products' titles and the execution mode.
     """
-    products_ids.sort()
     mode_encoded = "1" if execution_mode != ExecutionMode.TRAINING else "0"
-    concat_ids = "".join(products_ids)
-    id_code = concat_ids + mode_encoded 
-    hashed_ids = sha256(id_code.encode("utf-8")).hexdigest()
-    return hashed_ids
+    products_titles.sort()
+    concat_titles = "".join(products_titles)
+    concat_titles += mode_encoded
+    hashed_titles = sha256(concat_titles.encode("utf-8")).hexdigest()
+    return hashed_titles
 
 
-def _get_title_composite(
-    products_dates: List[str], products_tiles: List[str], composite_id: str, execution_mode: ExecutionMode
-) -> str:
+def _get_title_composite(product_titles: List[str], execution_mode: ExecutionMode) -> str:
     """
     Get the title of a composite.
     If the execution mode is training, the title will contain the "S2E" prefix, else it will be "S2S".
     """
-    if not all(product_tile == products_tiles[0] for product_tile in products_tiles):
-        raise ValueError(
-            f"Error creating composite, products have different tile: {products_tiles}"
-        )
-    tile = products_tiles[0]
+    tiles = [product_title.split("_")[5] for product_title in product_titles]
+    if not all(tile == tiles[0] for tile in tiles):
+        raise ValueError("All products must have the same tile")
+    tile = tiles[0]
+    composite_hash = _get_hash_composite(product_titles, execution_mode)
+    products_dates = [product_title.split("_")[2] for product_title in product_titles]
     first_product_date, last_product_date = min(products_dates), max(products_dates)
     first_product_date = first_product_date.split("T")[0]
     last_product_date = last_product_date.split("T")[0]
     prefix = "S2S" if execution_mode != ExecutionMode.TRAINING else "S2E"
-    composite_title = f"{prefix}_MSIL2A_{first_product_date}_NXXX_RXXX_{tile}_{last_product_date}_{composite_id[:8]}"
+    composite_title = f"{prefix}_MSIL2A_{first_product_date}_NXXX_RXXX_{tile}_{last_product_date}_{composite_hash[:8]}"
     return composite_title
 
 
-# Intentar leer de mongo si existe algun composite con esos products
 def _get_composite(
-    products_metadata: Iterable[dict], mongo_collection: Collection, execution_mode: ExecutionMode
+    products_metadata: Iterable[dict], execution_mode: ExecutionMode
 ) -> dict:
     """
     Search a composite metadata in mongo.
     """
-    products_ids = [products_metadata["id"] for products_metadata in products_metadata]
-    hashed_id_composite = _get_id_composite(products_ids, execution_mode)
-    composite_metadata = mongo_collection.find_one({"id": hashed_id_composite})
+    mongo_collection = MongoConnection().get_composite_collection_object()
+    products_titles = [products_metadata["title"] for products_metadata in products_metadata]
+    title_composite = _get_title_composite(products_titles, execution_mode)
+    composite_metadata = mongo_collection.find_one({"title": title_composite})
     return composite_metadata
 
 
 def _create_composite(
     products_metadata: Iterable[dict],
-    minio_client: MinioConnection,
-    bucket_products: str,
-    bucket_composites: str,
-    mongo_composites_collection: Collection,
-    execution_mode: ExecutionMode
+    execution_mode: ExecutionMode,
 ) -> None:
     """
     Compose multiple Sentinel-2 products into a new product, this product is called "composite".
@@ -136,15 +133,21 @@ def _create_composite(
     Once computed, the composite is stored in Minio, and its metadata in Mongo. 
     """
 
+    minio_client = MinioConnection()
+    mongo_client = MongoConnection()
+    mongo_products_collection = mongo_client[settings.MONGO_DB][settings.MONGO_PRODUCTS_COLLECTION]
+    mongo_composites_collection = mongo_client[settings.MONGO_DB][settings.MONGO_COMPOSITES_COLLECTION]
+
     products_titles = [product["title"] for product in products_metadata]
     print(
         "Creating composite of ", len(products_titles), " products: ", products_titles
     )
 
-    products_ids = []
+    tmp_dir = settings.TMP_DIR
+    bucket_composites = settings.MINIO_BUCKET_NAME_COMPOSITES
+
     products_titles = []
     products_dates = []
-    products_tiles = []
     bands_paths_products = []
     cloud_masks_temp_paths = []
     cloud_masks = {"10": [], "20": [], "60": []}
@@ -154,13 +157,15 @@ def _create_composite(
     for product_metadata in products_metadata:
 
         product_title = product_metadata["title"]
-        products_ids.append(product_metadata["id"])
         products_titles.append(product_title)
         products_dates.append(product_title.split("_")[2])
-        products_tiles.append(product_title.split("_")[5])
+
+
+        product_metadata = mongo_products_collection.find_one({"title": product_title})
+        minio_bucket_products = product_metadata["minioBucket"]
 
         (rasters_paths, is_band) = _get_product_rasters_paths(
-            product_metadata, minio_client, bucket_products
+            product_metadata, minio_client
         )
         bands_paths_product = list(compress(rasters_paths, is_band))
         bands_paths_products.append(bands_paths_product)
@@ -170,16 +175,16 @@ def _create_composite(
             band_name = _get_raster_name_from_path(band_path)
             band_filename = _get_raster_filename_from_path(band_path)
             if "SCL" in band_name:
-                temp_dir_product = f"{settings.TMP_DIR}/{product_title}.SAFE"
+                temp_dir_product = f"{tmp_dir}/{product_title}"
                 temp_path_product_band = f"{temp_dir_product}/{band_filename}"
-                minio_client.fget_object(bucket_products, band_path, str(temp_path_product_band))
+                minio_client.fget_object(minio_bucket_products, band_path, str(temp_path_product_band))
                 cloud_masks_temp_paths.append(temp_path_product_band)
                 spatial_resolution = str(
                     int(_get_spatial_resolution_raster(temp_path_product_band))
                 )
                 scl_band = _read_raster(temp_path_product_band)
                 # Binarize scl band to get a cloud mask
-                cloud_mask = np.isin(scl_band, scl_cloud_values).astype(np.bool)
+                cloud_mask = np.isin(scl_band, scl_cloud_values).astype(bool)
                 # Expand cloud mask for a more aggresive masking
                 if execution_mode == ExecutionMode.TRAINING:
                     cloud_mask = _expand_cloud_mask(cloud_mask, int(spatial_resolution))
@@ -202,9 +207,8 @@ def _create_composite(
                     cloud_masks_temp_paths.append(scl_band_10m_temp_path)
                     cloud_masks["10"].append(cloud_mask_10m)
 
-    composite_id = _get_id_composite(products_ids, execution_mode)
-    composite_title = _get_title_composite(products_dates, products_tiles, composite_id, execution_mode)
-    temp_path_composite = Path(settings.TMP_DIR, composite_title + ".SAFE")
+    composite_title = _get_title_composite(products_titles, execution_mode)
+    temp_path_composite = Path(tmp_dir, composite_title)
 
     uploaded_composite_band_paths = []
     temp_paths_composite_bands = []
@@ -226,14 +230,14 @@ def _create_composite(
             temp_path_list = []
 
             for product_i_band_path in products_i_band_path:
-                product_title = product_i_band_path.split("/")[2]
+                product_title = product_i_band_path.split("/")[4]
 
-                temp_dir_product = f"{settings.TMP_DIR}/{product_title}.SAFE"
+                temp_dir_product = f"{tmp_dir}/{product_title}"
                 temp_path_product_band = f"{temp_dir_product}/{band_filename}"
                 print(
                     f"Downloading raster {band_name} from minio into {temp_path_product_band}"
                 )
-                minio_client.fget_object(bucket_products, product_i_band_path, str(temp_path_product_band))
+                minio_client.fget_object(minio_bucket_products, product_i_band_path, str(temp_path_product_band))
                 spatial_resolution = str(
                     int(_get_spatial_resolution_raster(temp_path_product_band))
                 )
@@ -266,7 +270,12 @@ def _create_composite(
 
             # Upload raster to minio
             band_filename = band_filename[:-3] + "tif"
-            minio_band_path = f"{composite_title}/raw/{band_filename}"
+            splits = product_title.split("_T")
+            tile_id = str(splits[1][0:5])
+            splits = product_title.split("_")
+            year = splits[2][0:4]
+            month = datetime.strptime(splits[2][4:6], "%m")
+            minio_band_path = join(tile_id, year, month.strftime("%B"), "composites", composite_title, "raw", band_filename)
             minio_client.fput_object(
                 bucket_name=bucket_composites,
                 object_name=minio_band_path,
@@ -279,29 +288,20 @@ def _create_composite(
             )
 
         composite_metadata = dict()
-        composite_metadata["id"] = composite_id
         composite_metadata["title"] = composite_title
-        composite_metadata["products"] = [
-            dict(id=product_id, title=products_title)
-            for (product_id, products_title) in zip(products_ids, products_titles)
-        ]
+        composite_metadata["products"] = [{"title": products_title} for products_title in products_titles]
         composite_metadata["first_date"] = _sentinel_date_to_datetime(
             min(products_dates)
         )
         composite_metadata["last_date"] = _sentinel_date_to_datetime(
             max(products_dates)
         )
+        composite_metadata["minioBucket"] = bucket_composites
+        composite_metadata["minioBandsPath"] = minio_band_path = join(tile_id, year, month.strftime("%B"), "composites", composite_title, "raw", "")
 
         # Upload metadata to mongo
         result = mongo_composites_collection.insert_one(composite_metadata)
         print("Inserted data in mongo, id: ", result.inserted_id)
-
-        # Compute indexes
-        raw_index_calculation_composite.calculate_raw_indexes(
-            _get_id_composite(
-                [products_metadata["id"] for products_metadata in products_metadata], execution_mode
-            )
-        )
 
     except (Exception, KeyboardInterrupt) as e:
         print("Removing uncompleted composite from minio")
@@ -310,15 +310,17 @@ def _create_composite(
             minio_client.remove_object(
                 bucket_name=bucket_composites, object_name=composite_band
             )
-        products_ids = [
-            products_metadata["id"] for products_metadata in products_metadata
+        products_titles = [
+            products_metadata["title"] for products_metadata in products_metadata
         ]
-        mongo_composites_collection.delete_one({"id": _get_id_composite(products_ids)})
+        mongo_composites_collection.delete_one({"title": _get_title_composite(products_titles, execution_mode)})
         raise e
 
     finally:
         for composite_band in temp_paths_composite_bands + cloud_masks_temp_paths:
             Path.unlink(Path(composite_band))
+
+    return composite_metadata
 
 
 def _expand_cloud_mask(cloud_mask: np.ndarray, spatial_resolution: int):

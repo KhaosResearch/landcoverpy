@@ -56,7 +56,7 @@ class _Settings(BaseSettings):
     SEASONS_FILE: str = "/seasons.json"
 
     # Product filtering parameters
-    MAX_CLOUD: float = 1.0
+    MIN_USEFUL_DATA_PERCENTAGE: float = 0.0
 
     # Maximum number of products used in a composite
     MAX_PRODUCTS_COMPOSITE: int = 1

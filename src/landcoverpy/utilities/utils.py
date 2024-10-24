@@ -42,53 +42,45 @@ def get_products_by_tile_and_date(
     mongo_collection: Collection,
     start_date: datetime,
     end_date: datetime,
-    cloud_percentage,
+    min_useful_data_percentage,
 ) -> Cursor:
     """
-    Query to mongo for obtaining products filtered by tile, date and cloud percentage
+    Query to mongo for obtaining products filtered by tile, date and min_useful_data_percentage. It does not work with composites.
     """
-    product_metadata_cursor = mongo_collection.aggregate(
-        [
-            {
-                "$project": {
-                    "_id": 1,
-                    "indexes": {
-                        "$filter": {
-                            "input": "$indexes",
-                            "as": "index",
-                            "cond": {
-                                "$and": [
-                                    {"$eq": ["$$index.mask", None]},
-                                    {"$eq": ["$$index.name", "cloud-mask"]},
-                                    {"$lt": ["$$index.value", cloud_percentage]},
-                                ]
-                            },
+
+    pipeline = [
+        {
+            "$match": {
+                "title": {"$regex": tile},
+                "datetakeSensingTime": {"$gte": start_date, "$lt": end_date}
+            }
+        },
+        {
+            "$addFields": {
+                "usefulPixelsPercentage": {
+                    "$subtract": [
+                        100,
+                        {
+                            "$add": [
+                                {"$multiply": ["$intermediateProducts.cloudmask.rasterMeanValue", 100]},
+                                "$noDataPercentage"
+                            ]
                         }
-                    },
-                    "id": 1,
-                    "title": 1,
-                    "size": 1,
-                    "date": 1,
-                    "creationDate": 1,
-                    "ingestionDate": 1,
-                    "objectName": 1,
+                    ]
                 }
-            },
-            {
-                "$match": {
-                    "indexes.0": {"$exists": True},
-                    "title": {"$regex": f"_T{tile}_"},
-                    "date": {
-                        "$gte": start_date,
-                        "$lte": end_date,
-                    },
-                }
-            },
-            {
-                "$sort": {"date":-1}
-            },
-        ]
-    )
+            }
+        },
+        {
+            "$match": {
+                "$expr": {"$gt": ["$usefulPixelsPercentage", min_useful_data_percentage]}
+            }
+        },
+        {
+            "$sort": {"usefulPixelsPercentage": -1}
+        }
+    ]
+
+    product_metadata_cursor = mongo_collection.aggregate(pipeline)
 
     return product_metadata_cursor
 
