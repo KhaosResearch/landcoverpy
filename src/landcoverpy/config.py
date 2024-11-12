@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class _Settings(BaseSettings):
@@ -50,7 +50,7 @@ class _Settings(BaseSettings):
     SL_LABELS_FILE: str = "/sl_labels.json"
 
     # For running in a distributed environment
-    DASK_CLUSTER_IP: str = "0.0.0.0.0:0000"
+    DASK_CLUSTER_IP: str = "0.0.0.0:0000"
 
     # File containing the definition of the seasons
     SEASONS_FILE: str = "/seasons.json"

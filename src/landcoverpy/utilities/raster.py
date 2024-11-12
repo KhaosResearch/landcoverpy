@@ -20,7 +20,6 @@ from landcoverpy.config import settings
 from landcoverpy.exceptions import NoSentinelException
 from landcoverpy.execution_mode import ExecutionMode
 from landcoverpy.minio import MinioConnection
-from landcoverpy.mongo import MongoConnection
 from landcoverpy.rasterpoint import RasterPoint
 from landcoverpy.utilities.geometries import (
     _convert_3D_2D,
@@ -227,6 +226,8 @@ def _download_sample_band_by_tile(tile: str, minio_client: MinioConnection, mong
     Having a tile, download a 10m sample sentinel band of any related product.
     """
     product_metadata = mongo_collection.find_one({"title": {"$regex": f"_T{tile}_"}})
+    if product_metadata is None:
+        raise NoSentinelException(f"Product with tile {tile} wasn't found in the database.")
     product_title = product_metadata["title"]
     sample_band_path = _download_sample_band_by_title(product_title, minio_client, mongo_collection)
     return sample_band_path

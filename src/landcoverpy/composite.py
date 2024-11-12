@@ -1,5 +1,6 @@
 import traceback
 from os.path import join
+from collections import defaultdict
 from datetime import datetime
 from hashlib import sha256
 from itertools import compress
@@ -120,6 +121,87 @@ def _get_composite(
     composite_metadata = mongo_collection.find_one({"title": title_composite})
     return composite_metadata
 
+def _download_and_validate_band(band_path, expected_shape, minio_client, product_title, minio_bucket):
+    """
+    Check if a band is corrupted by downloading it from Minio and checking several properties.
+    Returns True if the band is not corrupted, False otherwise.
+    """
+    tmp_path = str(Path(settings.TMP_DIR, product_title, _get_raster_filename_from_path(band_path)))
+    minio_client.fget_object(minio_bucket, band_path, tmp_path)
+    band_kwargs = _get_kwargs_raster(tmp_path)
+    band_shape = (band_kwargs["count"], band_kwargs["height"], band_kwargs["width"])
+    if band_shape != expected_shape:
+        print(f"Band {band_path} has wrong shape, expected {expected_shape}, but metadata says {band_shape}")
+        return False
+    band_spatial_resolution = _get_spatial_resolution_raster(tmp_path)
+    raster_filename = _get_raster_filename_from_path(band_path)
+    if str(int(band_spatial_resolution)) not in raster_filename:
+        print(f"Band {band_path} has wrong spatial resolution, expected {raster_filename}, but metadata says {band_spatial_resolution}")
+        return False
+    band = _read_raster(tmp_path)
+    if band.shape != expected_shape:
+        print(f"Band {band_path} has wrong shape, expected {expected_shape}, but raster says {band.shape}")
+        return False
+    return True
+
+def _validate_composite_products(products_metadata: Iterable[dict]) -> Iterable[dict]:
+    """
+    Validates product metadata by ensuring essential cloud mask and band dimensions are correct.
+    Only uncorrupted products are retained in the validated list.
+
+    Args:
+        products_metadata (Iterable[dict]): Metadata for products to validate.
+
+    Returns:
+        Iterable[dict]: List of validated product metadata.
+    """
+    shape_requirements = {
+        "10m": (1, 10980, 10980),
+        "20m": (1, 5490, 5490),
+        "60m": (1, 1830, 1830),
+    }
+    
+    bands_to_validate = ["SCL_20m", "SCL_60m", "B01_10m", "B01_20m", "B01_60m"]
+    
+    validated_products_metadata = []
+    minio_client = MinioConnection(
+        host="ip_products_minio",
+        port="9000",
+        access_key="user",
+        secret_key="pass",
+    )
+
+    for product_metadata in products_metadata:
+        product_title = product_metadata["title"]
+        minio_bucket = product_metadata["minioBucket"]
+        rasters_paths, is_band = _get_product_rasters_paths(product_metadata, minio_client)
+        bands_paths = list(compress(rasters_paths, is_band))
+
+        # filter bands_paths to those that contains any string in bands_to_validate
+        bands_paths = [band_path for band_path in bands_paths if any(band in band_path for band in bands_to_validate)]
+
+        validation_results = []
+        for band_path in bands_paths:
+            resolution = next((res for res in shape_requirements if res in band_path), None)
+            
+            expected_shape = shape_requirements[resolution]
+            
+            # Valida la banda y almacena el resultado
+            is_valid = _download_and_validate_band(
+                band_path,
+                expected_shape,
+                minio_client,
+                product_title,
+                minio_bucket
+            )
+            validation_results.append(is_valid)
+
+        all_valid = all(validation_results)
+
+        if all_valid:
+            validated_products_metadata.append(product_metadata)
+
+    return validated_products_metadata
 
 def _create_composite(
     products_metadata: Iterable[dict],
@@ -134,9 +216,15 @@ def _create_composite(
     """
 
     minio_client = MinioConnection()
+    minio_client_products = MinioConnection(
+        host="ip_products_minio",
+        port="9000",
+        access_key="user",
+        secret_key="pass",
+    )
     mongo_client = MongoConnection()
-    mongo_products_collection = mongo_client[settings.MONGO_DB][settings.MONGO_PRODUCTS_COLLECTION]
-    mongo_composites_collection = mongo_client[settings.MONGO_DB][settings.MONGO_COMPOSITES_COLLECTION]
+    mongo_products_collection = mongo_client.get_collection_object()
+    mongo_composites_collection = mongo_client.get_composite_collection_object()
 
     products_titles = [product["title"] for product in products_metadata]
     print(
@@ -165,7 +253,7 @@ def _create_composite(
         minio_bucket_products = product_metadata["minioBucket"]
 
         (rasters_paths, is_band) = _get_product_rasters_paths(
-            product_metadata, minio_client
+            product_metadata, minio_client_products
         )
         bands_paths_product = list(compress(rasters_paths, is_band))
         bands_paths_products.append(bands_paths_product)
@@ -177,7 +265,7 @@ def _create_composite(
             if "SCL" in band_name:
                 temp_dir_product = f"{tmp_dir}/{product_title}"
                 temp_path_product_band = f"{temp_dir_product}/{band_filename}"
-                minio_client.fget_object(minio_bucket_products, band_path, str(temp_path_product_band))
+                minio_client_products.fget_object(minio_bucket_products, band_path, str(temp_path_product_band))
                 cloud_masks_temp_paths.append(temp_path_product_band)
                 spatial_resolution = str(
                     int(_get_spatial_resolution_raster(temp_path_product_band))
@@ -215,36 +303,44 @@ def _create_composite(
     temp_product_dirs = []
     result = None
     try:
-        num_bands = len(bands_paths_products[0])
-        for i_band in range(num_bands):
-            products_i_band_path = [
-                bands_paths_product[i_band]
-                for bands_paths_product in bands_paths_products
-            ]
-            band_name = _get_raster_name_from_path(products_i_band_path[0])
-            band_filename = _get_raster_filename_from_path(products_i_band_path[0])
+        composite_bands_dict = defaultdict(list)
+        for bands_paths_product in bands_paths_products:
+            for band_path in bands_paths_product:
+                band_name = _get_raster_name_from_path(band_path)
+                band_filename = _get_raster_filename_from_path(band_path)
+                if "SCL" in band_name:
+                    continue
+                composite_bands_dict[band_filename].append(band_path)
+                
+        for band_filename, band_paths in composite_bands_dict.items():
+
+            if len(band_paths) != len(products_titles):
+                print(
+                    f"Band {band_filename} is missing in some products, it will not be included in the composite"
+                )
+                continue
+
+            band_name = _get_raster_name_from_path(band_paths[0])
             if "SCL" in band_name:
                 continue
             temp_path_composite_band = Path(temp_path_composite, band_filename)
 
             temp_path_list = []
 
-            for product_i_band_path in products_i_band_path:
-                product_title = product_i_band_path.split("/")[4]
+            for band_path in band_paths:
+                product_title = band_path.split("/")[4]
 
                 temp_dir_product = f"{tmp_dir}/{product_title}"
                 temp_path_product_band = f"{temp_dir_product}/{band_filename}"
-                print(
-                    f"Downloading raster {band_name} from minio into {temp_path_product_band}"
-                )
-                minio_client.fget_object(minio_bucket_products, product_i_band_path, str(temp_path_product_band))
-                spatial_resolution = str(
-                    int(_get_spatial_resolution_raster(temp_path_product_band))
-                )
+                minio_client_products.fget_object(minio_bucket_products, band_path, str(temp_path_product_band))
 
                 if temp_dir_product not in temp_product_dirs:
                     temp_product_dirs.append(temp_dir_product)
                 temp_path_list.append(temp_path_product_band)
+
+            spatial_resolution = str(
+                int(_get_spatial_resolution_raster(temp_path_list[0]))
+            )
             composite_i_band, kwargs_composite = _composite(
                 temp_path_list,
                 method="median",

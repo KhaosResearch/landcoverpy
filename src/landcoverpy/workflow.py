@@ -40,7 +40,7 @@ def workflow(
     if data_file.endswith(".kmz"):
         data_file = _kmz_to_geojson(data_file)
     if data_file.endswith(".csv"):
-        data_file = _csv_to_geojson(data_file, sep=',')
+        data_file = _csv_to_geojson(data_file, sep=';')
 
     polygons_per_tile = _group_validated_data_points_by_tile(data_file)
 

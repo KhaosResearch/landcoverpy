@@ -42,6 +42,8 @@ def _csv_to_geojson(csv_file: str, sep: str = ";") -> str:
     """
     df = pd.read_csv(csv_file, sep=sep)
 
+    df = df.dropna(subset=['latitude', 'longitude', settings.LC_PROPERTY, settings.SL_PROPERTY])
+
     features = []
     for _, row in df.iterrows():
         feature = {

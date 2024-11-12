@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from landcoverpy.aster import get_dem_from_tile
-from landcoverpy.composite import _create_composite, _get_composite
+from landcoverpy.composite import _create_composite, _get_composite, _validate_composite_products
 from landcoverpy.config import settings
 from landcoverpy.exceptions import NoSentinelException
 from landcoverpy.execution_mode import ExecutionMode
@@ -35,6 +35,12 @@ def _process_tile_train(tile, polygons_in_tile):
     seasons = get_season_dict()
 
     minio_client = MinioConnection()
+    minio_client_products = MinioConnection(
+        host="ip_products_minio",
+        port="9000",
+        access_key="user",
+        secret_key="pass",
+    )
     mongo_client = MongoConnection()
     mongo_products_collection = mongo_client.get_collection_object()
 
@@ -67,8 +73,13 @@ def _process_tile_train(tile, polygons_in_tile):
             tile, mongo_products_collection, season_start, season_end, min_useful_data_percentage
         )
 
+        product_metadata_list = list(product_metadata_cursor)
+        #filter corrupted products
+        print(f"Found {len(product_metadata_list)} products for tile {tile} in season {season}")
+        product_metadata_list = _validate_composite_products(product_metadata_list)
+        print(f"Found {len(product_metadata_list)} valid products for tile {tile} in season {season}")
         # If there are more products than the maximum specified for creating a composite, take the last ones
-        product_per_season[season] = list(product_metadata_cursor)[:settings.MAX_PRODUCTS_COMPOSITE]
+        product_per_season[season] = product_metadata_list[:settings.MAX_PRODUCTS_COMPOSITE]
 
         if len(product_per_season[season]) == 0:
             raise NoSentinelException(f"There is no valid Sentinel products for tile {tile} in season {season}. Skipping it...")
@@ -105,7 +116,7 @@ def _process_tile_train(tile, polygons_in_tile):
         tile_df = pd.concat([tile_df, raster_df], axis=1)
 
     # Get crop mask for sentinel rasters and dataset labeled with database points in tile
-    band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
+    band_path = _download_sample_band_by_tile(tile, minio_client_products, mongo_products_collection)
     s2_band_kwargs = _get_kwargs_raster(band_path)
 
     crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, s2_band_kwargs)
@@ -117,8 +128,6 @@ def _process_tile_train(tile, polygons_in_tile):
             raise NoSentinelException(f"There is no valid Sentinel products for tile {tile}. Skipping it...")
         else:
             # If there are multiple products for one season, use a composite.
-            mongo_client.set_collection(settings.MONGO_COMPOSITES_COLLECTION)
-            mongo_composites_collection = mongo_client.get_collection_object()
             products_metadata_list = list(products_metadata)
             product_metadata = _get_composite(
                 products_metadata_list, execution_mode

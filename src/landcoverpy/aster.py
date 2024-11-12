@@ -163,7 +163,14 @@ def get_dem_from_tile(
     """
     bucket = _get_bucket_by_name(dem_name)
 
-    sample_band_path = _download_sample_band_by_tile(tile, minio_client, mongo_collection)
+    minio_client_products = MinioConnection(
+        host="ip_products_minio",
+        port="9000",
+        access_key="user",
+        secret_key="pass",
+    )
+
+    sample_band_path = _download_sample_band_by_tile(tile, minio_client_products, mongo_collection)
 
     (
         top_left,
