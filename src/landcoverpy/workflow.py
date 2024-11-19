@@ -40,7 +40,7 @@ def workflow(
     if data_file.endswith(".kmz"):
         data_file = _kmz_to_geojson(data_file)
     if data_file.endswith(".csv"):
-        data_file = _csv_to_geojson(data_file, sep=',')
+        data_file = _csv_to_geojson(data_file, sep=';')
 
     polygons_per_tile = _group_validated_data_points_by_tile(data_file)
 
@@ -75,7 +75,7 @@ def workflow(
         print("Creating dataset from tiles")
         # Tiles related to the traininig zone that wasn't already processed
         tiles = _remove_tiles_already_processed_in_training(list(polygons_per_tile.keys()))
-
+        tiles = ["30SUF"]
         # In training, read all rasters available
         used_columns = None
 

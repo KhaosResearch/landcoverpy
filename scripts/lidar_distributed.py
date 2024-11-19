@@ -52,9 +52,8 @@ def process_laz_file(laz_file):
     # Base pipeline for normal and radial density
     base_pipeline = [
         {"type": "readers.las", "filename": local_laz_file},
-        {"type": "filters.decimation", "step": 3},
         {"type": "filters.range", "limits": "Classification![7:7]"},
-        {"type": "filters.outlier", "method": "statistical", "mean_k": 8, "multiplier": 2.5},
+        {"type": "filters.sample", "radius": 1.0},
     ]
 
     # Add normal and radial density filters

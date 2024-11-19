@@ -28,6 +28,7 @@ class _Settings(BaseSettings):
     MINIO_DATA_FOLDER_NAME: str = None
     MINIO_ACCESS_KEY: str = "minio"
     MINIO_SECRET_KEY: str = "minio"
+    MINIO_LIDAR_BUCKET: str = None
 
     # Sentinel download API
     SENTINEL_HOST: str = "https://scihub.copernicus.eu/dhus"
@@ -50,13 +51,13 @@ class _Settings(BaseSettings):
     SL_LABELS_FILE: str = "/sl_labels.json"
 
     # For running in a distributed environment
-    DASK_CLUSTER_IP: str = "0.0.0.0.0:0000"
+    DASK_CLUSTER_IP: str = "0.0.0.0:0000"
 
     # File containing the definition of the seasons
     SEASONS_FILE: str = "/seasons.json"
 
     # Product filtering parameters
-    MAX_CLOUD: float = 1.0
+    MIN_USEFUL_DATA_PERCENTAGE: float = 0.0
 
     # Maximum number of products used in a composite
     MAX_PRODUCTS_COMPOSITE: int = 1

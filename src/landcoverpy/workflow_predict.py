@@ -12,7 +12,7 @@ import rasterio.windows
 from rasterio.windows import Window
 
 from landcoverpy.aster import get_dem_from_tile
-from landcoverpy.composite import _create_composite, _get_composite
+from landcoverpy.composite import _create_composite, _get_composite, _validate_composite_products
 from landcoverpy.config import settings
 from landcoverpy.exceptions import WorkflowExecutionException, NoSentinelException
 from landcoverpy.execution_mode import ExecutionMode
@@ -46,6 +46,12 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
     seasons = get_season_dict()
 
     minio_client = MinioConnection()
+    minio_client_products = MinioConnection(
+        host="ip_products_minio",
+        port="9000",
+        access_key="user",
+        secret_key="pass",
+    )
     mongo_client = MongoConnection()
     mongo_products_collection = mongo_client.get_collection_object()
 
@@ -108,13 +114,13 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
             sl_classifiers[lc_mapping[sl_model]] = joblib.load(local_sl_model_locations[sl_model])
     
 
-    band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
+    band_path = _download_sample_band_by_tile(tile, minio_client_products, mongo_products_collection)
     kwargs_s2 = _get_kwargs_raster(band_path)
 
     if use_block_windows:
-        windows = _get_block_windows_by_tile(tile, minio_client, mongo_products_collection)
+        windows = _get_block_windows_by_tile(tile, minio_client_products, mongo_products_collection)
     elif window_slices is not None:
-        windows = _generate_windows_from_slices_number(tile, window_slices, minio_client, mongo_products_collection)
+        windows = _generate_windows_from_slices_number(tile, window_slices, minio_client_products, mongo_products_collection)
     else:
         windows = [Window(0, 0, kwargs_s2['width'], kwargs_s2['height'])]
 
@@ -153,18 +159,21 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
 
     print(f"Working in tile {tile}")
     # Mongo query for obtaining valid products
-    max_cloud_percentage = settings.MAX_CLOUD
+    min_useful_data_percentage = settings.MIN_USEFUL_DATA_PERCENTAGE
 
     product_per_season = {}
 
     for season in seasons:
         season_start, season_end = seasons[season]
         product_metadata_cursor = get_products_by_tile_and_date(
-            tile, mongo_products_collection, season_start, season_end, max_cloud_percentage
+            tile, mongo_products_collection, season_start, season_end, min_useful_data_percentage
         )
 
+        product_metadata_list = list(product_metadata_cursor)
+        #filter corrupted products
+        product_metadata_list = _validate_composite_products(product_metadata_list)
         # If there are more products than the maximum specified for creating a composite, take the last ones
-        product_per_season[season] = list(product_metadata_cursor)[-settings.MAX_PRODUCTS_COMPOSITE:]
+        product_per_season[season] = product_metadata_list[:settings.MAX_PRODUCTS_COMPOSITE]
 
         if len(product_per_season[season]) == 0:
             raise NoSentinelException(f"There is no valid Sentinel products for tile {tile} in season {season}. Skipping it...")
@@ -173,42 +182,29 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
     rasters_by_season = defaultdict(dict)
 
     for season, products_metadata in product_per_season.items():
-        bucket_products = settings.MINIO_BUCKET_NAME_PRODUCTS
-        bucket_composites = settings.MINIO_BUCKET_NAME_COMPOSITES
-        current_bucket = None
 
         if len(products_metadata) == 0:
             raise NoSentinelException(f"There is no valid Sentinel products for tile {tile}. Skipping it...")
-
-        elif len(products_metadata) == 1:
-            product_metadata = products_metadata[0]
-            current_bucket = bucket_products
         else:
-            # If there are multiple products for one season, use a composite.
-            mongo_client.set_collection(settings.MONGO_COMPOSITES_COLLECTION)
-            mongo_composites_collection = mongo_client.get_collection_object()
             products_metadata_list = list(products_metadata)
             product_metadata = _get_composite(
-                products_metadata_list, mongo_composites_collection, execution_mode
+                products_metadata_list, execution_mode
             )
             if product_metadata is None:
                 _create_composite(
                     products_metadata_list,
-                    minio_client,
-                    bucket_products,
-                    bucket_composites,
-                    mongo_composites_collection,
                     execution_mode
                 )
                 product_metadata = _get_composite(
-                    products_metadata_list, mongo_composites_collection, execution_mode
+                    products_metadata_list, execution_mode
                 )
-            current_bucket = bucket_composites
 
         product_name = product_metadata["title"]
 
+        minio_bucket = product_metadata["minioBucket"]
+
         (rasters_paths, is_band) = _get_product_rasters_paths(
-            product_metadata, minio_client, current_bucket
+            product_metadata, minio_client
         )
 
         (rasters_paths, is_band) = _filter_rasters_paths_by_features_used(
@@ -222,6 +218,39 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
         rasters_by_season[season]["is_band"] = is_band
         rasters_by_season[season]["temp_product_folder"] = temp_product_folder
 
+    lidar_products_used = [
+        "Verticality", 
+        "SurfaceVariation", 
+        "Scattering", 
+        "RadialDensity", 
+        "Planarity", 
+        "Omnivariance", 
+        "NormalZ", 
+        "NormalY", 
+        "NormalX", 
+        "max_height", 
+        "Linearity",
+        "elevation", 
+        "EigenvalueSum", 
+        "Eigenentropy", 
+        "DemantkeVerticality", 
+        "Curvature", 
+        "Anisotropy",
+    ]
+
+    lidar_butcket = settings.MINIO_LIDAR_BUCKET
+    lidar_paths = {}
+    for lidar_name in lidar_products_used:
+        try:
+            if lidar_name not in used_columns:
+                continue
+            lidar_path = Path("rasters_sam", "merged", f"{lidar_name}_interpolated_cropped.tif")
+            local_lidar_path = Path(settings.TMP_DIR, lidar_path.name)
+            minio_client.fget_object(lidar_butcket, str(lidar_path), str(local_lidar_path))
+            lidar_paths[lidar_name] = local_lidar_path
+        except Exception as e:
+            print(f"Error reading lidar raster {lidar_name}: {e}")
+            continue
 
     dems_raster_names = [
         "slope",
@@ -286,7 +315,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
                 if not temp_path.exists():
                     print(f"Downloading raster {raster_name} from minio into {temp_path}")
                     minio_client.fget_object(
-                        bucket_name=current_bucket,
+                        bucket_name=minio_bucket,
                         object_name=raster_path,
                         file_path=str(temp_path),
                     )
@@ -305,6 +334,29 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
                 raster_masked = np.ma.compressed(raster_masked)
 
                 window_tile_dict.update({f"{season}_{raster_name}": raster_masked})
+
+        for lidar_name in lidar_products_used:
+            if lidar_name in used_columns:
+
+                lidar_kwargs = _get_kwargs_raster(lidar_paths[lidar_name])
+                lidar_kwargs_window = lidar_kwargs.copy()
+                lidar_kwargs_window["width"] = window.width
+                lidar_kwargs_window["height"] = window.height
+                lidar_kwargs_window["transform"] = rasterio.windows.transform(window, lidar_kwargs["transform"])
+
+                crop_mask = np.zeros(shape=(int(lidar_kwargs_window["height"]), int(lidar_kwargs_window["width"])),dtype=np.uint8)
+
+                band_normalize_range = normalize_range.get(lidar_name, None)
+                raster = _read_raster(
+                    band_path=local_lidar_path,
+                    rescale=False,
+                    normalize_range=band_normalize_range,
+                    window=window
+                )
+                
+                raster_masked = np.ma.masked_array(raster, mask=crop_mask)
+                raster_masked = np.ma.compressed(raster_masked).flatten()
+                window_tile_dict.update({lidar_name: raster_masked})
 
         for dem_name in dems_raster_names:
             # Add dem and aspect data

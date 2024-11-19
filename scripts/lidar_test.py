@@ -8,7 +8,7 @@ from tqdm import tqdm
 client = MinioConnection()
 
 # Define temporary directories for processing
-tmp_dir = Path("/mnt/home/am/landcoverpy/tmp")
+tmp_dir = Path("/mnt/home/am/landcoverpy-lidar/landcoverpy/tmp")
 tmp_dir.mkdir(parents=True, exist_ok=True)
 
 # List of selected features to compute

@@ -6,8 +6,14 @@ import numpy as np
 import rasterio
 from rasterio.merge import merge
 from rasterio.warp import calculate_default_transform, reproject, Resampling
+from shapely.geometry import box
+from rasterio.mask import mask
 
 from landcoverpy.minio import MinioConnection
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def reproject_raster_to_4326(local_path: str) -> tuple[np.ndarray, dict]:
     """
@@ -124,6 +130,70 @@ def merge_rasters(local_paths: list[Path]) -> Path:
 
     return output_path
 
+def reproject_and_crop_raster(source_path, mask_path, output_cropped_path):
+    """
+    Reprojects and crops a raster based on the bounds and CRS of a reference raster.
+    
+    Parameters:
+    source_path (str or Path): Path to the raster to be reprojected and cropped.
+    mask_path (str or Path): Path to the reference raster used for cropping.
+    output_cropped_path (str or Path): Path where the cropped output raster will be saved.
+    """
+    
+    # Open the reference raster to obtain its bounds and CRS
+    with rasterio.open(mask_path) as ref_raster:
+        ref_bounds = ref_raster.bounds
+        ref_crs = ref_raster.crs
+    
+    # Reproject the source raster to match the CRS of the mask
+    with rasterio.open(source_path) as src:
+        transform, width, height = calculate_default_transform(
+            src.crs, ref_crs, src.width, src.height, *src.bounds
+        )
+        out_meta = src.meta.copy()
+        out_meta.update({
+            "crs": ref_crs,
+            "transform": transform,
+            "width": width,
+            "height": height
+        })
+
+        # Temporary file for the reprojected raster
+        temp_reprojected_path = Path(output_cropped_path).with_name("temp_reprojected.tif")
+
+        # Save the reprojected raster
+        with rasterio.open(temp_reprojected_path, "w", **out_meta) as dest:
+            for i in range(1, src.count + 1):
+                reproject(
+                    source=rasterio.band(src, i),
+                    destination=rasterio.band(dest, i),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs=ref_crs,
+                    resampling=Resampling.nearest
+                )
+
+    # Convert the BoundingBox of mask.jp2 to a Shapely box and then to GeoJSON format
+    geom = [box(ref_bounds.left, ref_bounds.bottom, ref_bounds.right, ref_bounds.top).__geo_interface__]
+
+    # Crop the reprojected raster using the bounds of mask.jp2
+    with rasterio.open(temp_reprojected_path) as reprojected:
+        out_image, out_transform = mask(reprojected, geom, crop=True)
+        
+        # Update metadata to match the cropped raster
+        out_meta = reprojected.meta.copy()
+        out_meta.update({
+            "driver": "GTiff",
+            "height": out_image.shape[1],
+            "width": out_image.shape[2],
+            "transform": out_transform
+        })
+
+        # Save the cropped raster
+        with rasterio.open(output_cropped_path, "w", **out_meta) as dest:
+            dest.write(out_image)
+
 def main(interpolating: bool = False, crop: bool = False):
     """
     Reads all chunks of raster files from the MinIO bucket, merges them, and saves the result back to the bucket.
@@ -132,7 +202,7 @@ def main(interpolating: bool = False, crop: bool = False):
 
     minio_client = MinioConnection()
     
-    objects = minio_client.list_objects("pnoa-lidar", prefix="rasters/", recursive=False)
+    objects = minio_client.list_objects("pnoa-lidar", prefix="rasters_sam/", recursive=False)
 
     features = {obj.object_name for obj in objects if obj.object_name.endswith('/')}
 
@@ -146,40 +216,28 @@ def main(interpolating: bool = False, crop: bool = False):
             continue
 
         local_paths = []
-        for obj in minio_client.list_objects("pnoa-lidar", prefix=f"rasters/{feature}/", recursive=True):
+        for obj in minio_client.list_objects("pnoa-lidar", prefix=f"rasters_sam/{feature}/", recursive=True):
             local_path = Path(os.environ.get("TMP_DIR"), feature, Path(obj.object_name).name)
             minio_client.fget_object("pnoa-lidar", obj.object_name, local_path)
             local_paths.append(local_path)
-
+        print("All data read")
         merged_path = merge_rasters(local_paths)
 
-        minio_client.fput_object("pnoa-lidar", f"rasters/merged/{feature}.tif", merged_path)
+        minio_client.fput_object("pnoa-lidar", f"rasters_sam/merged/{feature}.tif", merged_path)
 
         if interpolating:
             interpolated_merged_path = Path(os.environ.get("TMP_DIR"), f"{feature}_interpolated.tif")
             subprocess.run(['gdal_fillnodata.py', '-md', '3', '-of', 'GTiff', merged_path, interpolated_merged_path])
-            minio_client.fput_object("pnoa-lidar", f"rasters/merged/{feature}_interpolated.tif", interpolated_merged_path)
-            interpolated_merged_path.unlink()
+            minio_client.fput_object("pnoa-lidar", f"rasters_sam/merged/{feature}_interpolated.tif", interpolated_merged_path)
 
             if crop:
-                cropped_merged_path = Path(os.environ.get("TMP_DIR"), f"{feature}_interpolated_cropped.tif")
-                minio_client.fget_object("etc-products", "2021/June/S2A_MSIL2A_20210607T105621_N0300_R094_T30SUF_20210607T155717/raw/B02_10m.jp2", Path(os.environ.get("TMP_DIR"), "mask.jp2"))
-                with rasterio.open(Path(os.environ.get("TMP_DIR"), "mask.jp2")) as mask:
-                    mask_bounds = mask.bounds
-                with rasterio.open(interpolated_merged_path) as src:
-                    out_image, out_transform = rasterio.mask.mask(src, [mask_bounds], crop=True)
-                    out_meta = src.meta.copy()
-                    out_meta.update({
-                        "driver": "GTiff",
-                        "height": out_image.shape[1],
-                        "width": out_image.shape[2],
-                        "transform": out_transform,
-                        "crs": src.crs
-                    })
-                    with rasterio.open(cropped_merged_path, 'w', **out_meta) as dst:
-                        dst.write(out_image)
-                minio_client.fput_object("pnoa-lidar", f"rasters/merged/{feature}_interpolated_cropped.tif", cropped_merged_path)
-                cropped_merged_path.unlink()
+                mask_path = Path(os.environ.get("TMP_DIR"), "mask.jp2")
+                minio_client.fget_object("etc-products", "2021/June/S2A_MSIL2A_20210607T105621_N0300_R094_T30SUF_20210607T155717/raw/B02_10m.jp2", mask_path)
+                cropped_path = Path(os.environ.get("TMP_DIR"), f"{feature}_interpolated_cropped.tif")
+                reproject_and_crop_raster(interpolated_merged_path, mask_path, cropped_path)
+                minio_client.fput_object("pnoa-lidar", f"rasters_sam/merged/{feature}_interpolated_cropped.tif", cropped_path)
+
+            interpolated_merged_path.unlink()
 
         merged_path.unlink()
 
