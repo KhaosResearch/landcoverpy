@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 
 class _Settings(BaseSettings):
@@ -50,13 +50,13 @@ class _Settings(BaseSettings):
     SL_LABELS_FILE: str = "/sl_labels.json"
 
     # For running in a distributed environment
-    DASK_CLUSTER_IP: str = "0.0.0.0.0:0000"
+    DASK_CLUSTER_IP: str = "0.0.0.0:0000"
 
     # File containing the definition of the seasons
     SEASONS_FILE: str = "/seasons.json"
 
     # Product filtering parameters
-    MAX_CLOUD: float = 1.0
+    MIN_USEFUL_DATA_PERCENTAGE: float = 0.0
 
     # Maximum number of products used in a composite
     MAX_PRODUCTS_COMPOSITE: int = 1
