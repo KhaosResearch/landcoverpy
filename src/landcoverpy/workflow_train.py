@@ -35,12 +35,6 @@ def _process_tile_train(tile, polygons_in_tile):
     seasons = get_season_dict()
 
     minio_client = MinioConnection()
-    minio_client_products = MinioConnection(
-        host="ip_products_minio",
-        port="9000",
-        access_key="user",
-        secret_key="pass",
-    )
     mongo_client = MongoConnection()
     mongo_products_collection = mongo_client.get_collection_object()
 
@@ -116,7 +110,7 @@ def _process_tile_train(tile, polygons_in_tile):
         tile_df = pd.concat([tile_df, raster_df], axis=1)
 
     # Get crop mask for sentinel rasters and dataset labeled with database points in tile
-    band_path = _download_sample_band_by_tile(tile, minio_client_products, mongo_products_collection)
+    band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
     s2_band_kwargs = _get_kwargs_raster(band_path)
 
     crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, s2_band_kwargs)
