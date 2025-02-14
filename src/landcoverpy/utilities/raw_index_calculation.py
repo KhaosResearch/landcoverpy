@@ -57,9 +57,9 @@ def find_product_image(band_name: str, product_title: str) -> Path:
     product_folder = join(settings.TMP_DIR, product_title)
     return ([f for f in Path(product_folder).glob("*" + band_name + "*")])[0]
 
-def get_index(index_name, bands_dict, product_title, minio_folder_name, is_composite):
+def get_index(index_name, bands_dict, product_title, minio_folder_name):
 
-    band_extension = ".tif" if is_composite else ".jp2"
+    band_extension = ".tif"
 
     indexes_folder = join(settings.TMP_DIR, product_title, minio_folder_name)
     output = Path(indexes_folder + "/" + index_name + ".tif")
@@ -175,17 +175,14 @@ def get_index(index_name, bands_dict, product_title, minio_folder_name, is_compo
         raise e
 
     minio_client = MinioConnection()
-    minio_bucket_name = minio_client.bucket_name
+    minio_bucket_name = settings.MINIO_BUCKET_NAME_COMPOSITES
 
-    if is_composite:
-        date = datetime.strptime(product_title.split('_')[2], "%Y%m%d")
-    else:
-        date = datetime.strptime(product_title.split('_')[2], "%Y%m%dT%H%M%S")
+    date = datetime.strptime(product_title.split('_')[2], "%Y%m%d")
     year = date.strftime("%Y")
     month = date.strftime("%B")
     tile_id = product_title.split("_T")[1][0:5]
     minio_dir = join(tile_id, year, month, "")
-    minio_dir = join(minio_dir, "products", "") if not is_composite else join(minio_dir, "composites", "")
+    minio_dir = join(minio_dir, "composites", "")
 
     tif_minio_path = join(minio_dir, product_title, minio_folder_name ,index_name + ".tif")
 
@@ -217,22 +214,16 @@ def get_index(index_name, bands_dict, product_title, minio_folder_name, is_compo
 def calculate_raw_index(
     product_title: str,
     index: list,
-    minio_folder_name: str = "indexes",
-    is_composite: bool = False
+    minio_folder_name: str = "indexes"
 ):
     """
     Example: python raw_index_calculation.py --uid dad7f379-de8c-49ec-b4cf-44348d0f418c --index ndvi --index ndsi --temp-dir ./data
     """
     
     # Connect with mongo
-    if is_composite:
-        mongo_col = MongoConnection().get_composite_collection_object()
-        band_extension = ".tif"
-        date = datetime.strptime(product_title.split('_')[2], "%Y%m%d")        
-    else:
-        mongo_col = MongoConnection().get_collection_object()
-        band_extension = ".jp2"
-        date = datetime.strptime(product_title.split('_')[2], "%Y%m%dT%H%M%S")
+    mongo_col = MongoConnection().get_composite_collection_object()
+    band_extension = ".tif"
+    date = datetime.strptime(product_title.split('_')[2], "%Y%m%d")        
 
     # Search product metadata in Mongo
     product_data = mongo_col.find_one({"title": product_title})
@@ -249,7 +240,7 @@ def calculate_raw_index(
     month = date.strftime("%B")
     tile_id = product_data["title"].split("_T")[1][0:5]
     minio_dir = join(tile_id, year, month, "")
-    minio_dir = join(minio_dir, "products", "") if not is_composite else join(minio_dir, "composites", "")
+    minio_dir = join(minio_dir, "composites", "")
     bands_dir = join(minio_dir, product_title, "raw", "")
 
     # Create dictionary of indexes
@@ -259,7 +250,7 @@ def calculate_raw_index(
         product_data[minio_folder_name] = []
 
     minio_client = MinioConnection()
-    minio_bucket_name = minio_client.bucket_name
+    minio_bucket_name = settings.MINIO_BUCKET_NAME_COMPOSITES
 
     for idx in index:
         index_name = idx.lower()
@@ -286,7 +277,6 @@ def calculate_raw_index(
             bands_dict=indexes_bands[dict_key],
             product_title=product_title,
             minio_folder_name=minio_folder_name,
-            is_composite=is_composite
         )
 
 

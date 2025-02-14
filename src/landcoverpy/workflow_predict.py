@@ -47,10 +47,10 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
 
     minio_client = MinioConnection()
     minio_client_products = MinioConnection(
-        host="ip_products_minio",
+        host="192.168.212.101",
         port="9000",
-        access_key="user",
-        secret_key="pass",
+        access_key="data-spaces-root",
+        secret_key="U|4f36.Vv*]{U&jS",
     )
     mongo_client = MongoConnection()
     mongo_products_collection = mongo_client.get_collection_object()
@@ -406,6 +406,8 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
     print("Cleaning up temporary files")
 
     for path in Path(settings.TMP_DIR).glob("**/*"):
+        if "classification" in path.name:
+            continue
         if path.is_file():
             path.unlink()
         elif path.is_dir():

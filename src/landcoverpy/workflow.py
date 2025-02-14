@@ -58,11 +58,14 @@ def workflow(
 
         # For predictions, read the rasters used in "metadata.json".
         metadata_filename = "metadata.json"
-        metadata_filepath = join(settings.TMP_DIR, "land-cover", metadata_filename)
-
+        if execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
+            model_folder = "land-cover"
+        if execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
+            model_folder = "closedForest"
+        metadata_filepath = join(settings.TMP_DIR, model_folder, metadata_filename)
         minio.fget_object(
             bucket_name=settings.MINIO_BUCKET_MODELS,
-            object_name=join(settings.MINIO_DATA_FOLDER_NAME, "land-cover", metadata_filename),
+            object_name=join(settings.MINIO_DATA_FOLDER_NAME, model_folder, metadata_filename),
             file_path=metadata_filepath,
         )
 
@@ -85,7 +88,7 @@ def workflow(
             for tile in tiles:
                 future = client.submit(_process_tile_train, tile, polygons_per_tile[tile], resources={"Memory": 100})
                 futures.append(future)
-        elif execution_mode == ExecutionMode.LAND_COVER_PREDICTION or execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
+        elif execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
             for tile in tiles:
                 future = client.submit(_process_tile_predict, tile, ExecutionMode.LAND_COVER_PREDICTION, used_columns, use_block_windows, window_slices, resources={"Memory": 100})
                 futures.append(future)
