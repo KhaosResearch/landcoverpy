@@ -197,13 +197,13 @@ def get_index(index_name, bands_dict, product_title, minio_folder_name):
     band = dict()
     for k, v in bands_dict.items():
         band[k] = {}
-        band[k]["rasterMinioBucket"] = minio_bucket_name
-        band[k]["rasterMinioPath"] = join(minio_dir, product_title, "raw" , v + band_extension)
+        band[k]["rasterS3Bucket"] = minio_bucket_name
+        band[k]["rasterS3Key"] = join(minio_dir, product_title, "raw" , v + band_extension)
 
     index_dict = {
         "name": index_name,
-        "rasterMinioBucket": minio_bucket_name,
-        "rasterMinioPath": tif_minio_path,
+        "rasterS3Bucket": minio_bucket_name,
+        "rasterS3Key": tif_minio_path,
         "bands": band,
         "rasterMeanValue": float(index_value) if index_value is not None else index_value
     }
