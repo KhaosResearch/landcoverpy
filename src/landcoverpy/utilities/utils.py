@@ -51,7 +51,7 @@ def get_products_by_tile_and_date(
     pipeline = [
         {
             "$match": {
-                "title": {"$regex": tile},
+                "tile": tile,
                 "datetakeSensingTime": {"$gte": start_date, "$lt": end_date}
             }
         },
