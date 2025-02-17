@@ -136,7 +136,7 @@ def _process_tile_train(tile, polygons_in_tile):
                 )
 
         product_name = product_metadata["title"]
-        minio_bucket = product_metadata["minioBucket"]
+        minio_bucket = product_metadata["S3Bucket"]
 
 
         # For validate dataset geometries, the product name is added.

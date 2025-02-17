@@ -174,7 +174,7 @@ def _validate_composite_products(products_metadata: Iterable[dict]) -> Iterable[
 
     for product_metadata in products_metadata:
         product_title = product_metadata["title"]
-        minio_bucket = product_metadata["minioBucket"]
+        minio_bucket = product_metadata["S3Bucket"]
         rasters_paths, is_band = _get_product_rasters_paths(product_metadata, minio_client)
         bands_paths = list(compress(rasters_paths, is_band))
 
@@ -246,7 +246,7 @@ def _create_composite(
 
 
         product_metadata = mongo_products_collection.find_one({"title": product_title})
-        minio_bucket_products = product_metadata["minioBucket"]
+        minio_bucket_products = product_metadata["S3Bucket"]
 
         (rasters_paths, is_band) = _get_product_rasters_paths(
             product_metadata, minio_client
@@ -388,8 +388,8 @@ def _create_composite(
         composite_metadata["last_date"] = _sentinel_date_to_datetime(
             max(products_dates)
         )
-        composite_metadata["minioBucket"] = bucket_composites
-        composite_metadata["minioBandsPath"] = minio_band_path = join(tile_id, year, month.strftime("%B"), "composites", composite_title, "raw", "")
+        composite_metadata["S3Bucket"] = bucket_composites
+        composite_metadata["s3BandsPrefix"] = minio_band_path = join(tile_id, year, month.strftime("%B"), "composites", composite_title, "raw", "")
 
         # Upload metadata to mongo
         result = mongo_composites_collection.insert_one(composite_metadata)
