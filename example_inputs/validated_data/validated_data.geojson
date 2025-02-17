@@ -4,8 +4,8 @@
       {
         "type": "Feature",
         "properties": {
-          "LC_label": "forest",
-          "second_level_label": "pinus"
+          "category": "forest",
+          "subcategory": "pinus"
         },
         "geometry": {
           "coordinates": [
@@ -18,8 +18,8 @@
       {
         "type": "Feature",
         "properties": {
-          "LC_label": "builtUp",
-          "second_level_label": "airport"
+          "category": "builtUp",
+          "subcategory": "airport"
         },
         "geometry": {
           "coordinates": [
@@ -32,8 +32,8 @@
       {
         "type": "Feature",
         "properties": {
-          "LC_label": "shrubland",
-          "second_level_label": "brush"
+          "category": "shrubland",
+          "subcategory": "brush"
         },
         "geometry": {
           "coordinates": [

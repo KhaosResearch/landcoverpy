@@ -31,6 +31,10 @@ landcover_ESA.py
 fix_broken_products/
 sentinel2-downloads/
 auxiliar_scripts/
+scripts_pipeline_shp/
+docker_auto/
+history_executions/
+shp/
 
 # Images
 *.png
@@ -45,7 +49,6 @@ images/
 
 .python-version
 
-requirements.txt
 *.laz
 *.las
 *.xml

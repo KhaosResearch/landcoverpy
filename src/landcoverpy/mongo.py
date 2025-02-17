@@ -14,7 +14,7 @@ class MongoConnection():
             )
 
     def get_collection_object(self) -> Collection:
-        return self.mongo_client["data_spaces_products_database"][settings.MONGO_PRODUCTS_COLLECTION]
+        return self.mongo_client[settings.MONGO_DB][settings.MONGO_PRODUCTS_COLLECTION]
     
     def get_composite_collection_object(self) -> Collection:
         return self.mongo_client[settings.MONGO_DB][settings.MONGO_COMPOSITES_COLLECTION]
