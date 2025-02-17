@@ -389,7 +389,7 @@ def _create_composite(
             max(products_dates)
         )
         composite_metadata["S3Bucket"] = bucket_composites
-        composite_metadata["s3BandsPrefix"] = minio_band_path = join(tile_id, year, month.strftime("%B"), "composites", composite_title, "raw", "")
+        composite_metadata["S3BandsPrefix"] = minio_band_path = join(tile_id, year, month.strftime("%B"), "composites", composite_title, "raw", "")
 
         # Upload metadata to mongo
         result = mongo_composites_collection.insert_one(composite_metadata)

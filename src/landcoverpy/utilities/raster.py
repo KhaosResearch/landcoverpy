@@ -186,7 +186,7 @@ def _get_product_rasters_paths(
     rasters = []
     is_band = []
     
-    bands_dir = product_metadata["s3BandsPrefix"]
+    bands_dir = product_metadata["S3BandsPrefix"]
     minio_bucket = product_metadata["S3Bucket"]
     bands_paths = minio_client.list_objects(minio_bucket, prefix=bands_dir)
 
