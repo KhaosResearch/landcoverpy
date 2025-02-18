@@ -1,0 +1,52 @@
+services:
+  minio:
+    image: minio/minio:RELEASE.2024-02-09T21-25-16Z
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=adminadmin
+      - MINIO_ROOT_PASSWORD=adminadmin
+    volumes:
+      - ./minio_data:/data
+    ports:
+      - "31113:9001"
+    command: server /data --console-address ":9001"
+
+  mongo:
+    image: mongo:4.2.19
+    container_name: mongo
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=adminadmin
+      - MONGO_INITDB_ROOT_PASSWORD=adminadmin
+    volumes:
+      - ./mongo_data:/data/db
+    ports:
+      - "31114:27017"
+
+  landcoverpy:
+    image: ghcr.io/khaosresearch/demo-landcoverpy:latest
+    container_name: custom_app
+    depends_on:
+      - minio
+      - mongo
+    environment:
+      - MINIO_HOST=minio
+      - MONGO_HOST=mongo
+      - MINIO_ACCESS_KEY=adminadmin
+      - MINIO_SECRET_KEY=adminadmin
+      - MONGO_USERNAME=adminadmin
+      - MONGO_PASSWORD=adminadmin
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/data/gcloud-user.json # File can be generated in https://console.cloud.google.com/apis/credentials
+      - MINIO_DATA_FOLDER_NAME=demo_landcoverpy # Name of the folder where the data is stored in Minio. Use it like a "project" name.
+      - MIN_USEFUL_DATA_PERCENTAGE=30 # Minimum percentage of useful data to be used in the composite (0 - 100). A high number will increase the quality of the composite but will decrease the number of products to be used, which can lead to a worse result. Recommended value: 30
+      - MAX_PRODUCTS_COMPOSITE=3 # Number of products to be used in the composite. A high number will increase the processing time and memory usage (>=2). Recommended value: 4
+      - TILES_TO_PREDICT=prediction # Expected format `["NNLLL", "NNLLL", ...]` being N a number and L a letter. If you want to predict the tiles of the data provided for training, use `prediction`.
+      - SUBCATEGORY_PREDICTION=["forest", "no_forest"] # Expected format `["category1", "category2", ...]` being the subcategories to predict. If you dont want to predict any subcategory, or you didnt provide any subcategory for training, use `[]`.
+    volumes:
+      - ./app_data:/app/data
+    restart: on-failure:5
+    command: python main.py
+
+volumes:
+  minio_data:
+  mongo_data:
+  app_data:

@@ -1,0 +1,15 @@
+geojson==2.5.0
+google-api-core==2.10.1
+google-auth==2.11.1
+google-cloud-core==2.3.2
+google-cloud-storage==2.5.0
+google-crc32c==1.5.0
+google-resumable-media==2.3.3
+googleapis-common-protos==1.56.4
+minio==7.2.8
+pymongo==4.8.0
+requests==2.32.3
+rasterio==1.3.11
+python-dotenv==1.0.1
+geomet==1.1.0
+python-dateutil==2.9.0

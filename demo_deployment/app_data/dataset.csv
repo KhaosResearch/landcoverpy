@@ -1,0 +1,15 @@
+latitude;longitude;category;subcategory
+33.768333;35.336111;forest;pinus
+33.865278;35.781667;forest;pinus_3
+33.668333;35.506111;forest;pinus
+33.755278;35.611667;forest;pinus
+33.758333;35.456111;forest;pinus_2
+33.655278;35.761667;forest;pinus_3
+33.868333;35.746111;forest;pinus_2
+33.965278;35.831667;forest;pinus_3
+33.545278;35.567778;no_forest;building
+33.445278;35.757778;no_forest;building
+33.645278;35.657778;no_forest;building
+33.845278;35.917778;no_forest;road
+33.585278;35.817778;no_forest;road
+33.485278;35.317778;no_forest;road

@@ -35,10 +35,11 @@ from landcoverpy.utilities.utils import (
     get_season_dict,
 )
 
-def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_windows=False, window_slices=None):
-
+def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_windows=False, window_slices=None, use_aster=True):
     if execution_mode == ExecutionMode.TRAINING:
         raise WorkflowExecutionException("This function is only for prediction")
+    
+    print(f"Predicting tile {tile}")
 
     if not Path(settings.TMP_DIR).exists():
         Path.mkdir(Path(settings.TMP_DIR))
@@ -213,11 +214,14 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
         rasters_by_season[season]["temp_product_folder"] = temp_product_folder
 
 
-    dems_raster_names = [
-        "slope",
-        "aspect",
-        "dem",
-    ]
+    if use_aster:
+        dems_raster_names = [
+            "slope",
+            "aspect",
+            "dem",
+        ]
+    else:
+        dems_raster_names = []
 
 
     dem_paths = {}
