@@ -25,7 +25,7 @@ from landcoverpy.utilities.utils import (
     get_season_dict,
 )
 
-def _process_tile_train(tile, polygons_in_tile):
+def _process_tile_train(tile, polygons_in_tile, use_aster=True):
 
     execution_mode = ExecutionMode.TRAINING
 
@@ -55,7 +55,7 @@ def _process_tile_train(tile, polygons_in_tile):
     # Ranges for normalization of each raster
     normalize_range = {"slope": (0, 70), "aspect": (0, 360), "dem": (0, 2000)}
 
-    print(f"Working in tile {tile}")
+    print(f"Generating training dataset for tile {tile}")
     # Mongo query for obtaining valid products
     min_useful_data_percentage = settings.MIN_USEFUL_DATA_PERCENTAGE
 
@@ -81,22 +81,35 @@ def _process_tile_train(tile, polygons_in_tile):
     # Dataframe for storing data of a tile
     tile_df = None
 
-    dems_raster_names = [
-        "slope",
-        "aspect",
-        "dem",
-    ]
+    if use_aster:
+        dems_raster_names = [
+            "slope",
+            "aspect",
+            "dem",
+        ]
+    else:
+        dems_raster_names = []
+
+    # Get crop mask for sentinel rasters and dataset labeled with database points in tile
+    band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
+    s2_band_kwargs = _get_kwargs_raster(band_path)
+
+    crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, s2_band_kwargs)
+
+    raster = _read_raster(
+        band_path=band_path,
+        rescale=True
+    )
+
+    raster_masked = np.ma.masked_array(raster, mask=crop_mask)
+    raster_masked = np.ma.compressed(raster_masked).flatten()
+    
 
     for dem_name in dems_raster_names:
         # Add dem and aspect data
         dem_path = get_dem_from_tile(
             execution_mode, tile, mongo_products_collection, minio_client, dem_name
         )
-
-        # Predict doesnt work yet in some specific tiles where tile is not fully contained in aster rasters
-        dem_kwargs = _get_kwargs_raster(dem_path)
-
-        crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, dem_kwargs)
 
         band_normalize_range = normalize_range.get(dem_name, None)
         raster = _read_raster(
@@ -108,12 +121,6 @@ def _process_tile_train(tile, polygons_in_tile):
         raster_masked = np.ma.compressed(raster_masked).flatten()
         raster_df = pd.DataFrame({dem_name: raster_masked})
         tile_df = pd.concat([tile_df, raster_df], axis=1)
-
-    # Get crop mask for sentinel rasters and dataset labeled with database points in tile
-    band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
-    s2_band_kwargs = _get_kwargs_raster(band_path)
-
-    crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, s2_band_kwargs)
 
     for season, products_metadata in product_per_season.items():
         print(season)
