@@ -24,10 +24,10 @@ Since the library is prepared for large areas, S3 is used as the main storage sy
 
 The easiest way to use the library is through docker compose. A demo is provided in the folder [demo_deployment](demo_deployment). This demo, deploys a full environment with all the services needed to run the library and performs the full workflow on a small area. This workflow includes the following steps:
 
-- 1. Downloading S2 images from Google Cloud.
-- 2. Generates a training dataset from the S2 images.
-- 3. Train a model using the training dataset.
-- 4. Classify the area using the trained model.
+1. Downloading S2 images from Google Cloud.
+2. Generates a training dataset from the S2 images.
+3. Train a model using the training dataset.
+4. Classify the area using the trained model.
 
 To the requirements to run the demo and generating your first land cover classification is:
 - Docker
@@ -41,7 +41,7 @@ cd demo_deployment
 docker compose up
 ```
 
-Once some time has passed, you can access the MinIO interface at [http://localhost:31113](http://localhost:31113) using the credentials `minioadmin` and `minioadmin` (all can be modified in the docker compose file). You can download the classification results from the bucket `classification-maps`.
+Once some time has passed, you can access the MinIO interface at [http://localhost:31113](http://localhost:31113) using the credentials `adminadmin` and `adminadmin` (all can be modified in the docker compose file). You can download the classification results from the bucket `classification-maps`.
 The first execution for each dataset will take some time, since the images need to be downloaded and the composite images need to be computed.
 
 The docker compose will work on data in folder [demo_deployment/app_data](demo_deployment/app_data). This could be easily adapted to work with your own data.
