@@ -1,6 +1,6 @@
 # LandCoverPy, a scalable land cover/land use classification workflow
 
-![iberian_peninsula_forests_example](https://github.com/KhaosResearch/landcoverpy/blob/v1.1/static/forests_example.JPG)
+![iberian_peninsula_forests_example](https://github.com/KhaosResearch/landcoverpy/blob/master/static/forests_example.JPG)
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7462308.svg)](https://doi.org/10.5281/zenodo.7462308)
 
@@ -42,6 +42,7 @@ docker compose up
 ```
 
 Once some time has passed, you can access the MinIO interface at [http://localhost:31113](http://localhost:31113) using the credentials `minioadmin` and `minioadmin` (all can be modified in the docker compose file). You can download the classification results from the bucket `classification-maps`.
+The first execution for each dataset will take some time, since the images need to be downloaded and the composite images need to be computed.
 
 The docker compose will work on data in folder [demo_deployment/app_data](demo_deployment/app_data). This could be easily adapted to work with your own data.
 
