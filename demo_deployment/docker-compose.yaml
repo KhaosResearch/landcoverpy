@@ -24,7 +24,7 @@ services:
 
   landcoverpy:
     image: ghcr.io/khaosresearch/demo-landcoverpy:latest
-    container_name: custom_app
+    container_name: landcoverpy
     depends_on:
       - minio
       - mongo
