@@ -23,7 +23,8 @@ def workflow(
         client: Client = None, 
         tiles_to_predict: List[str] = None,
         use_block_windows: bool = False,
-        window_slices: tuple = None):
+        window_slices: tuple = None,
+        use_aster: bool = True):
 
     if execution_mode == ExecutionMode.TRAINING and tiles_to_predict is not None:
         print("Warning: tiles_to_predict are ignored in training mode.")
@@ -58,11 +59,16 @@ def workflow(
 
         # For predictions, read the rasters used in "metadata.json".
         metadata_filename = "metadata.json"
-        metadata_filepath = join(settings.TMP_DIR, "land-cover", metadata_filename)
-
+        if execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
+            model_folder = "land-cover"
+        if execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
+            with open(settings.LC_LABELS_FILE, "r") as f:
+                lc_labels = json.load(f)
+            model_folder = next(iter(lc_labels.keys()))
+        metadata_filepath = join(settings.TMP_DIR, model_folder, metadata_filename)
         minio.fget_object(
             bucket_name=settings.MINIO_BUCKET_MODELS,
-            object_name=join(settings.MINIO_DATA_FOLDER_NAME, "land-cover", metadata_filename),
+            object_name=join(settings.MINIO_DATA_FOLDER_NAME, model_folder, metadata_filename),
             file_path=metadata_filepath,
         )
 
@@ -83,16 +89,16 @@ def workflow(
         futures = []
         if execution_mode == ExecutionMode.TRAINING:
             for tile in tiles:
-                future = client.submit(_process_tile_train, tile, polygons_per_tile[tile], resources={"Memory": 100})
+                future = client.submit(_process_tile_train, tile, polygons_per_tile[tile], use_aster, resources={"Memory": 100})
                 futures.append(future)
-        elif execution_mode == ExecutionMode.LAND_COVER_PREDICTION or execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
+        elif execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
             for tile in tiles:
-                future = client.submit(_process_tile_predict, tile, ExecutionMode.LAND_COVER_PREDICTION, used_columns, use_block_windows, window_slices, resources={"Memory": 100})
+                future = client.submit(_process_tile_predict, tile, ExecutionMode.LAND_COVER_PREDICTION, used_columns, use_block_windows, window_slices, use_aster, resources={"Memory": 100})
                 futures.append(future)
             client.gather(futures, errors="skip")
         elif execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
             for tile in sl_tiles:
-                future = client.submit(_process_tile_predict, tile, ExecutionMode.SECOND_LEVEL_PREDICTION, used_columns, use_block_windows, window_slices, resources={"Memory": 100})
+                future = client.submit(_process_tile_predict, tile, ExecutionMode.SECOND_LEVEL_PREDICTION, used_columns, use_block_windows, window_slices, use_aster, resources={"Memory": 100})
                 futures.append(future)
         client.gather(futures, errors="skip")
 
@@ -100,19 +106,19 @@ def workflow(
         if execution_mode == ExecutionMode.TRAINING:
             for tile in tiles:
                 try:
-                    _process_tile_train(tile, polygons_per_tile[tile])
+                    _process_tile_train(tile, polygons_per_tile[tile], use_aster)
                 except WorkflowExecutionException as e:
                     print(e)
-        if execution_mode == ExecutionMode.LAND_COVER_PREDICTION or execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
+        if execution_mode == ExecutionMode.LAND_COVER_PREDICTION:
             for tile in tiles:
                 try:
-                    _process_tile_predict(tile, ExecutionMode.LAND_COVER_PREDICTION, used_columns, use_block_windows, window_slices)
+                    _process_tile_predict(tile, ExecutionMode.LAND_COVER_PREDICTION, used_columns, use_block_windows, window_slices, use_aster)
                 except WorkflowExecutionException as e:
                     print(e)
         if execution_mode == ExecutionMode.SECOND_LEVEL_PREDICTION:
             for tile in sl_tiles:
                 try:
-                    _process_tile_predict(tile, ExecutionMode.SECOND_LEVEL_PREDICTION, used_columns, use_block_windows, window_slices)
+                    _process_tile_predict(tile, ExecutionMode.SECOND_LEVEL_PREDICTION, used_columns, use_block_windows, window_slices, use_aster)
                 except WorkflowExecutionException as e:
                     print(e)
 

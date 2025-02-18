@@ -186,8 +186,8 @@ def _get_product_rasters_paths(
     rasters = []
     is_band = []
     
-    bands_dir = product_metadata["minioBandsPath"]
-    minio_bucket = product_metadata["minioBucket"]
+    bands_dir = product_metadata["S3BandsPrefix"]
+    minio_bucket = product_metadata["S3Bucket"]
     bands_paths = minio_client.list_objects(minio_bucket, prefix=bands_dir)
 
     for band_path in bands_paths:
@@ -196,7 +196,7 @@ def _get_product_rasters_paths(
 
     try:
         indexes_path = [
-            index_data["rasterMinioPath"]
+            index_data["rasterS3Key"]
             for index_data in product_metadata["indexes"].values()
         ]
     except KeyError:
@@ -209,7 +209,7 @@ def _get_product_rasters_paths(
 
     try:
         intermediate_products_path = [
-            intermediate_product_data["rasterMinioPath"]
+            intermediate_product_data["rasterS3Key"]
             for intermediate_product_data in product_metadata["intermediateProducts"].values()
         ]
     except KeyError:
@@ -279,7 +279,7 @@ def _download_sample_band_by_title(
         sample_band_path = str(
             Path(product_path, _get_raster_filename_from_path(sample_band_path_minio))
         )
-        minio_client.fget_object(product_metadata["minioBucket"], sample_band_path_minio, str(sample_band_path))
+        minio_client.fget_object(product_metadata["S3Bucket"], sample_band_path_minio, str(sample_band_path))
         if _get_spatial_resolution_raster(sample_band_path) == 10:
             return sample_band_path
 

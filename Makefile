@@ -16,4 +16,4 @@ format: clean
 	@python -m isort --profile black src/
 	
 .DEFAULT_GOAL :=
-all: clean build release install
+all: build release

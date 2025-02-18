@@ -35,10 +35,11 @@ from landcoverpy.utilities.utils import (
     get_season_dict,
 )
 
-def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_windows=False, window_slices=None):
-
+def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_windows=False, window_slices=None, use_aster=True):
     if execution_mode == ExecutionMode.TRAINING:
         raise WorkflowExecutionException("This function is only for prediction")
+    
+    print(f"Predicting tile {tile}")
 
     if not Path(settings.TMP_DIR).exists():
         Path.mkdir(Path(settings.TMP_DIR))
@@ -46,12 +47,6 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
     seasons = get_season_dict()
 
     minio_client = MinioConnection()
-    minio_client_products = MinioConnection(
-        host="ip_products_minio",
-        port="9000",
-        access_key="user",
-        secret_key="pass",
-    )
     mongo_client = MongoConnection()
     mongo_products_collection = mongo_client.get_collection_object()
 
@@ -114,13 +109,13 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
             sl_classifiers[lc_mapping[sl_model]] = joblib.load(local_sl_model_locations[sl_model])
     
 
-    band_path = _download_sample_band_by_tile(tile, minio_client_products, mongo_products_collection)
+    band_path = _download_sample_band_by_tile(tile, minio_client, mongo_products_collection)
     kwargs_s2 = _get_kwargs_raster(band_path)
 
     if use_block_windows:
-        windows = _get_block_windows_by_tile(tile, minio_client_products, mongo_products_collection)
+        windows = _get_block_windows_by_tile(tile, minio_client, mongo_products_collection)
     elif window_slices is not None:
-        windows = _generate_windows_from_slices_number(tile, window_slices, minio_client_products, mongo_products_collection)
+        windows = _generate_windows_from_slices_number(tile, window_slices, minio_client, mongo_products_collection)
     else:
         windows = [Window(0, 0, kwargs_s2['width'], kwargs_s2['height'])]
 
@@ -201,7 +196,7 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
 
         product_name = product_metadata["title"]
 
-        minio_bucket = product_metadata["minioBucket"]
+        minio_bucket = product_metadata["S3Bucket"]
 
         (rasters_paths, is_band) = _get_product_rasters_paths(
             product_metadata, minio_client
@@ -219,11 +214,14 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
         rasters_by_season[season]["temp_product_folder"] = temp_product_folder
 
 
-    dems_raster_names = [
-        "slope",
-        "aspect",
-        "dem",
-    ]
+    if use_aster:
+        dems_raster_names = [
+            "slope",
+            "aspect",
+            "dem",
+        ]
+    else:
+        dems_raster_names = []
 
 
     dem_paths = {}
@@ -406,6 +404,8 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
     print("Cleaning up temporary files")
 
     for path in Path(settings.TMP_DIR).glob("**/*"):
+        if "classification" in path.name:
+            continue
         if path.is_file():
             path.unlink()
         elif path.is_dir():

@@ -6,6 +6,7 @@ from hashlib import sha256
 from itertools import compress
 from pathlib import Path
 from typing import Iterable, List, Tuple
+import shutil
 
 import numpy as np
 import rasterio
@@ -165,15 +166,15 @@ def _validate_composite_products(products_metadata: Iterable[dict]) -> Iterable[
     
     validated_products_metadata = []
     minio_client = MinioConnection(
-        host="ip_products_minio",
-        port="9000",
-        access_key="user",
-        secret_key="pass",
+        host=settings.MINIO_HOST,
+        port=settings.MINIO_PORT,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
     )
 
     for product_metadata in products_metadata:
         product_title = product_metadata["title"]
-        minio_bucket = product_metadata["minioBucket"]
+        minio_bucket = product_metadata["S3Bucket"]
         rasters_paths, is_band = _get_product_rasters_paths(product_metadata, minio_client)
         bands_paths = list(compress(rasters_paths, is_band))
 
@@ -206,6 +207,7 @@ def _validate_composite_products(products_metadata: Iterable[dict]) -> Iterable[
 def _create_composite(
     products_metadata: Iterable[dict],
     execution_mode: ExecutionMode,
+    calculate_raw_indexes: bool = True,
 ) -> None:
     """
     Compose multiple Sentinel-2 products into a new product, this product is called "composite".
@@ -216,12 +218,6 @@ def _create_composite(
     """
 
     minio_client = MinioConnection()
-    minio_client_products = MinioConnection(
-        host="ip_products_minio",
-        port="9000",
-        access_key="user",
-        secret_key="pass",
-    )
     mongo_client = MongoConnection()
     mongo_products_collection = mongo_client.get_collection_object()
     mongo_composites_collection = mongo_client.get_composite_collection_object()
@@ -250,10 +246,10 @@ def _create_composite(
 
 
         product_metadata = mongo_products_collection.find_one({"title": product_title})
-        minio_bucket_products = product_metadata["minioBucket"]
+        minio_bucket_products = product_metadata["S3Bucket"]
 
         (rasters_paths, is_band) = _get_product_rasters_paths(
-            product_metadata, minio_client_products
+            product_metadata, minio_client
         )
         bands_paths_product = list(compress(rasters_paths, is_band))
         bands_paths_products.append(bands_paths_product)
@@ -265,7 +261,7 @@ def _create_composite(
             if "SCL" in band_name:
                 temp_dir_product = f"{tmp_dir}/{product_title}"
                 temp_path_product_band = f"{temp_dir_product}/{band_filename}"
-                minio_client_products.fget_object(minio_bucket_products, band_path, str(temp_path_product_band))
+                minio_client.fget_object(minio_bucket_products, band_path, str(temp_path_product_band))
                 cloud_masks_temp_paths.append(temp_path_product_band)
                 spatial_resolution = str(
                     int(_get_spatial_resolution_raster(temp_path_product_band))
@@ -332,7 +328,7 @@ def _create_composite(
 
                 temp_dir_product = f"{tmp_dir}/{product_title}"
                 temp_path_product_band = f"{temp_dir_product}/{band_filename}"
-                minio_client_products.fget_object(minio_bucket_products, band_path, str(temp_path_product_band))
+                minio_client.fget_object(minio_bucket_products, band_path, str(temp_path_product_band))
 
                 if temp_dir_product not in temp_product_dirs:
                     temp_product_dirs.append(temp_dir_product)
@@ -366,9 +362,9 @@ def _create_composite(
 
             # Upload raster to minio
             band_filename = band_filename[:-3] + "tif"
-            splits = product_title.split("_T")
+            splits = composite_title.split("_T")
             tile_id = str(splits[1][0:5])
-            splits = product_title.split("_")
+            splits = composite_title.split("_")
             year = splits[2][0:4]
             month = datetime.strptime(splits[2][4:6], "%m")
             minio_band_path = join(tile_id, year, month.strftime("%B"), "composites", composite_title, "raw", band_filename)
@@ -392,12 +388,34 @@ def _create_composite(
         composite_metadata["last_date"] = _sentinel_date_to_datetime(
             max(products_dates)
         )
-        composite_metadata["minioBucket"] = bucket_composites
-        composite_metadata["minioBandsPath"] = minio_band_path = join(tile_id, year, month.strftime("%B"), "composites", composite_title, "raw", "")
+        composite_metadata["S3Bucket"] = bucket_composites
+        composite_metadata["S3BandsPrefix"] = minio_band_path = join(tile_id, year, month.strftime("%B"), "composites", composite_title, "raw", "")
 
         # Upload metadata to mongo
         result = mongo_composites_collection.insert_one(composite_metadata)
         print("Inserted data in mongo, id: ", result.inserted_id)
+
+        if calculate_raw_indexes:
+            calculate_raw_index(
+                product_title=composite_title,
+                index=[
+                    "Moisture",
+                    "NDVI",
+                    "NDWI",
+                    "NDSI",
+                    "EVI",
+                    "OSAVI",
+                    "EVI2",
+                    "NDRE",
+                    "NDYI",
+                    "MNDWI",
+                    "BRI",
+                    "TCI",
+                    "RI",
+                    "BSI",
+                    "CRI1"
+                ],
+            )
 
     except (Exception, KeyboardInterrupt) as e:
         print("Removing uncompleted composite from minio")
@@ -413,8 +431,9 @@ def _create_composite(
         raise e
 
     finally:
-        for composite_band in temp_paths_composite_bands + cloud_masks_temp_paths:
-            Path.unlink(Path(composite_band))
+        #if tmp_pasth_composite exists, remove it
+        if Path.is_dir(temp_path_composite):
+            shutil.rmtree(temp_path_composite)
 
     return composite_metadata
 

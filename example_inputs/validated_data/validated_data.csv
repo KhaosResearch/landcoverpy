@@ -1,4 +1,4 @@
-latitude;longitude;LC_label;second_level_label
+latitude;longitude;category;subcategory
 33.768333;35.706111;forest;pinus
 33.765278;35.711667;builtUp;airport
 33.745278;35.717778;shrubland;brush
