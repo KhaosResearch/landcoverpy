@@ -1,4 +1,10 @@
-{
-    "no_forest": 1,
-    "forest": 2
+{"FOR": 1,
+    "OPF": 2,
+    "CROPLAND": 3, 
+    "SHRUBLAND": 4, 
+    "WATER": 5, 
+    "WETLAND": 6, 
+    "BUILT": 7, 
+    "GRASS": 8,
+    "BARE SOIL": 9   
 }

@@ -29,7 +29,7 @@ COPY main.py .
 
 # Fixed venv for LandCoverPy, for the docker-compose to work
 ENV MINIO_PORT="9000"
-ENV MINIO_BUCKET_NAME_PRODUCTS=s2-products
+ENV MINIO_BUCKET_NAME_PRODUCTS=s2-products-libano
 ENV MINIO_BUCKET_NAME_COMPOSITES=s2-composites
 ENV MINIO_BUCKET_NAME_ASTER=aster-slope-aspect
 ENV MINIO_BUCKET_NAME_DEM=aster-dem
@@ -53,7 +53,7 @@ ENV SEASONS_FILE=/app/data/seasons.json
 #Fixed venv for ds-downlad, for the docker-compose to work
 ENV GOOGLE_APPLICATION_CREDENTIALS="/app/data/gcloud-user.json"
 ENV GOOGLE_CLOUD_BUCKET_NAME="gcp-public-data-sentinel-2"
-ENV MINIO_BUCKET_NAME=s2-products
+ENV MINIO_BUCKET_NAME=s2-products-libano
 ENV MONGO_DATABASE_NAME=sentinel2-metadata
 ENV MONGO_COLLECTION_NAME=products
 ENV MONGO_COMPOSITE_COLLECTION_NAME=composites
