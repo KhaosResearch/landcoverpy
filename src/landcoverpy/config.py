@@ -59,10 +59,11 @@ class _Settings(BaseSettings):
     MIN_USEFUL_DATA_PERCENTAGE: float = 0.0
 
     # Maximum number of products used in a composite
-    MAX_PRODUCTS_COMPOSITE: int = 1
+    MAX_PRODUCTS_COMPOSITE: int = 4
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
         file_path = Path(env_file)
         if not file_path.is_file():
             print("⚠️ `.env` not found in current directory")
