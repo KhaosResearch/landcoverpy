@@ -62,3 +62,5 @@ minio_data/
 minio_data2/
 minio_data3/
 mongo_data/
+build/
+demo_deployment/app_data/gcloud-user.json
