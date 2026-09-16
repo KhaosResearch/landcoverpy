@@ -46,6 +46,13 @@ services:
       - SUBCATEGORY_PREDICTION=["FOR"] # Expected format `["category1", "category2", ...]` being the subcategories to predict. If you dont want to predict any subcategory, or you didnt provide any subcategory for training, use `[]`.
     volumes:
       - ./app_data:/app/data
+      - ./download_products.py:/app/download_products.py
+      - ./clean_and_inspect.py:/app/clean_and_inspect.py
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     restart: on-failure:5
     command: python main.py
 

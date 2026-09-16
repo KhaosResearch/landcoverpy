@@ -62,3 +62,11 @@ minio_data/
 minio_data2/
 minio_data3/
 mongo_data/
+
+# Credentials and secrets
+*gcloud*.json
+*credentials*.json
+service-account*.json
+
+# Duplicate large datasets
+*MEDITERRANEAN_FOREST*.csv
