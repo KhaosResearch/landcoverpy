@@ -57,7 +57,7 @@ def find_product_image(band_name: str, product_title: str) -> Path:
     product_folder = join(settings.TMP_DIR, product_title)
     return ([f for f in Path(product_folder).glob("*" + band_name + "*")])[0]
 
-def get_index(index_name, bands_dict, product_title, minio_folder_name):
+def get_index(index_name, bands_dict, product_title, minio_folder_name, minio_bucket_name):
 
     band_extension = ".tif"
 
@@ -175,13 +175,14 @@ def get_index(index_name, bands_dict, product_title, minio_folder_name):
         raise e
 
     minio_client = MinioConnection()
-    minio_bucket_name = settings.MINIO_BUCKET_NAME_COMPOSITES
-
     date = datetime.strptime(product_title.split('_')[2], "%Y%m%d")
     year = date.strftime("%Y")
     month = date.strftime("%B")
     tile_id = product_title.split("_T")[1][0:5]
-    minio_dir = join(tile_id, year, month, "")
+    mongo_col = MongoConnection().get_composite_collection_object()
+    prod_doc = mongo_col.find_one({"title": product_title})
+    period_folder = (prod_doc.get("season") if prod_doc else None) or month
+    minio_dir = join(tile_id, year, period_folder, "")
     minio_dir = join(minio_dir, "composites", "")
 
     tif_minio_path = join(minio_dir, product_title, minio_folder_name ,index_name + ".tif")
@@ -193,6 +194,10 @@ def get_index(index_name, bands_dict, product_title, minio_folder_name):
         indexes_folder + "/" + index_name + ".tif",
         content_type="image/tif",
     )
+    try:
+        Path(indexes_folder + "/" + index_name + ".tif").unlink(missing_ok=True)
+    except Exception:
+        pass
 
     band = dict()
     for k, v in bands_dict.items():
@@ -238,16 +243,20 @@ def calculate_raw_index(
     # Determine the Minio folder
     year = date.strftime("%Y")
     month = date.strftime("%B")
+    period_folder = product_data.get("season") or month
     tile_id = product_data["title"].split("_T")[1][0:5]
-    minio_dir = join(tile_id, year, month, "")
+    minio_dir = join(tile_id, year, period_folder, "")
     minio_dir = join(minio_dir, "composites", "")
     bands_dir = join(minio_dir, product_title, "raw", "")
 
     # Create dictionary of indexes
     index_dicts = {}
 
-    if minio_folder_name not in product_data:
-        product_data[minio_folder_name] = []
+    if product_data is None:
+        product_data = {}
+
+    if minio_folder_name not in product_data or not isinstance(product_data[minio_folder_name], dict):
+        product_data[minio_folder_name] = {}
 
     minio_client = MinioConnection()
     minio_bucket_name = settings.MINIO_BUCKET_NAME_COMPOSITES
@@ -277,6 +286,7 @@ def calculate_raw_index(
             bands_dict=indexes_bands[dict_key],
             product_title=product_title,
             minio_folder_name=minio_folder_name,
+            minio_bucket_name=minio_bucket_name,
         )
 
 

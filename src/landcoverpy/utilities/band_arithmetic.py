@@ -41,7 +41,7 @@ def cloud_mask(scl: Path, *, output: Path= None) -> np.ndarray:
     cloud_mask_10m, output_kwargs = _rescale_band(mask, kwargs)
 
     if output:
-        output_kwargs.update(driver="GTiff", dtype=rasterio.int8, count=1)
+        output_kwargs.update(driver="GTiff", dtype=rasterio.int8, count=1, compress="deflate")
         with rasterio.open(output, "w", **output_kwargs) as f:
             f.write(cloud_mask_10m)
 
@@ -72,7 +72,7 @@ def true_color(r: Path, g: Path, b: Path, *, output: Path= None) -> np.ndarray:
     rgb_image = rgb_image.astype(np.uint8)
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=0, count=3)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=0, count=3, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as rgb:
             rgb.write(rgb_image_raw)
 
@@ -102,7 +102,7 @@ def moisture(b8a: Path, b11: Path, *, output: Path= None) -> np.ndarray:
     moisture[moisture == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(moisture.astype(rasterio.float32))
 
@@ -134,7 +134,7 @@ def ndvi(b4: Path, b8: Path, *, output: Path= None) -> np.ndarray:
     ndvi[ndvi == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(ndvi.astype(rasterio.float32))
 
@@ -163,7 +163,7 @@ def ndsi(b3: Path, b11: Path, *, output: Path= None) -> np.ndarray:
     ndsi[ndsi == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(ndsi.astype(rasterio.float32))
 
@@ -195,7 +195,7 @@ def ndwi(b3: Path, b8: Path, *, output: Path= None) -> np.ndarray:
     ndwi[ndwi == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as gtif:
             gtif.write(ndwi.astype(rasterio.float32))
 
@@ -220,7 +220,7 @@ def evi2(b4: Path, b8: Path, *, output: Path= None) -> np.ndarray:
     evi2[evi2 == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(evi2.astype(rasterio.float32))
 
@@ -246,7 +246,7 @@ def osavi(b4: Path, b8: Path, Y: float = 0.16, *, output: Path= None) -> np.ndar
     osavi[osavi == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(osavi.astype(rasterio.float32))
 
@@ -271,7 +271,7 @@ def ndre(b5: Path, b9: Path, *, output: Path= None) -> np.ndarray:
     ndre[ndre == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(ndre.astype(rasterio.float32))
 
@@ -296,7 +296,7 @@ def mndwi(b3: Path, b11: Path, *, output: Path= None) -> np.ndarray:
     mndwi[mndwi == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(mndwi.astype(rasterio.float32))
 
@@ -324,7 +324,7 @@ def bri(b3: Path, b5: Path, b8: Path, *, output: Path= None) -> np.ndarray:
     bri[bri == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(bri.astype(rasterio.float32))
 
@@ -357,7 +357,7 @@ def evi(b2: Path, b4: Path, b8: Path, *, output: Path= None) -> np.ndarray:
     evi[evi == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(evi.astype(rasterio.float32))
 
@@ -384,7 +384,7 @@ def ndyi(b2: Path, b3: Path, *, output: Path= None) -> np.ndarray:
     ndyi[ndyi == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(ndyi.astype(rasterio.float32))
 
@@ -409,7 +409,7 @@ def ri(b3: Path, b4: Path, *, output: Path= None) -> np.ndarray:
     ri[ri == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(ri.astype(rasterio.float32))
 
@@ -434,7 +434,7 @@ def cri1(b2: Path, b3: Path, *, output: Path= None) -> np.ndarray:
     cri1[cri1 == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as f:
             f.write(cri1.astype(rasterio.float32))
 
@@ -464,7 +464,7 @@ def bsi(b2: Path, b4: Path, b8: Path, b11: Path, *, output: Path= None) -> np.nd
     bsi[bsi == -np.inf] = np.nan
 
     if output:
-        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1)
+        kwargs.update(driver="GTiff", dtype=rasterio.float32, nodata=np.nan, count=1, compress="deflate", predictor=2)
         with rasterio.open(output, "w", **kwargs) as gtif:
             gtif.write(bsi.astype(rasterio.float32))
 
