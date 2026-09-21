@@ -37,6 +37,7 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
     minio_client = MinioConnection()
     mongo_client = MongoConnection()
     mongo_products_collection = mongo_client.get_collection_object()
+    mongo_composites_collection = mongo_client.get_composite_collection_object()
 
     # Names of the indexes that are taken into account
     indexes_used = [
@@ -60,8 +61,22 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
     min_useful_data_percentage = settings.MIN_USEFUL_DATA_PERCENTAGE
 
     product_per_season = {}
+    composite_per_season = {}
 
     for season in seasons:
+        # Check if composite already exists in s2-composites / MongoDB
+        comp_meta = mongo_composites_collection.find_one({"tile": tile, "season": season})
+        if comp_meta is None:
+            season_start, season_end = seasons[season]
+            comp_meta = mongo_composites_collection.find_one({
+                "title": {"$regex": f"_T{tile}_"},
+                "first_date": {"$gte": season_start, "$lte": season_end}
+            })
+        if comp_meta is not None:
+            composite_per_season[season] = comp_meta
+            print(f"Found existing composite for tile {tile} in season {season}: {comp_meta['title']}")
+            continue
+
         season_start, season_end = seasons[season]
         product_metadata_cursor = get_products_by_tile_and_date(
             tile, mongo_products_collection, season_start, season_end, min_useful_data_percentage
@@ -122,13 +137,14 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
         raster_df = pd.DataFrame({dem_name: raster_masked})
         tile_df = pd.concat([tile_df, raster_df], axis=1)
 
-    for season, products_metadata in product_per_season.items():
+    for season in seasons:
         print(season)
-
-        if len(products_metadata) == 0:
-            raise NoSentinelException(f"There is no valid Sentinel products for tile {tile}. Skipping it...")
+        if season in composite_per_season:
+            product_metadata = composite_per_season[season]
         else:
-            # If there are multiple products for one season, use a composite.
+            products_metadata = product_per_season.get(season, [])
+            if len(products_metadata) == 0:
+                raise NoSentinelException(f"There is no valid Sentinel products for tile {tile}. Skipping it...")
             products_metadata_list = list(products_metadata)
             product_metadata = _get_composite(
                 products_metadata_list, execution_mode
@@ -136,7 +152,8 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
             if product_metadata is None:
                 _create_composite(
                     products_metadata_list,
-                    execution_mode
+                    execution_mode,
+                    season=season
                 )
                 product_metadata = _get_composite(
                     products_metadata_list, execution_mode

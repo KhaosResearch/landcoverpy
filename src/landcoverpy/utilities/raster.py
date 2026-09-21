@@ -20,6 +20,7 @@ from landcoverpy.config import settings
 from landcoverpy.exceptions import NoSentinelException
 from landcoverpy.execution_mode import ExecutionMode
 from landcoverpy.minio import MinioConnection
+from landcoverpy.mongo import MongoConnection
 from landcoverpy.rasterpoint import RasterPoint
 from landcoverpy.utilities.geometries import (
     _convert_3D_2D,
@@ -223,8 +224,31 @@ def _get_product_rasters_paths(
 
 def _download_sample_band_by_tile(tile: str, minio_client: MinioConnection, mongo_collection: Collection):
     """
-    Having a tile, download a 10m sample sentinel band of any related product.
+    Having a tile, download a 10m sample sentinel band of any related product or composite.
+    Prioritizes existing composites in s2-composites so raw products are not required.
     """
+    # 1. First, try to get sample band from an existing composite in s2-composites
+    try:
+        mongo_composite_col = MongoConnection().get_composite_collection_object()
+        comp_meta = mongo_composite_col.find_one({"tile": tile}) or mongo_composite_col.find_one({"title": {"$regex": f"_T{tile}_"}})
+        if comp_meta is not None:
+            bucket = comp_meta.get("S3Bucket", settings.MINIO_BUCKET_NAME_COMPOSITES)
+            prefix = comp_meta.get("S3BandsPrefix")
+            if prefix:
+                objects = list(minio_client.list_objects(bucket, prefix=prefix))
+                # Look for a 10m band: B02_10m.tif, B03_10m.tif, B04_10m.tif, B08_10m.tif
+                for obj in objects:
+                    if "_10m.tif" in obj.object_name or "_10m.jp2" in obj.object_name:
+                        comp_title = comp_meta["title"]
+                        local_dir = Path(settings.TMP_DIR, comp_title)
+                        local_dir.mkdir(parents=True, exist_ok=True)
+                        local_path = str(local_dir / _get_raster_filename_from_path(obj.object_name))
+                        minio_client.fget_object(bucket, obj.object_name, local_path)
+                        return local_path
+    except Exception as e:
+        print(f"Notice: could not load sample band from composite for tile {tile}: {e}. Trying raw products...")
+
+    # 2. Fallback to raw products if no composite exists yet
     product_metadata = mongo_collection.find_one({"title": {"$regex": f"_T{tile}_"}})
     if product_metadata is None:
         raise NoSentinelException(f"Product with tile {tile} wasn't found in the database.")
