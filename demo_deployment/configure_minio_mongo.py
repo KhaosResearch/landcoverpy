@@ -35,3 +35,14 @@ def create_mongo_collections():
             print(f"Created collection: {collection}")
         else:
             print(f"Collection {collection} already exists.")
+
+    # Índices optimizados para composites y productos
+    composites_col = db["composites"]
+    composites_col.create_index([("tile", pymongo.ASCENDING), ("season", pymongo.ASCENDING)])
+    composites_col.create_index([("title", pymongo.ASCENDING)], unique=True)
+    print("Ensured indexes for 'composites' (tile, season) and (title).")
+
+    products_col = db["products"]
+    products_col.create_index([("title", pymongo.ASCENDING)])
+    print("Ensured indexes for 'products' (title).")
+
