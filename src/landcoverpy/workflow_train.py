@@ -50,6 +50,8 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
         "ndre",
         "ndvi",
         "osavi",
+        "bri",
+        "bsi",
     ]
     # Name of the sentinel bands that are ignored
     skip_bands = ["tci", "scl"]
