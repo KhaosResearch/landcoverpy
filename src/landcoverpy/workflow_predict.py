@@ -147,6 +147,8 @@ def _process_tile_predict(tile, execution_mode, used_columns=None, use_block_win
         "ndre",
         "ndvi",
         "osavi",
+        "bri",
+        "bsi",
     ]
     # Name of the sentinel bands that are ignored
     skip_bands = ["tci", "scl"]

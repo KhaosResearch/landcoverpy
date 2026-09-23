@@ -427,7 +427,7 @@ def _create_composite(
             temp_path_composite_band = Path(temp_path_composite_band)
             temp_paths_composite_bands.append(temp_path_composite_band)
 
-            kwargs_composite.update(compress="deflate", predictor=2)
+            kwargs_composite.update(compress="deflate", predictor=3)
             with rasterio.open(
                 temp_path_composite_band, "w", **kwargs_composite
             ) as file_composite:
@@ -490,19 +490,15 @@ def _create_composite(
                 index=[
                     "Moisture",
                     "NDVI",
-                    "NDWI",
-                    "NDSI",
-                    "EVI",
                     "OSAVI",
                     "EVI2",
                     "NDRE",
                     "NDYI",
                     "MNDWI",
                     "BRI",
-                    "TCI",
                     "RI",
                     "BSI",
-                    "CRI1"
+                    "CRI1",
                 ],
             )
 
