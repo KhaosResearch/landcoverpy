@@ -131,3 +131,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     purge_discarded_indexes(dry_run=args.dry_run)
+

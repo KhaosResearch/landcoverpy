@@ -99,61 +99,65 @@ def cleanup_tmp_dir():
                 pass
 
 
+SEASON_MONTHS = {
+    "spring": ["March", "April"],
+    "flowering": ["May"],
+    "summer": ["June", "July"],
+    "autumn": ["October", "November"],
+}
+
+
 def purge_raw_products_for_tile_season(
     minio_client: Minio,
     bucket_products: str,
     tile: str,
-    products_metadata: List[dict],
+    season: str,
+    season_start: datetime,
+    season_end: datetime,
     mongo_products_col=None,
 ) -> Tuple[int, int]:
     """
-    Elimina los objetos raw de los productos especificados de s2-products en MinIO.
-    Opcionalmente limpia los campos de indexes/intermediateProducts en MongoDB
-    para liberar espacio en la base de datos manteniendo trazabilidad.
+    Elimina TODOS los objetos raw, intermedios y capturas nubladas de s2-products en MinIO
+    para el tile y todos los meses de la estacion correspondiente.
+    Utiliza borrado por lotes (DeleteObject) para maxima velocidad y limpieza total.
     Retorna (num_objetos_eliminados, bytes_liberados).
     """
+    from minio.deleteobjects import DeleteObject
+
     deleted_objects = 0
     deleted_bytes = 0
+    months = SEASON_MONTHS.get(season, [])
 
-    for prod in products_metadata:
-        prefix = prod.get("S3BandsPrefix")
-        if prefix:
-            if prefix.endswith("/raw/"):
-                prefix = prefix[:-4]
-            elif prefix.endswith("/raw"):
-                prefix = prefix[:-3]
-        else:
-            # Construir el prefix desde el titulo del producto para no borrar otros tiles/estaciones
-            title = prod.get("title", "")
-            if "_T" in title:
-                tile_part = title.split("_T")[1][:5]
-                prefix = f"{tile_part}/{title.split('_')[2][:4]}/"
-            else:
-                print(f"  [ADVERTENCIA] Producto sin S3BandsPrefix ni titulo valido: {prod}. Saltando.")
-                continue
-
+    for month in months:
+        month_prefix = f"{tile}/2021/{month}/"
         try:
-            objects = list(minio_client.list_objects(bucket_products, prefix=prefix, recursive=True))
-            for obj in objects:
-                deleted_bytes += obj.size or 0
-                minio_client.remove_object(bucket_products, obj.object_name)
-                deleted_objects += 1
+            raw_objs = list(minio_client.list_objects(bucket_products, prefix=month_prefix, recursive=True))
+            if raw_objs:
+                for obj in raw_objs:
+                    deleted_bytes += obj.size or 0
+                del_list = [DeleteObject(o.object_name) for o in raw_objs]
+                for c_i in range(0, len(del_list), 1000):
+                    del_chunk = del_list[c_i:c_i + 1000]
+                    errors = list(minio_client.remove_objects(bucket_products, del_chunk))
+                    if errors:
+                        for err in errors:
+                            print(f"  [ERROR] Borrando {err.name}: {err.message}")
+                deleted_objects += len(raw_objs)
         except Exception as e:
-            print(f"  [ADVERTENCIA] Error eliminando objetos de {prefix}: {e}")
-            continue
+            print(f"  [ADVERTENCIA] Error eliminando objetos de {month_prefix}: {e}")
 
-        # Limpiar campos pesados en MongoDB manteniendo el documento del producto
-        # (misma estrategia que sentinel2-download: mantener trazabilidad, liberar espacio)
-        if mongo_products_col is not None:
-            title = prod.get("title")
-            if title:
-                try:
-                    mongo_products_col.update_many(
-                        {"title": title},
-                        {"$unset": {"indexes": "", "intermediateProducts": ""}}
-                    )
-                except Exception as e:
-                    print(f"  [ADVERTENCIA] Error limpiando MongoDB para {title}: {e}")
+    # Limpiar campos pesados en MongoDB manteniendo el documento del producto
+    if mongo_products_col is not None:
+        try:
+            mongo_products_col.update_many(
+                {
+                    "tile": tile,
+                    "datetakeSensingTime": {"$gte": season_start, "$lt": season_end},
+                },
+                {"$unset": {"indexes": "", "intermediateProducts": ""}}
+            )
+        except Exception as e:
+            print(f"  [ADVERTENCIA] Error limpiando MongoDB para {tile} ({season}): {e}")
 
     return deleted_objects, deleted_bytes
 
@@ -283,22 +287,19 @@ def process_composites_and_cleanup(
 
             if existing_comp is not None:
                 total_composites_skipped += 1
-                all_season_prods = list(mongo_products_col.find({
-                    "tile": tile,
-                    "datetakeSensingTime": {"$gte": season_start, "$lt": season_end}
-                }))
-                if all_season_prods:
-                    if dry_run:
-                        print(f"{prefix_info} Composite ya existe. [DRY-RUN] Se purgarian {len(all_season_prods)} productos raw residuales.")
-                    else:
-                        d_objs, d_bytes = purge_raw_products_for_tile_season(
-                            minio_client, bucket_products, tile, all_season_prods,
-                            mongo_products_col=mongo_products_col,
-                        )
+                if dry_run:
+                    print(f"{prefix_info} Composite ya existe. [DRY-RUN] Se verificarian residuos raw.")
+                else:
+                    d_objs, d_bytes = purge_raw_products_for_tile_season(
+                        minio_client, bucket_products, tile, season_name,
+                        season_start, season_end,
+                        mongo_products_col=mongo_products_col,
+                    )
+                    if d_objs > 0:
                         total_freed_bytes += d_bytes
                         print(f"{prefix_info} Composite ya existia. Purgados {d_objs} objetos raw residuales (+{d_bytes / (1024**3):.2f} GB).")
-                else:
-                    print(f"{prefix_info} Composite ya verificado. Omitiendo.")
+                    else:
+                        print(f"{prefix_info} Composite ya verificado. Omitiendo.")
                 continue
 
             if not raw_products:
@@ -338,12 +339,9 @@ def process_composites_and_cleanup(
                     continue
 
                 # Purgar datos raw de s2-products y limpiar campos en MongoDB (todas las capturas de la estacion)
-                all_season_prods = list(mongo_products_col.find({
-                    "tile": tile,
-                    "datetakeSensingTime": {"$gte": season_start, "$lt": season_end}
-                }))
                 d_objs, d_bytes = purge_raw_products_for_tile_season(
-                    minio_client, bucket_products, tile, all_season_prods or raw_products,
+                    minio_client, bucket_products, tile, season_name,
+                    season_start, season_end,
                     mongo_products_col=mongo_products_col,
                 )
                 total_freed_bytes += d_bytes
