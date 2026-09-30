@@ -7,7 +7,7 @@ import os
 import shutil
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -211,6 +211,87 @@ def _purge_raw_products(
     return deleted_objects, deleted_bytes
 
 
+def _acquire_tile_claim(
+    mongo_db,
+    tile: str,
+    season: str,
+    worker_id: str,
+    timeout_seconds: int = 7200,
+) -> bool:
+    """
+    Intenta reclamar un tile de forma atomica para evitar que dos workers
+    procesen el mismo tile simultaneamente (especialmente durante el cruce en el centro).
+    Retorna True si el tile fue reclamado con exito, False si ya esta siendo procesado por otro worker.
+    """
+    col = mongo_db["tile_claims"]
+    now = datetime.utcnow()
+    expire_threshold = now - timedelta(seconds=timeout_seconds)
+
+    try:
+        # 1. Si existe un reclamo expirado (> 2h) o de nuestro propio worker, renovarlo
+        res = col.find_one_and_update(
+            {
+                "tile": tile,
+                "season": season,
+                "$or": [
+                    {"claimed_at": {"$lt": expire_threshold}},
+                    {"claimed_by": worker_id},
+                ],
+            },
+            {
+                "$set": {
+                    "claimed_by": worker_id,
+                    "claimed_at": now,
+                    "status": "processing",
+                }
+            },
+            upsert=False,
+        )
+        if res is not None:
+            return True
+
+        # 2. Si no existia documento, intentar crearlo con upsert atómico
+        col.update_one(
+            {"tile": tile, "season": season},
+            {
+                "$setOnInsert": {
+                    "tile": tile,
+                    "season": season,
+                    "claimed_by": worker_id,
+                    "claimed_at": now,
+                    "status": "processing",
+                }
+            },
+            upsert=True,
+        )
+        doc = col.find_one({"tile": tile, "season": season})
+        return doc is not None and doc.get("claimed_by") == worker_id
+    except Exception:
+        # En caso de colision de indice unico en upsert concurrente
+        return False
+
+
+def _release_tile_claim(
+    mongo_db,
+    tile: str,
+    season: str,
+    worker_id: str,
+    success: bool = True,
+):
+    """Libera o actualiza el estado del reclamo del tile."""
+    try:
+        col = mongo_db["tile_claims"]
+        if success:
+            col.update_one(
+                {"tile": tile, "season": season, "claimed_by": worker_id},
+                {"$set": {"status": "completed", "completed_at": datetime.utcnow()}},
+            )
+        else:
+            col.delete_one({"tile": tile, "season": season, "claimed_by": worker_id})
+    except Exception:
+        pass
+
+
 def download_products():
     seasons_file = os.getenv("SEASONS_FILE", "/app/data/seasons.json")
     if not Path(seasons_file).exists():
@@ -221,12 +302,15 @@ def download_products():
 
     target_season = os.getenv("TARGET_SEASON")
     if target_season:
-        target_season = target_season.lower().strip()
-        if target_season in seasons:
-            seasons = {target_season: seasons[target_season]}
-            print(f"Filtrando ejecucion para estacion unica: {target_season.upper()}")
+        requested = [s.strip().lower() for s in target_season.split(",") if s.strip()]
+        valid_seasons = {k: v for k, v in seasons.items() if k.lower() in requested}
+        if valid_seasons:
+            seasons = valid_seasons
+            print(f"Filtrando ejecucion para estaciones: {list(seasons.keys())}")
         else:
-            print(f"[ADVERTENCIA] TARGET_SEASON='{target_season}' no valida. Opciones: {list(seasons.keys())}. Procesando todas.")
+            print(
+                f"[ADVERTENCIA] TARGET_SEASON='{target_season}' no valida. Opciones: {list(seasons.keys())}. Procesando todas."
+            )
 
     data_file = os.getenv("DB_FILE")
     if data_file:
@@ -252,20 +336,25 @@ def download_products():
     else:
         tiles_to_predict = set()
 
-    tiles_to_download = sorted(tiles_to_train.union(tiles_to_predict))
+    reverse_tiles = os.getenv("REVERSE_TILES", "false").lower() in ("true", "1", "yes")
+    tiles_to_download = sorted(tiles_to_train.union(tiles_to_predict), reverse=reverse_tiles)
     total_tiles = len(tiles_to_download)
     total_seasons = len(seasons)
     total_expected_composites = total_tiles * total_seasons
+
+    worker_id = os.getenv("WORKER_ID", os.getenv("HOSTNAME", f"worker-{os.getpid()}"))
 
     minio_client = _get_minio_client()
     mongo_db = _get_mongo_db()
     mongo_products_col = mongo_db["products"]
     mongo_composites_col = mongo_db["composites"]
+    mongo_claims_col = mongo_db["tile_claims"]
 
-    # Asegurar indices compuestos en MongoDB para comprobaciones O(1)
+    # Asegurar indices compuestos en MongoDB para comprobaciones O(1) y control de concurrencia
     mongo_composites_col.create_index([("tile", pymongo.ASCENDING), ("season", pymongo.ASCENDING)])
     mongo_composites_col.create_index([("title", pymongo.ASCENDING)], unique=True)
     mongo_products_col.create_index([("title", pymongo.ASCENDING)])
+    mongo_claims_col.create_index([("tile", pymongo.ASCENDING), ("season", pymongo.ASCENDING)], unique=True)
 
     bucket_products = os.getenv("MINIO_BUCKET_NAME_PRODUCTS", "s2-products")
     bucket_composites = os.getenv("MINIO_BUCKET_NAME_COMPOSITES", "s2-composites")
@@ -276,6 +365,7 @@ def download_products():
     print("=" * 80)
     print("LANDCOVERPY - PIPELINE DE COMPOSITES SENTINEL-2 (MEDITERRANEO 2021)")
     print(f"Total Tiles: {total_tiles} | Estaciones: {total_seasons} | Total Composites: {total_expected_composites}")
+    print(f"Worker ID: {worker_id} | Direccion: {'INVERSO (Z -> A)' if reverse_tiles else 'ESTANDAR (A -> Z)'}")
     print("Estrategia: Season-by-Season | Retencion: Composites Solo (Purga Inmediata de Raw)")
     print("=" * 80)
 
@@ -320,7 +410,14 @@ def download_products():
                 cumulative_completed += 1
                 continue
 
-            # 2. Si no existe composite: descargar/procesar con reintentos y enfriamiento para WSL2
+            # 2. Comprobar reclamo atomico para evitar colisiones en paralelo (cruce en el centro)
+            if not _acquire_tile_claim(mongo_db, tile, season_name, worker_id):
+                claim_doc = mongo_claims_col.find_one({"tile": tile, "season": season_name})
+                claimed_by_info = claim_doc.get("claimed_by", "otro worker") if claim_doc else "otro worker"
+                print(f"  {prefix_log} [CLAIM ACTIVO] Tile reservado por {claimed_by_info}. Saltando para evitar duplicidad.")
+                continue
+
+            # 3. Si no existe composite: descargar/procesar con reintentos y enfriamiento para WSL2
             max_tile_attempts = 3
             attempt = 0
             tile_success = False
@@ -418,6 +515,9 @@ def download_products():
                 finally:
                     _cleanup_tmp_dir()
                     gc.collect()
+
+            # Liberar o actualizar el reclamo segun exito/fallo
+            _release_tile_claim(mongo_db, tile, season_name, worker_id, success=tile_success)
 
         # Resumen de estacion
         fails = len(failed_tiles_dict[season_name])
