@@ -2,12 +2,12 @@
 """
 audit_season_coverage.py
 
-Herramienta de auditoria y control en tiempo real para Sentinel-2 en MinIO y MongoDB.
-Muestra:
-- Conteo y porcentaje de composites completados por estacion.
-- Estado de claims activos (que worker esta procesando que tile en este momento).
-- Lista exacta de tiles pendientes por estacion.
-- Deteccion de anomalias (composites con < 10 bandas).
+Real-time audit and tracking tool for Sentinel-2 composites in MinIO and MongoDB.
+Provides:
+- Count and percentage of completed composites per season.
+- Active worker claims status (which worker is processing which tile).
+- Full listing of pending tiles per season.
+- High-level cluster progress metrics.
 """
 
 import json
@@ -77,7 +77,7 @@ def get_target_tiles():
 
 def main():
     print("=" * 80)
-    print("AUDITORIA DE COBERTURA Y ESTADO DEL CLUSTER SENTINEL-2 (MEDITERRANEO 2021)")
+    print("SENTINEL-2 CLUSTER COVERAGE AND STATUS AUDIT (MEDITERRANEAN 2021)")
     print(f"Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     print("=" * 80)
 
@@ -86,20 +86,20 @@ def main():
         col = db["composites"]
         claims_col = db["tile_claims"]
     except Exception as e:
-        print(f"[ERROR] Conectando a MongoDB: {e}")
+        print(f"[ERROR] Connecting to MongoDB: {e}")
         return
 
     try:
         all_tiles = get_target_tiles()
     except Exception as e:
-        print(f"[ADVERTENCIA] No se pudo leer la lista completa de geometrias ({e}). Usando tiles de MongoDB.")
+        print(f"[WARNING] Could not load complete geometries ({e}). Using distinct tiles from MongoDB.")
         all_tiles = sorted(col.distinct("tile"))
 
     total_target = len(all_tiles)
     seasons = ["spring", "flowering", "summer", "autumn"]
 
-    # 1. Resumen por estacion
-    print("\n1. PROGRESO GLOBAL POR ESTACION:")
+    # 1. Summary per season
+    print("\n1. GLOBAL PROGRESS BY SEASON:")
     print("-" * 80)
     total_done = 0
     pending_dict = {}
@@ -110,33 +110,33 @@ def main():
         pending_dict[s] = pending
         pct = len(done_set) / total_target * 100 if total_target > 0 else 0
         total_done += len(done_set)
-        print(f"  * {s.upper():<10}: {len(done_set):>3} / {total_target} ({pct:5.1f}%) | Pendientes: {len(pending):>3}")
+        print(f"  * {s.upper():<10}: {len(done_set):>3} / {total_target} ({pct:5.1f}%) | Pending: {len(pending):>3}")
 
     global_pct = total_done / (total_target * len(seasons)) * 100 if total_target > 0 else 0
     print(f"  -------------------------------------------------------------")
     print(f"  TOTAL GLOBAL : {total_done:>4} / {total_target * len(seasons)} ({global_pct:5.1f}%)")
 
-    # 2. Reclamos activos (Claims)
-    print("\n2. WORKERS ACTIVOS Y TILES EN PROCESAMIENTO:")
+    # 2. Active claims
+    print("\n2. ACTIVE WORKERS AND IN-PROGRESS TILES:")
     print("-" * 80)
     cutoff = datetime.utcnow() - timedelta(hours=2)
     active_claims = list(claims_col.find({"status": "processing", "claimed_at": {"$gte": cutoff}}))
     if active_claims:
         for c in active_claims:
             elapsed = (datetime.utcnow() - c["claimed_at"]).total_seconds() / 60
-            print(f"  - Worker [{c.get('claimed_by', 'desconocido')}]: {c.get('season', '?').upper()} -> Tile {c.get('tile')} (iniciado hace {elapsed:.1f} min)")
+            print(f"  - Worker [{c.get('claimed_by', 'unknown')}]: {c.get('season', '?').upper()} -> Tile {c.get('tile')} (claimed {elapsed:.1f} min ago)")
     else:
-        print("  Ningun reclamo activo registrado actualmente (o workers sin sistema de claims).")
+        print("  No active claims currently registered.")
 
-    # 3. Muestra de tiles pendientes
-    print("\n3. RANGO DE TILES PENDIENTES:")
+    # 3. Sample of pending tiles
+    print("\n3. SAMPLE OF PENDING TILES:")
     print("-" * 80)
     for s in seasons:
         p = pending_dict[s]
         if p:
-            print(f"  * {s.upper():<10}: {len(p)} pendientes. Primeros 3: {p[:3]} ... Ultimos 3: {p[-3:]}")
+            print(f"  * {s.upper():<10}: {len(p)} pending. First 3: {p[:3]} ... Last 3: {p[-3:]}")
         else:
-            print(f"  * {s.upper():<10}: 100% COMPLETADO")
+            print(f"  * {s.upper():<10}: 100% COMPLETED")
 
     print("\n" + "=" * 80)
 

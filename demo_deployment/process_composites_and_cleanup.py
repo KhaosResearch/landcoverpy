@@ -2,11 +2,11 @@
 """
 process_composites_and_cleanup.py
 
-Herramienta de recuperacion, generacion de composites y purga de productos raw
-para Sentinel-2 / LandCoverPy en MinIO y MongoDB.
+Recovery, composite generation, and raw products purge utility
+for Sentinel-2 / LandCoverPy in MinIO and MongoDB.
 
-Procesa los productos raw existentes en s2-products, genera los composites
-estacionales en s2-composites y elimina los datos raw para liberar almacenamiento.
+Processes existing raw products in s2-products, generates seasonal
+composites in s2-composites, and purges raw captures to immediately reclaim storage.
 """
 
 import argparse
@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-# Limitar cache interna de GDAL para prevenir fugas de RAM
+# Limit GDAL internal cache to prevent RAM exhaustion
 os.environ["GDAL_CACHEMAX"] = os.getenv("GDAL_CACHEMAX", "512")
 
 import urllib3
@@ -28,7 +28,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-# Configurar connection pooling para reutilizar sockets TCP en WSL2
+# Configure connection pooling to reuse TCP sockets in WSL2/Linux
 _RETRY_STRATEGY = Retry(
     total=5,
     backoff_factor=2,
@@ -79,14 +79,14 @@ def get_mongo_db(max_retries: int = 20, delay: int = 3):
             return client[db_name]
         except Exception as e:
             if attempt < max_retries:
-                print(f"Esperando a que MongoDB termine de inicializarse ({attempt}/{max_retries})...")
+                print(f"Waiting for MongoDB initialization ({attempt}/{max_retries})...")
                 time.sleep(delay)
             else:
                 raise e
 
 
 def cleanup_tmp_dir():
-    """Garantiza la limpieza de temporales locales."""
+    """Ensure local temporary files are completely purged."""
     tmp_dir = Path(settings.TMP_DIR)
     if tmp_dir.exists():
         for item in tmp_dir.iterdir():
@@ -117,10 +117,10 @@ def purge_raw_products_for_tile_season(
     mongo_products_col=None,
 ) -> Tuple[int, int]:
     """
-    Elimina TODOS los objetos raw, intermedios y capturas nubladas de s2-products en MinIO
-    para el tile y todos los meses de la estacion correspondiente.
-    Utiliza borrado por lotes (DeleteObject) para maxima velocidad y limpieza total.
-    Retorna (num_objetos_eliminados, bytes_liberados).
+    Deletes ALL raw objects, intermediate products, and cloudy captures in s2-products
+    for the specified tile across all months of the given season.
+    Uses batch deletion (DeleteObject) for maximum throughput and complete cleanup.
+    Returns (num_deleted_objects, freed_bytes).
     """
     from minio.deleteobjects import DeleteObject
 
@@ -141,12 +141,12 @@ def purge_raw_products_for_tile_season(
                     errors = list(minio_client.remove_objects(bucket_products, del_chunk))
                     if errors:
                         for err in errors:
-                            print(f"  [ERROR] Borrando {err.name}: {err.message}")
+                            print(f"  [ERROR] Deleting {err.name}: {err.message}")
                 deleted_objects += len(raw_objs)
         except Exception as e:
-            print(f"  [ADVERTENCIA] Error eliminando objetos de {month_prefix}: {e}")
+            print(f"  [WARNING] Error deleting objects from {month_prefix}: {e}")
 
-    # Limpiar campos pesados en MongoDB manteniendo el documento del producto
+    # Clean heavy metadata fields in MongoDB while keeping the product document
     if mongo_products_col is not None:
         try:
             mongo_products_col.update_many(
@@ -157,7 +157,7 @@ def purge_raw_products_for_tile_season(
                 {"$unset": {"indexes": "", "intermediateProducts": ""}}
             )
         except Exception as e:
-            print(f"  [ADVERTENCIA] Error limpiando MongoDB para {tile} ({season}): {e}")
+            print(f"  [WARNING] Error cleaning MongoDB metadata for {tile} ({season}): {e}")
 
     return deleted_objects, deleted_bytes
 
@@ -172,9 +172,9 @@ def verify_composite_exists(
     season_end: datetime,
 ) -> Optional[dict]:
     """
-    Comprueba si el composite para (tile, season) ya existe tanto en MongoDB como en MinIO.
-    Usa exclusivamente el indice compuesto (tile, season) para evitar falsos positivos
-    con composites de otras estaciones.
+    Checks whether a composite for (tile, season) already exists in both MongoDB and MinIO.
+    Exclusively checks the compound index (tile, season) to avoid false positives
+    with composites from different seasons.
     """
     comp_meta = mongo_composites_col.find_one({"tile": tile, "season": season})
 
@@ -183,7 +183,7 @@ def verify_composite_exists(
         if prefix:
             try:
                 objects = list(minio_client.list_objects(bucket_composites, prefix=prefix, recursive=True))
-                # Un composite valido debe tener al menos 10 bandas
+                # A complete composite must contain at least 10 bands
                 if len(objects) >= 10:
                     return comp_meta
             except Exception:
@@ -200,14 +200,14 @@ def process_composites_and_cleanup(
     worker_id: int = 0,
 ):
     print("=" * 80)
-    print("LANDCOVERPY - PROCESAMIENTO DE COMPOSITES Y PURGA DE DATOS RAW")
-    print(f"Modo: {'SIMULACION (DRY-RUN)' if dry_run else 'EJECUCION REAL'}")
+    print("LANDCOVERPY - COMPOSITE PROCESSING AND RAW DATA PURGE")
+    print(f"Mode: {'SIMULATION (DRY-RUN)' if dry_run else 'LIVE EXECUTION'}")
     if num_workers > 1:
-        print(f"Cluster distribuido: Worker {worker_id + 1} de {num_workers}")
+        print(f"Distributed cluster: Worker {worker_id + 1} of {num_workers}")
     if season_filter:
-        print(f"Filtro de estacion: {season_filter}")
+        print(f"Season filter: {season_filter}")
     if tile_filter:
-        print(f"Filtro de tile: {tile_filter}")
+        print(f"Tile filter: {tile_filter}")
     print("=" * 80)
 
     minio_client = get_minio_client()
@@ -215,7 +215,7 @@ def process_composites_and_cleanup(
     mongo_products_col = mongo_db["products"]
     mongo_composites_col = mongo_db["composites"]
 
-    # Asegurar indices compuestos en MongoDB
+    # Ensure compound indexes in MongoDB
     mongo_composites_col.create_index([("tile", pymongo.ASCENDING), ("season", pymongo.ASCENDING)])
     mongo_composites_col.create_index([("title", pymongo.ASCENDING)], unique=True)
     mongo_products_col.create_index([("title", pymongo.ASCENDING)])
@@ -233,8 +233,8 @@ def process_composites_and_cleanup(
     if season_filter and season_filter in seasons:
         seasons = {season_filter: seasons[season_filter]}
 
-    # Detectar tiles con datos raw en s2-products o MongoDB
-    print("\nDetectando tiles disponibles...")
+    # Detect tiles with raw data in s2-products or MongoDB
+    print("\nDetecting available tiles...")
     if tile_filter:
         target_tiles = [tile_filter]
     else:
@@ -248,11 +248,11 @@ def process_composites_and_cleanup(
         target_tiles = sorted(raw_tiles_set)
 
     total_target = len(target_tiles)
-    print(f"Total tiles detectados con registros raw: {total_target}")
+    print(f"Total tiles detected with raw records: {total_target}")
 
     if num_workers > 1:
         target_tiles = [t for i, t in enumerate(target_tiles) if i % num_workers == worker_id]
-        print(f"Particion distribuida: Worker {worker_id + 1}/{num_workers} procesara {len(target_tiles)} tiles asignados.\n")
+        print(f"Distributed partition: Worker {worker_id + 1}/{num_workers} processing {len(target_tiles)} assigned tiles.\n")
     else:
         print()
 
@@ -267,19 +267,19 @@ def process_composites_and_cleanup(
         season_start = datetime.strptime(dates["start"], "%Y-%m-%d")
         season_end = datetime.strptime(dates["end"], "%Y-%m-%d")
 
-        print(f"\n>>> [ESTACION: {season_name.upper()}] ({dates['start']} a {dates['end']})")
+        print(f"\n>>> [SEASON: {season_name.upper()}] ({dates['start']} to {dates['end']})")
 
         for idx, tile in enumerate(target_tiles, 1):
             t0 = time.time()
             prefix_info = f"[{idx}/{total_target}: {tile}] [{season_name}]"
 
-            # 1. Comprobar si ya existe el composite en s2-composites
+            # 1. Check if composite already exists in s2-composites
             existing_comp = verify_composite_exists(
                 minio_client, mongo_composites_col, bucket_composites,
                 tile, season_name, season_start, season_end
             )
 
-            # Buscar productos raw en MongoDB
+            # Query raw products in MongoDB
             cursor = get_products_by_tile_and_date(
                 tile, mongo_products_col, season_start, season_end, min_useful_data_percentage
             )
@@ -288,7 +288,7 @@ def process_composites_and_cleanup(
             if existing_comp is not None:
                 total_composites_skipped += 1
                 if dry_run:
-                    print(f"{prefix_info} Composite ya existe. [DRY-RUN] Se verificarian residuos raw.")
+                    print(f"{prefix_info} Composite already exists. [DRY-RUN] Would verify residual raw files.")
                 else:
                     d_objs, d_bytes = purge_raw_products_for_tile_season(
                         minio_client, bucket_products, tile, season_name,
@@ -297,30 +297,30 @@ def process_composites_and_cleanup(
                     )
                     if d_objs > 0:
                         total_freed_bytes += d_bytes
-                        print(f"{prefix_info} Composite ya existia. Purgados {d_objs} objetos raw residuales (+{d_bytes / (1024**3):.2f} GB).")
+                        print(f"{prefix_info} Existing composite verified. Purged {d_objs} residual raw objects (+{d_bytes / (1024**3):.2f} GB).")
                     else:
-                        print(f"{prefix_info} Composite ya verificado. Omitiendo.")
+                        print(f"{prefix_info} Composite already verified. Skipping.")
                 continue
 
             if not raw_products:
-                print(f"{prefix_info} Sin productos raw validos (>= {min_useful_data_percentage}% utiles). Omitiendo.")
+                print(f"{prefix_info} No valid raw products (>= {min_useful_data_percentage}% useful). Skipping.")
                 continue
 
-            # 2. Validar productos para el composite
+            # 2. Validate products for composite
             if dry_run:
-                print(f"{prefix_info} [DRY-RUN] Se generaria composite con {len(raw_products[:max_products_composite])} productos y se purgarian los datos raw.")
+                print(f"{prefix_info} [DRY-RUN] Would generate composite with {len(raw_products[:max_products_composite])} products and purge raw data.")
                 continue
 
             try:
-                print(f"{prefix_info} Validando {len(raw_products)} capturas raw...")
+                print(f"{prefix_info} Validating {len(raw_products)} raw captures...")
                 valid_products = _validate_composite_products(raw_products)
                 selected_products = valid_products[:max_products_composite]
 
                 if not selected_products:
-                    print(f"{prefix_info} [ADVERTENCIA] Ningun producto supero la validacion de bandas. Omitiendo.")
+                    print(f"{prefix_info} [WARNING] No products passed band validation. Skipping.")
                     continue
 
-                print(f"{prefix_info} Generando composite con {len(selected_products)} productos...")
+                print(f"{prefix_info} Generating composite with {len(selected_products)} products...")
                 _create_composite(
                     selected_products,
                     execution_mode=ExecutionMode.LAND_COVER_PREDICTION,
@@ -328,17 +328,17 @@ def process_composites_and_cleanup(
                     season=season_name,
                 )
 
-                # Verificar subida a MinIO
+                # Verify upload in MinIO
                 comp_verified = verify_composite_exists(
                     minio_client, mongo_composites_col, bucket_composites,
                     tile, season_name, season_start, season_end
                 )
 
                 if comp_verified is None:
-                    print(f"{prefix_info} [ERROR] La verificacion de integridad del composite fallo. No se borraran los raw.")
+                    print(f"{prefix_info} [ERROR] Composite integrity check failed in MinIO. Raw files will not be deleted.")
                     continue
 
-                # Purgar datos raw de s2-products y limpiar campos en MongoDB (todas las capturas de la estacion)
+                # Purge raw products from s2-products and clean MongoDB metadata
                 d_objs, d_bytes = purge_raw_products_for_tile_season(
                     minio_client, bucket_products, tile, season_name,
                     season_start, season_end,
@@ -349,33 +349,33 @@ def process_composites_and_cleanup(
 
                 elapsed = time.time() - t0
                 print(
-                    f"{prefix_info} Composite completado y verificado en {elapsed:.1f}s | "
-                    f"Purgados {d_objs} archivos raw (+{d_bytes / (1024**3):.2f} GB liberados)."
+                    f"{prefix_info} Composite completed and verified in {elapsed:.1f}s | "
+                    f"Purged {d_objs} raw files (+{d_bytes / (1024**3):.2f} GB freed)."
                 )
 
             except Exception as e:
-                print(f"{prefix_info} [ERROR] Excepcion al procesar composite: {e}")
+                print(f"{prefix_info} [ERROR] Exception processing composite: {e}")
             finally:
                 cleanup_tmp_dir()
                 gc.collect()
 
     print("\n" + "=" * 80)
-    print("RESUMEN DE EJECUCION")
-    print(f"Composites creados y verificados: {total_composites_created}")
-    print(f"Composites ya existentes (omitidos): {total_composites_skipped}")
-    print(f"Espacio total liberado en MinIO s2-products: {total_freed_bytes / (1024**3):.2f} GB ({total_freed_bytes / (1024**4):.2f} TB)")
+    print("EXECUTION SUMMARY")
+    print(f"Composites created and verified: {total_composites_created}")
+    print(f"Composites already existing (skipped): {total_composites_skipped}")
+    print(f"Total space freed in MinIO s2-products: {total_freed_bytes / (1024**3):.2f} GB ({total_freed_bytes / (1024**4):.2f} TB)")
     print("=" * 80)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Procesamiento de Composites Sentinel-2 y Purga de Datos Raw"
+        description="Sentinel-2 Composite Processing and Raw Data Purge"
     )
-    parser.add_argument("--season", type=str, default=None, help="Filtrar por estacion (spring, flowering, summer, autumn)")
-    parser.add_argument("--tile", type=str, default=None, help="Filtrar por tile especifico (ej. 30STH)")
-    parser.add_argument("--dry-run", action="store_true", help="Simulacion sin realizar cambios ni borrados")
-    parser.add_argument("--num-workers", type=int, default=int(os.getenv("NUM_WORKERS", "1")), help="Numero total de maquinas/workers en paralelo")
-    parser.add_argument("--worker-id", type=int, default=int(os.getenv("WORKER_ID", "0")), help="ID de este worker (0 a num-workers - 1)")
+    parser.add_argument("--season", type=str, default=None, help="Filter by season (spring, flowering, summer, autumn)")
+    parser.add_argument("--tile", type=str, default=None, help="Filter by specific tile (e.g. 30STH)")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate run without modifying or deleting data")
+    parser.add_argument("--num-workers", type=int, default=int(os.getenv("NUM_WORKERS", "1")), help="Total number of workers in parallel")
+    parser.add_argument("--worker-id", type=int, default=int(os.getenv("WORKER_ID", "0")), help="ID of this worker (0 to num-workers - 1)")
 
     args = parser.parse_args()
     process_composites_and_cleanup(

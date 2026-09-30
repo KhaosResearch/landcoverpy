@@ -168,9 +168,9 @@ def _download_and_validate_band(band_path, expected_shape, minio_client, product
         return False
     return True
 
-# Bandas requeridas para los composites de reflectancia e indices cientificos de LandCoverPy
+# Required bands for reflectance composites and scientific indices in LandCoverPy
 COMPOSITE_SPECTRAL_BANDS = {
-    # 12 Bandas espectrales nativas de Sentinel-2 L2A (100% de la informacion fisica del sensor)
+    # 12 Native spectral bands of Sentinel-2 L2A (100% physical sensor information)
     "B01_60m",
     "B02_10m",
     "B03_10m",
@@ -183,7 +183,7 @@ COMPOSITE_SPECTRAL_BANDS = {
     "B09_60m",
     "B11_20m",
     "B12_20m",
-    # Bandas adicionales requeridas por las formulas de indices (NDSI, MNDWI, NDRE)
+    # Additional bands required by index formulas (NDSI, MNDWI, NDRE)
     "B03_20m",
     "B05_60m",
 }
@@ -223,7 +223,7 @@ def _validate_composite_products(products_metadata: Iterable[dict]) -> Iterable[
         rasters_paths, is_band = _get_product_rasters_paths(product_metadata, minio_client)
         all_bands_paths = list(compress(rasters_paths, is_band))
 
-        # Verificar que el producto contiene todas las bandas requeridas para el composite
+        # Verify that the product contains all required bands for the composite
         all_band_stems = {Path(_get_raster_filename_from_path(p)).stem for p in all_bands_paths}
         missing_bands = COMPOSITE_SPECTRAL_BANDS - all_band_stems
         if missing_bands:
@@ -351,8 +351,8 @@ def _create_composite(
     composite_title = _get_title_composite(products_titles, execution_mode)
     temp_path_composite = Path(tmp_dir, composite_title)
 
-    # Pre-calcular variables de ruta a partir de composite_title (disponible aqui siempre)
-    # para evitar NameError si el bucle de bandas no llega a ejecutarse
+    # Pre-calculate path variables from composite_title (always available here)
+    # to avoid NameError if the band loop does not execute
     _splits_T = composite_title.split("_T")
     tile_id = str(_splits_T[1][0:5])
     _splits_date = composite_title.split("_")
@@ -371,10 +371,10 @@ def _create_composite(
             for band_path in bands_paths_product:
                 band_name = _get_raster_name_from_path(band_path)
                 band_filename = _get_raster_filename_from_path(band_path)
-                # SCL se usa para enmascarar nubes en _composite, no se incluye como banda de reflectancia
+                # SCL is used for cloud masking in _composite, not included as a reflectance band
                 if "SCL" in band_name:
                     continue
-                # Si no se pide explicitamente COMPOSITE_ALL_BANDS, procesar las bandas de reflectancia cientificas
+                # Unless COMPOSITE_ALL_BANDS is explicitly enabled, only process scientific reflectance bands
                 include_all_bands = os.environ.get("COMPOSITE_ALL_BANDS", "false").lower() in ("true", "1")
                 band_stem = Path(band_filename).stem
                 if not include_all_bands and band_stem not in COMPOSITE_SPECTRAL_BANDS:
@@ -433,7 +433,7 @@ def _create_composite(
             ) as file_composite:
                 file_composite.write(composite_i_band)
 
-            # Upload raster to minio — tile_id, year, period_folder ya calculados antes del try
+            # Upload raster to MinIO — tile_id, year, period_folder pre-calculated before try block
             band_filename = band_filename[:-3] + "tif"
             minio_band_path = join(tile_id, year, period_folder, "composites", composite_title, "raw", band_filename)
             minio_client.fput_object(
@@ -446,7 +446,7 @@ def _create_composite(
             print(
                 f"Uploaded raster: -> {temp_path_composite_band} into {bucket_composites}:{minio_band_path}"
             )
-            # Eliminar archivo local inmediatamente para no saturar disco
+            # Immediately delete local file to prevent disk exhaustion
             try:
                 temp_path_composite_band.unlink(missing_ok=True)
             except Exception:

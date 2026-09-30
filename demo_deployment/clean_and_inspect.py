@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-clean_and_inspect.py - Herramienta de Inspección, Auditoría y Purga Segura para LandCoverPy / MinIO
+clean_and_inspect.py - Inspection, Audit, and Safe Purge Utility for LandCoverPy / MinIO
 
-Uso:
+Usage:
   python clean_and_inspect.py --audit
-  python clean_and_inspect.py --create-composites
   python clean_and_inspect.py --purge-raw --confirm
 """
 
@@ -19,7 +18,7 @@ from minio.error import S3Error
 import pymongo
 
 def get_minio_client():
-    # Detectar si se ejecuta dentro del contenedor o desde el host
+    # Detect execution within container or from host
     host = os.getenv("MINIO_HOST", "localhost")
     port = os.getenv("MINIO_PORT", "9000" if host != "localhost" else "31113")
     access_key = os.getenv("MINIO_ACCESS_KEY", "adminadmin")
@@ -45,20 +44,20 @@ def get_mongo_client():
 
 def audit_storage(minio_client, mongo_db):
     print("=" * 70)
-    print("🔍 AUDITORÍA DE ALMACENAMIENTO MINIO Y MONGODB")
+    print("MINIO AND MONGODB STORAGE AUDIT")
     print("=" * 70)
     
     bucket_products = os.getenv("MINIO_BUCKET_NAME_PRODUCTS", "s2-products")
     bucket_composites = os.getenv("MINIO_BUCKET_NAME_COMPOSITES", "s2-composites")
     
-    # 1. Comprobar existencia de buckets
+    # 1. Check bucket existence
     for b in [bucket_products, bucket_composites]:
         if not minio_client.bucket_exists(b):
-            print(f"⚠️ El bucket '{b}' no existe en MinIO.")
+            print(f"Warning: Bucket '{b}' does not exist in MinIO.")
             return
 
-    # 2. Escanear tiles en s2-products
-    print(f"\n📦 Analizando bucket '{bucket_products}'...")
+    # 2. Scan tiles in s2-products
+    print(f"\nAnalyzing bucket '{bucket_products}'...")
     products_col = mongo_db["products"]
     composites_col = mongo_db["composites"]
 
@@ -86,19 +85,19 @@ def audit_storage(minio_client, mongo_db):
                 # tile/year/month
                 tile_stats[tile]["seasons"].add(f"{parts[1]}/{parts[2]}")
 
-    print(f"Total objetos raw en MinIO: {total_raw_objects:,}")
-    print(f"Espacio total raw en MinIO: {total_raw_bytes / (1024**3):.2f} GB ({total_raw_bytes / (1024**4):.2f} TB)")
-    print(f"Tiles detectados con datos raw: {len(tile_stats)}\n")
+    print(f"Total raw objects in MinIO: {total_raw_objects:,}")
+    print(f"Total raw storage in MinIO: {total_raw_bytes / (1024**3):.2f} GB ({total_raw_bytes / (1024**4):.2f} TB)")
+    print(f"Tiles detected with raw data: {len(tile_stats)}\n")
 
-    # 3. Comprobar composites existentes
+    # 3. Check existing composites
     composite_objects = list(minio_client.list_objects(bucket_composites, recursive=True))
     total_comp_bytes = sum(o.size for o in composite_objects)
-    print(f"📦 Bucket '{bucket_composites}':")
-    print(f"Total objetos composites: {len(composite_objects)}")
-    print(f"Espacio composites: {total_comp_bytes / (1024**3):.2f} GB\n")
+    print(f"Bucket '{bucket_composites}':")
+    print(f"Total composite objects: {len(composite_objects)}")
+    print(f"Composite storage: {total_comp_bytes / (1024**3):.2f} GB\n")
 
-    # 4. Tabla detallada por tile
-    print(f"{'Tile':<10} | {'Objetos':<10} | {'Espacio Raw (GB)':<18} | {'Meses/Estaciones':<25}")
+    # 4. Detailed tile table
+    print(f"{'Tile':<10} | {'Objects':<10} | {'Raw Space (GB)':<18} | {'Months/Seasons':<25}")
     print("-" * 70)
     for tile in sorted(tile_stats.keys()):
         stat = tile_stats[tile]
@@ -110,41 +109,41 @@ def audit_storage(minio_client, mongo_db):
 
 def purge_raw_products(minio_client, mongo_db, confirm=False):
     print("=" * 70)
-    print("🧹 PURGA DE PRODUCTOS RAW EN MINIO")
+    print("PURGING RAW PRODUCTS IN MINIO")
     print("=" * 70)
     
     bucket_products = os.getenv("MINIO_BUCKET_NAME_PRODUCTS", "s2-products")
     bucket_composites = os.getenv("MINIO_BUCKET_NAME_COMPOSITES", "s2-composites")
     
     if not confirm:
-        print("⚠️ MODO SIMULACIÓN (DRY-RUN). Usa '--confirm' para ejecutar el borrado real.")
+        print("SIMULATION MODE (DRY-RUN). Use '--confirm' to execute actual deletion.")
     
     objects = list(minio_client.list_objects(bucket_products, recursive=True))
     total_bytes = sum(o.size for o in objects)
     
-    print(f"Se encontraron {len(objects):,} objetos raw en '{bucket_products}' ({total_bytes / (1024**3):.2f} GB).")
+    print(f"Found {len(objects):,} raw objects in '{bucket_products}' ({total_bytes / (1024**3):.2f} GB).")
     
     if not confirm:
-        print("Para purgar estos objetos y liberar espacio de inmediato, ejecuta:")
+        print("To purge these objects and reclaim storage immediately, run:")
         print("python clean_and_inspect.py --purge-raw --confirm")
         return
 
-    print("Borrando objetos raw de MinIO...")
+    print("Deleting raw objects from MinIO...")
     deleted_count = 0
     for obj in objects:
         minio_client.remove_object(bucket_products, obj.object_name)
         deleted_count += 1
         if deleted_count % 500 == 0:
-            print(f"Eliminados {deleted_count} / {len(objects)}...")
+            print(f"Deleted {deleted_count} / {len(objects)}...")
             
-    print(f"✅ Se han eliminado {deleted_count} objetos raw de MinIO.")
-    print(f"Espacio liberado en MinIO: ~{total_bytes / (1024**3):.2f} GB.")
+    print(f"Deleted {deleted_count} raw objects from MinIO.")
+    print(f"Storage freed in MinIO: ~{total_bytes / (1024**3):.2f} GB.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Auditoría y Limpieza de MinIO para LandCoverPy")
-    parser.add_argument("--audit", action="store_true", help="Auditar almacenamiento y estado de tiles")
-    parser.add_argument("--purge-raw", action="store_true", help="Purgar productos raw de s2-products")
-    parser.add_argument("--confirm", action="store_true", help="Confirmar operaciones destructivas")
+    parser = argparse.ArgumentParser(description="MinIO Storage Audit and Cleanup for LandCoverPy")
+    parser.add_argument("--audit", action="store_true", help="Audit storage and tile status")
+    parser.add_argument("--purge-raw", action="store_true", help="Purge raw products from s2-products")
+    parser.add_argument("--confirm", action="store_true", help="Confirm destructive purge operations")
     
     args = parser.parse_args()
     
@@ -152,8 +151,8 @@ if __name__ == "__main__":
         minio_cli = get_minio_client()
         mongo_db = get_mongo_client()
     except Exception as e:
-        print(f"❌ Error al conectar con MinIO o MongoDB: {e}")
-        print("Asegúrate de que MinIO y Mongo están levantados.")
+        print(f"Error connecting to MinIO or MongoDB: {e}")
+        print("Ensure MinIO and Mongo services are running and accessible.")
         sys.exit(1)
         
     if args.purge_raw:

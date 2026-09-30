@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# Limitar cache interna de GDAL para prevenir fugas de RAM
+# Limit GDAL internal cache to prevent RAM exhaustion
 os.environ["GDAL_CACHEMAX"] = os.getenv("GDAL_CACHEMAX", "512")
 
 import pymongo
@@ -35,7 +35,7 @@ from urllib3.util import Retry
 
 logger = logging.getLogger(__name__)
 
-# Configuración de Connection Pooling para reutilización de sockets TCP en WSL2
+# Configure Connection Pooling for TCP socket reuse in WSL2/Linux
 _RETRY_STRATEGY = Retry(
     total=5,
     backoff_factor=2,
@@ -48,12 +48,12 @@ _ADAPTER = HTTPAdapter(pool_connections=25, pool_maxsize=25, max_retries=_RETRY_
 _GLOBAL_SESSION.mount("https://", _ADAPTER)
 _GLOBAL_SESSION.mount("http://", _ADAPTER)
 
-# Reemplazar requests.get a nivel global para que todas las llamadas de ds_download reutilicen conexiones
+# Replace requests.get globally so all ds_download calls reuse connections
 requests.get = _GLOBAL_SESSION.get
 
 
 def _reset_global_session():
-    """Reinicia la sesión HTTP global para limpiar conectores estancados."""
+    """Reset the global HTTP session to clear stale sockets."""
     global _GLOBAL_SESSION
     try:
         _GLOBAL_SESSION.close()
@@ -67,7 +67,7 @@ def _reset_global_session():
 
 
 class SuppressStdout:
-    """Context manager para silenciar salidas de bajo nivel (spam de subida JP2)."""
+    """Context manager to suppress low-level stdout spam (e.g. JP2 individual upload spam)."""
     def __enter__(self):
         self._stdout = sys.stdout
         sys.stdout = io.StringIO()
@@ -104,14 +104,14 @@ def _get_mongo_db(max_retries: int = 20, delay: int = 3):
             return client[db_name]
         except Exception as e:
             if attempt < max_retries:
-                print(f"Esperando a que MongoDB termine de inicializarse ({attempt}/{max_retries})...")
+                print(f"Waiting for MongoDB initialization ({attempt}/{max_retries})...")
                 time.sleep(delay)
             else:
                 raise e
 
 
 def _cleanup_tmp_dir():
-    """Garantiza la limpieza de archivos temporales residuales en TMP_DIR."""
+    """Ensure residual temporary files in TMP_DIR are deleted."""
     tmp_dir = Path(os.getenv("TMP_DIR", "/app/tmp/"))
     if tmp_dir.exists():
         for item in tmp_dir.iterdir():
@@ -133,7 +133,7 @@ def _verify_composite_in_minio(
     season_start: datetime,
     season_end: datetime,
 ) -> Optional[dict]:
-    """Comprueba si el composite ya existe y tiene sus capas en s2-composites."""
+    """Check if composite already exists and contains its layers in s2-composites."""
     comp_meta = mongo_composites_col.find_one({"tile": tile, "season": season})
 
     if comp_meta is not None:
@@ -167,9 +167,9 @@ def _purge_raw_products(
     mongo_products_col=None,
 ) -> Tuple[int, int]:
     """
-    Elimina TODOS los archivos raw, intermedios y escenas nubladas de s2-products
-    en MinIO para el tile y todos los meses de la estacion correspondiente.
-    Utiliza borrado por lotes (DeleteObject) para maxima velocidad y limpieza total.
+    Deletes ALL raw files, intermediate products, and cloudy scenes from s2-products
+    in MinIO for the tile across all months of the corresponding season.
+    Uses batch deletion (DeleteObject) for maximum throughput and complete cleanup.
     """
     from minio.deleteobjects import DeleteObject
 
@@ -190,12 +190,12 @@ def _purge_raw_products(
                     errors = list(minio_client.remove_objects(bucket_products, del_chunk))
                     if errors:
                         for err in errors:
-                            print(f"    [ADVERTENCIA] Error eliminando objeto {err.name}: {err.message}")
+                            print(f"    [WARNING] Error deleting object {err.name}: {err.message}")
                 deleted_objects += len(raw_objs)
         except Exception as e:
-            print(f"    [ADVERTENCIA] Error escaneando/eliminando objetos de {month_prefix}: {e}")
+            print(f"    [WARNING] Error scanning/deleting objects from {month_prefix}: {e}")
 
-    # Limpiar campos pesados en MongoDB para todas las capturas de ese tile en el periodo
+    # Clean heavy metadata fields in MongoDB for all captures of that tile in the period
     if mongo_products_col is not None:
         try:
             mongo_products_col.update_many(
@@ -206,7 +206,7 @@ def _purge_raw_products(
                 {"$unset": {"indexes": "", "intermediateProducts": ""}}
             )
         except Exception as e:
-            print(f"    [ADVERTENCIA] Error limpiando MongoDB para {tile} ({season}): {e}")
+            print(f"    [WARNING] Error cleaning MongoDB metadata for {tile} ({season}): {e}")
 
     return deleted_objects, deleted_bytes
 
@@ -219,16 +219,16 @@ def _acquire_tile_claim(
     timeout_seconds: int = 7200,
 ) -> bool:
     """
-    Intenta reclamar un tile de forma atomica para evitar que dos workers
-    procesen el mismo tile simultaneamente (especialmente durante el cruce en el centro).
-    Retorna True si el tile fue reclamado con exito, False si ya esta siendo procesado por otro worker.
+    Atomically acquire a claim on a tile to prevent concurrent workers from
+    processing the same tile simultaneously (especially during mid-pipeline crossover).
+    Returns True if tile was claimed successfully, False if already claimed by another worker.
     """
     col = mongo_db["tile_claims"]
     now = datetime.utcnow()
     expire_threshold = now - timedelta(seconds=timeout_seconds)
 
     try:
-        # 1. Si existe un reclamo expirado (> 2h) o de nuestro propio worker, renovarlo
+        # 1. If an expired claim (> 2h) or our own claim exists, refresh it
         res = col.find_one_and_update(
             {
                 "tile": tile,
@@ -250,7 +250,7 @@ def _acquire_tile_claim(
         if res is not None:
             return True
 
-        # 2. Si no existia documento, intentar crearlo con upsert atómico
+        # 2. If no document existed, attempt atomic creation via upsert
         col.update_one(
             {"tile": tile, "season": season},
             {
@@ -267,7 +267,7 @@ def _acquire_tile_claim(
         doc = col.find_one({"tile": tile, "season": season})
         return doc is not None and doc.get("claimed_by") == worker_id
     except Exception:
-        # En caso de colision de indice unico en upsert concurrente
+        # Unique index collision upon concurrent upsert
         return False
 
 
@@ -278,7 +278,7 @@ def _release_tile_claim(
     worker_id: str,
     success: bool = True,
 ):
-    """Libera o actualiza el estado del reclamo del tile."""
+    """Release or update the tile claim state."""
     try:
         col = mongo_db["tile_claims"]
         if success:
@@ -306,10 +306,10 @@ def download_products():
         valid_seasons = {k: v for k, v in seasons.items() if k.lower() in requested}
         if valid_seasons:
             seasons = valid_seasons
-            print(f"Filtrando ejecucion para estaciones: {list(seasons.keys())}")
+            print(f"Filtering execution for seasons: {list(seasons.keys())}")
         else:
             print(
-                f"[ADVERTENCIA] TARGET_SEASON='{target_season}' no valida. Opciones: {list(seasons.keys())}. Procesando todas."
+                f"[WARNING] TARGET_SEASON='{target_season}' is invalid. Options: {list(seasons.keys())}. Processing all."
             )
 
     data_file = os.getenv("DB_FILE")
@@ -350,7 +350,7 @@ def download_products():
     mongo_composites_col = mongo_db["composites"]
     mongo_claims_col = mongo_db["tile_claims"]
 
-    # Asegurar indices compuestos en MongoDB para comprobaciones O(1) y control de concurrencia
+    # Ensure compound indexes in MongoDB for O(1) checks and concurrency control
     mongo_composites_col.create_index([("tile", pymongo.ASCENDING), ("season", pymongo.ASCENDING)])
     mongo_composites_col.create_index([("title", pymongo.ASCENDING)], unique=True)
     mongo_products_col.create_index([("title", pymongo.ASCENDING)])
@@ -363,10 +363,10 @@ def download_products():
     max_products_composite = int(os.getenv("MAX_PRODUCTS_COMPOSITE", "5"))
 
     print("=" * 80)
-    print("LANDCOVERPY - PIPELINE DE COMPOSITES SENTINEL-2 (MEDITERRANEO 2021)")
-    print(f"Total Tiles: {total_tiles} | Estaciones: {total_seasons} | Total Composites: {total_expected_composites}")
-    print(f"Worker ID: {worker_id} | Direccion: {'INVERSO (Z -> A)' if reverse_tiles else 'ESTANDAR (A -> Z)'}")
-    print("Estrategia: Season-by-Season | Retencion: Composites Solo (Purga Inmediata de Raw)")
+    print("LANDCOVERPY - SENTINEL-2 COMPOSITE PIPELINE (MEDITERRANEAN 2021)")
+    print(f"Total Tiles: {total_tiles} | Seasons: {total_seasons} | Total Composites: {total_expected_composites}")
+    print(f"Worker ID: {worker_id} | Direction: {'REVERSE (Z -> A)' if reverse_tiles else 'STANDARD (A -> Z)'}")
+    print("Strategy: Season-by-Season | Retention: Composites Only (Immediate Raw Purge)")
     print("=" * 80)
 
     cumulative_completed = 0
@@ -377,12 +377,12 @@ def download_products():
         end_date = datetime.strptime(dates["end"], "%Y-%m-%d")
 
         print(f"\n" + "-" * 80)
-        print(f">>> [ESTACION {season_idx}/{total_seasons}: {season_name.upper()}] ({dates['start']} a {dates['end']})")
+        print(f">>> [SEASON {season_idx}/{total_seasons}: {season_name.upper()}] ({dates['start']} to {dates['end']})")
         print("-" * 80)
 
-        # Conteo inicial de composites ya existentes para esta estacion
+        # Initial count of existing composites for this season
         existing_in_season = mongo_composites_col.count_documents({"season": season_name})
-        print(f"Estado inicial: {existing_in_season}/{total_tiles} tiles completados ({existing_in_season / total_tiles * 100:.1f}%) | {total_tiles - existing_in_season} pendientes.")
+        print(f"Initial status: {existing_in_season}/{total_tiles} tiles completed ({existing_in_season / total_tiles * 100:.1f}%) | {total_tiles - existing_in_season} pending.")
 
         failed_tiles_dict[season_name] = []
 
@@ -390,34 +390,34 @@ def download_products():
             t_start = time.time()
             prefix_log = f"[{tile_idx}/{total_tiles}: {tile}] [{season_name}]"
 
-            # 1. Comprobar si el composite ya existe en s2-composites
+            # 1. Check if composite already exists in s2-composites
             comp_existing = _verify_composite_in_minio(
                 minio_client, mongo_composites_col, bucket_composites,
                 tile, season_name, start_date, end_date
             )
 
             if comp_existing is not None:
-                # Si existe el composite, verificar si quedan datos raw residuales y purgarlos
+                # If composite exists, check for residual raw files and purge them
                 d_objs, d_bytes = _purge_raw_products(
                     minio_client, bucket_products, tile, season_name,
                     start_date, end_date, mongo_products_col=mongo_products_col,
                 )
                 if d_objs > 0:
-                    print(f"  {prefix_log} Composite existente verificado. Purgados {d_objs} raw residuales (+{d_bytes / (1024**3):.2f} GB).")
+                    print(f"  {prefix_log} Existing composite verified. Purged {d_objs} residual raw objects (+{d_bytes / (1024**3):.2f} GB).")
                 else:
-                    print(f"  {prefix_log} Ya procesado (OK).")
+                    print(f"  {prefix_log} Already processed (OK).")
 
                 cumulative_completed += 1
                 continue
 
-            # 2. Comprobar reclamo atomico para evitar colisiones en paralelo (cruce en el centro)
+            # 2. Check atomic claim to prevent concurrent worker collisions (crossover)
             if not _acquire_tile_claim(mongo_db, tile, season_name, worker_id):
                 claim_doc = mongo_claims_col.find_one({"tile": tile, "season": season_name})
-                claimed_by_info = claim_doc.get("claimed_by", "otro worker") if claim_doc else "otro worker"
-                print(f"  {prefix_log} [CLAIM ACTIVO] Tile reservado por {claimed_by_info}. Saltando para evitar duplicidad.")
+                claimed_by_info = claim_doc.get("claimed_by", "another worker") if claim_doc else "another worker"
+                print(f"  {prefix_log} [ACTIVE CLAIM] Tile reserved by {claimed_by_info}. Skipping to avoid duplication.")
                 continue
 
-            # 3. Si no existe composite: descargar/procesar con reintentos y enfriamiento para WSL2
+            # 3. If composite does not exist: download/process with retries and cooldown for WSL2
             max_tile_attempts = 3
             attempt = 0
             tile_success = False
@@ -431,36 +431,36 @@ def download_products():
                     raw_products = list(cursor)
 
                     if not raw_products:
-                        print(f"  {prefix_log} Descargando capturas desde Google Cloud Sentinel API (intento {attempt}/{max_tile_attempts})...")
-                        # Silenciar spam de subida individual JP2
+                        print(f"  {prefix_log} Downloading captures from Google Cloud Sentinel API (attempt {attempt}/{max_tile_attempts})...")
+                        # Silence low-level individual JP2 upload spam
                         with SuppressStdout():
                             download_product_using_sentinel_api(
                                 False, True, start_date, end_date, tile_id=tile
                             )
 
-                        # Reconsultar MongoDB tras la descarga
+                        # Re-query MongoDB after download
                         cursor = get_products_by_tile_and_date(
                             tile, mongo_products_col, start_date, end_date, min_useful_data_percentage
                         )
                         raw_products = list(cursor)
 
                     if not raw_products:
-                        print(f"  {prefix_log} [ADVERTENCIA] No se encontraron capturas con >= {min_useful_data_percentage}% datos utiles.")
+                        print(f"  {prefix_log} [WARNING] No captures found with >= {min_useful_data_percentage}% useful data.")
                         failed_tiles_dict[season_name].append(tile)
                         break
 
-                    # 3. Validar y seleccionar las mejores adquisiciones
-                    print(f"  {prefix_log} Validando {len(raw_products)} capturas para composite...")
+                    # 4. Validate and select best acquisitions
+                    print(f"  {prefix_log} Validating {len(raw_products)} captures for composite...")
                     valid_products = _validate_composite_products(raw_products)
                     selected_products = valid_products[:max_products_composite]
 
                     if not selected_products:
-                        print(f"  {prefix_log} [ADVERTENCIA] Ninguna captura supero la validacion de bandas.")
+                        print(f"  {prefix_log} [WARNING] No captures passed band validation.")
                         failed_tiles_dict[season_name].append(tile)
                         break
 
-                    # 4. Generar composite (mediana pixel a pixel e indices espectrales)
-                    print(f"  {prefix_log} Calculando mediana e indices sobre {len(selected_products)} capturas...")
+                    # 5. Generate composite (pixel-by-pixel median and spectral indices)
+                    print(f"  {prefix_log} Calculating median and indices over {len(selected_products)} captures...")
                     _create_composite(
                         selected_products,
                         execution_mode=ExecutionMode.LAND_COVER_PREDICTION,
@@ -468,18 +468,18 @@ def download_products():
                         season=season_name,
                     )
 
-                    # 5. Verificar que el composite se subio correctamente a s2-composites
+                    # 6. Verify composite was successfully uploaded to s2-composites
                     comp_verified = _verify_composite_in_minio(
                         minio_client, mongo_composites_col, bucket_composites,
                         tile, season_name, start_date, end_date
                     )
 
                     if comp_verified is None:
-                        print(f"  {prefix_log} [ERROR] La verificacion del composite en s2-composites fallo. No se eliminaran los raw.")
+                        print(f"  {prefix_log} [ERROR] Composite verification in s2-composites failed. Raw files will not be deleted.")
                         failed_tiles_dict[season_name].append(tile)
                         break
 
-                    # 6. Purgar datos raw de s2-products inmediatamente y limpiar MongoDB
+                    # 7. Immediately purge raw products from s2-products and clean MongoDB
                     d_objs, d_bytes = _purge_raw_products(
                         minio_client, bucket_products, tile, season_name,
                         start_date, end_date, mongo_products_col=mongo_products_col,
@@ -491,41 +491,41 @@ def download_products():
                     total_pct = (cumulative_completed / total_expected_composites) * 100
 
                     print(
-                        f"  {prefix_log} Composite guardado en {elapsed:.1f}s | "
-                        f"Purgados {d_objs} raw (+{d_bytes / (1024**3):.2f} GB) | "
-                        f"Estacion: {tile_idx}/{total_tiles} ({season_pct:.1f}%) | "
+                        f"  {prefix_log} Composite saved in {elapsed:.1f}s | "
+                        f"Purged {d_objs} raw (+{d_bytes / (1024**3):.2f} GB) | "
+                        f"Season: {tile_idx}/{total_tiles} ({season_pct:.1f}%) | "
                         f"Total: {cumulative_completed}/{total_expected_composites} ({total_pct:.1f}%)"
                     )
                     tile_success = True
 
                 except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, urllib3.exceptions.HTTPError) as net_err:
-                    print(f"  {prefix_log} [ADVERTENCIA] Error de red / saturacion de sockets WSL2 detectado: {net_err}")
+                    print(f"  {prefix_log} [WARNING] Network error / socket saturation detected: {net_err}")
                     if attempt < max_tile_attempts:
-                        cooldown_seconds = 180  # Pausa de enfriamiento de 3 minutos para que WSL2 libere sockets TIME_WAIT
-                        print(f"  {prefix_log} [PAUSA DE ENFRIAMIENTO] Pausando durante {cooldown_seconds}s para permitir al kernel liberar conectores...")
+                        cooldown_seconds = 180  # 3-minute cooldown pause to allow kernel to release TIME_WAIT sockets
+                        print(f"  {prefix_log} [COOLDOWN PAUSE] Pausing for {cooldown_seconds}s to allow kernel to release sockets...")
                         time.sleep(cooldown_seconds)
                         _reset_global_session()
                     else:
-                        print(f"  {prefix_log} [ERROR] Agotados {max_tile_attempts} reintentos de red en tile {tile}.")
+                        print(f"  {prefix_log} [ERROR] Exhausted {max_tile_attempts} network retries on tile {tile}.")
                         failed_tiles_dict[season_name].append(tile)
                 except Exception as e:
-                    print(f"  {prefix_log} [ERROR] Fallo al procesar tile: {e}")
+                    print(f"  {prefix_log} [ERROR] Failed to process tile: {e}")
                     failed_tiles_dict[season_name].append(tile)
                     break
                 finally:
                     _cleanup_tmp_dir()
                     gc.collect()
 
-            # Liberar o actualizar el reclamo segun exito/fallo
+            # Release or update claim based on success/failure
             _release_tile_claim(mongo_db, tile, season_name, worker_id, success=tile_success)
 
-        # Resumen de estacion
+        # Season summary
         fails = len(failed_tiles_dict[season_name])
-        print(f"\n>>> [FIN ESTACION {season_name.upper()}] Completados con exito: {total_tiles - fails}/{total_tiles} | Fallidos/Pendientes: {fails}")
+        print(f"\n>>> [END OF SEASON {season_name.upper()}] Successfully completed: {total_tiles - fails}/{total_tiles} | Failed/Pending: {fails}")
 
     print("\n" + "=" * 80)
-    print("PROCESO DE GENERACION DE COMPOSITES FINALIZADO")
-    print(f"Composites completados en s2-composites: {cumulative_completed} / {total_expected_composites}")
+    print("COMPOSITE GENERATION PIPELINE FINISHED")
+    print(f"Composites completed in s2-composites: {cumulative_completed} / {total_expected_composites}")
     print("=" * 80)
 
 

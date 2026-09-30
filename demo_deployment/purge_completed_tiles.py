@@ -2,10 +2,10 @@
 """
 purge_completed_tiles.py
 
-Herramienta de limpieza retroactiva para Sentinel-2 en MinIO y MongoDB.
-Identifica los composites que YA estan completos y verificados en s2-composites
-y elimina completamente todas sus capturas raw, intermedias (cloudmasks) y escenas
-nubladas residuales en s2-products para liberar espacio de inmediato.
+Retroactive cleanup utility for Sentinel-2 in MinIO and MongoDB.
+Identifies composites that are already completed and verified in s2-composites,
+and completely removes all associated raw captures, intermediate products (cloud masks),
+and residual cloudy scenes from s2-products to immediately reclaim storage.
 """
 
 import argparse
@@ -72,15 +72,15 @@ def run_purge(dry_run: bool = True, season_filter: str = None, tile_filter: str 
         seasons_data = json.load(f)
 
     print("=" * 80)
-    print("PURGA RETROACTIVA DE PRODUCTOS RAW PARA TILES COMPLETADOS")
-    print(f"Modo: {'[DRY-RUN / SIMULACION]' if dry_run else '[EJECUCION REAL - ELIMINANDO OBJETOS]'}")
+    print("RETROACTIVE RAW PRODUCTS PURGE FOR COMPLETED TILES")
+    print(f"Mode: {'[DRY-RUN / SIMULATION]' if dry_run else '[LIVE RUN - DELETING OBJECTS]'}")
     if season_filter:
-        print(f"Filtro de estacion: {season_filter.upper()}")
+        print(f"Season filter: {season_filter.upper()}")
     if tile_filter:
-        print(f"Filtro de tile: {tile_filter}")
+        print(f"Tile filter: {tile_filter}")
     print("=" * 80)
 
-    # Buscar composites completados en MongoDB
+    # Find completed composites in MongoDB
     query = {}
     if season_filter:
         query["season"] = season_filter.lower()
@@ -88,7 +88,7 @@ def run_purge(dry_run: bool = True, season_filter: str = None, tile_filter: str 
         query["tile"] = tile_filter
 
     completed_composites = list(db.composites.find(query, {"tile": 1, "season": 1}))
-    print(f"\nTotal composites completados encontrados en MongoDB: {len(completed_composites)}")
+    print(f"\nTotal completed composites found in MongoDB: {len(completed_composites)}")
 
     total_deleted_objects = 0
     total_deleted_bytes = 0
@@ -108,17 +108,17 @@ def run_purge(dry_run: bool = True, season_filter: str = None, tile_filter: str 
         s_end = datetime.strptime(s_info["end"], "%Y-%m-%d")
         months = SEASON_MONTHS.get(season, [])
 
-        # Comprobar que realmente exista el composite en MinIO antes de borrar cualquier raw
+        # Ensure composite actually exists in MinIO before purging any raw data
         comp_objs = list(minio_client.list_objects(bucket_composites, prefix=f"{tile}/2021/{season}/", recursive=True))
         if len(comp_objs) < 10:
-            print(f"  [{idx}/{len(completed_composites)}: {tile}] [{season}] Composite en MinIO incompleto ({len(comp_objs)} capas). Saltando para seguridad.")
+            print(f"  [{idx}/{len(completed_composites)}: {tile}] [{season}] Incomplete composite in MinIO ({len(comp_objs)} layers). Skipping for safety.")
             continue
 
         tile_deleted_objs = 0
         tile_deleted_bytes = 0
 
-        # Metodo 1: Borrar carpetas por mes de la estacion (tile/2021/Month/)
-        # Esto elimina 100% de raw/, intermediateProducts/, capturas nubladas y huérfanas
+        # Method 1: Delete folders by month for the season (tile/2021/Month/)
+        # This removes 100% of raw/, intermediateProducts/, and residual/orphaned cloudy captures
         for month in months:
             month_prefix = f"{tile}/2021/{month}/"
             try:
@@ -134,11 +134,11 @@ def run_purge(dry_run: bool = True, season_filter: str = None, tile_filter: str 
                             errors = list(minio_client.remove_objects(bucket_products, del_chunk))
                             if errors:
                                 for err in errors:
-                                    print(f"  [ERROR] Borrando {err.name}: {err.message}")
+                                    print(f"  [ERROR] Deleting {err.name}: {err.message}")
             except Exception as e:
-                print(f"  [ERROR] Al escanear/eliminar {month_prefix} en MinIO: {e}")
+                print(f"  [ERROR] Scanning/deleting {month_prefix} in MinIO: {e}")
 
-        # Metodo 2: Limpiar metadatos pesados en MongoDB para las capturas de ese tile/periodo
+        # Method 2: Clean heavy metadata in MongoDB for captures in that tile/period
         if not dry_run and tile_deleted_objs > 0:
             try:
                 db.products.update_many(
@@ -149,29 +149,29 @@ def run_purge(dry_run: bool = True, season_filter: str = None, tile_filter: str 
                     {"$unset": {"indexes": "", "intermediateProducts": ""}}
                 )
             except Exception as e:
-                print(f"  [ERROR] Limpiando Mongo para {tile} ({season}): {e}")
+                print(f"  [ERROR] Cleaning MongoDB for {tile} ({season}): {e}")
 
         if tile_deleted_objs > 0:
             tiles_purged += 1
-            action = "Purgados" if not dry_run else "Se purgarian"
-            print(f"  [{idx}/{len(completed_composites)}: {tile}] [{season}] {action} {tile_deleted_objs} objetos raw/intermedios (+{tile_deleted_bytes / (1024**3):.2f} GB).")
+            action = "Purged" if not dry_run else "Would purge"
+            print(f"  [{idx}/{len(completed_composites)}: {tile}] [{season}] {action} {tile_deleted_objs} raw/intermediate objects (+{tile_deleted_bytes / (1024**3):.2f} GB).")
 
         total_deleted_objects += tile_deleted_objs
         total_deleted_bytes += tile_deleted_bytes
 
     print("\n" + "=" * 80)
-    print("RESUMEN DE PURGA")
-    print(f"Tiles procesados con datos raw purgados: {tiles_purged}")
-    print(f"Total objetos raw/intermedios eliminados: {total_deleted_objects}")
-    print(f"Espacio total liberado en MinIO s2-products: {total_deleted_bytes / (1024**3):.2f} GB ({total_deleted_bytes / (1024**4):.2f} TB)")
+    print("PURGE SUMMARY")
+    print(f"Tiles processed with raw data purged: {tiles_purged}")
+    print(f"Total raw/intermediate objects deleted: {total_deleted_objects}")
+    print(f"Total space freed in MinIO s2-products: {total_deleted_bytes / (1024**3):.2f} GB ({total_deleted_bytes / (1024**4):.2f} TB)")
     print("=" * 80)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Purga de productos raw para composites completados")
-    parser.add_argument("--confirm", action="store_true", help="Ejecuta el borrado real (por defecto es dry-run)")
-    parser.add_argument("--season", type=str, default=None, help="Filtrar por estacion (spring, flowering, summer, autumn)")
-    parser.add_argument("--tile", type=str, default=None, help="Filtrar por tile especifico")
+    parser = argparse.ArgumentParser(description="Purge raw products for completed composites")
+    parser.add_argument("--confirm", action="store_true", help="Execute actual deletion (defaults to dry-run)")
+    parser.add_argument("--season", type=str, default=None, help="Filter by season (spring, flowering, summer, autumn)")
+    parser.add_argument("--tile", type=str, default=None, help="Filter by specific tile (e.g. 30STH)")
     
     args = parser.parse_args()
     run_purge(dry_run=not args.confirm, season_filter=args.season, tile_filter=args.tile)

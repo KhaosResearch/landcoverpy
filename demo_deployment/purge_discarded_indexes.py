@@ -2,14 +2,14 @@
 """
 purge_discarded_indexes.py
 
-Purga retroactiva de indices descartados en MinIO (s2-composites) y MongoDB.
-Elimina exclusivamente:
+Retroactive cleanup utility for discarded indices in MinIO (s2-composites) and MongoDB.
+Exclusively removes:
   - evi.tif
   - tci.tif
   - ndwi.tif
   - ndsi.tif
 
-Conserva estrictamente los 11 indices acordados:
+Strictly preserves the 11 approved seasonal indices:
   - cri1.tif, ri.tif, evi2.tif, mndwi.tif, moisture.tif
   - ndyi.tif, ndre.tif, ndvi.tif, osavi.tif, bri.tif, bsi.tif
 """
@@ -65,16 +65,16 @@ def get_mongo_col():
 
 def purge_discarded_indexes(dry_run: bool = False):
     print("=" * 80)
-    print("PURGA RETROACTIVA DE INDICES DESCARTADOS (s2-composites & MongoDB)")
-    print(f"Modo: {'SIMULACION (DRY-RUN)' if dry_run else 'EJECUCION REAL'}")
-    print(f"Indices a eliminar: {sorted(DISCARDED_INDEXES)}")
+    print("RETROACTIVE PURGE OF DISCARDED INDICES (s2-composites & MongoDB)")
+    print(f"Mode: {'SIMULATION (DRY-RUN)' if dry_run else 'LIVE RUN'}")
+    print(f"Indices to remove: {sorted(DISCARDED_INDEXES)}")
     print("=" * 80)
 
     minio_client = get_minio_client()
     mongo_col = get_mongo_col()
     bucket = os.getenv("MINIO_BUCKET_NAME_COMPOSITES", "s2-composites")
 
-    print(f"\nEscaneando objetos en bucket '{bucket}'...")
+    print(f"\nScanning objects in bucket '{bucket}'...")
     objects = minio_client.list_objects(bucket, recursive=True)
 
     matched_objects = []
@@ -86,18 +86,18 @@ def purge_discarded_indexes(dry_run: bool = False):
             matched_objects.append(obj)
             total_bytes += (obj.size or 0)
 
-    print(f"Detectados {len(matched_objects)} archivos descartados a purgar.")
-    print(f"Espacio total a liberar: {total_bytes / (1024**3):.2f} GB ({total_bytes / (1024**2):.2f} MB)")
+    print(f"Detected {len(matched_objects)} discarded files to purge.")
+    print(f"Total space to reclaim: {total_bytes / (1024**3):.2f} GB ({total_bytes / (1024**2):.2f} MB)")
 
     if dry_run:
-        print("\n[DRY-RUN] No se han realizado cambios en MinIO ni en MongoDB.")
+        print("\n[DRY-RUN] No changes were made in MinIO or MongoDB.")
         return
 
     if not matched_objects:
-        print("No se encontraron archivos pendientes de purga.")
+        print("No files pending purge were found.")
         return
 
-    print("\nEliminando objetos en MinIO...")
+    print("\nDeleting objects in MinIO...")
     deleted_count = 0
     t0 = time.time()
 
@@ -107,27 +107,27 @@ def purge_discarded_indexes(dry_run: bool = False):
             deleted_count += 1
             if idx % 100 == 0 or idx == len(matched_objects):
                 pct = (idx / len(matched_objects)) * 100
-                print(f"  Progreso: {idx}/{len(matched_objects)} ({pct:.1f}%) eliminados...")
+                print(f"  Progress: {idx}/{len(matched_objects)} ({pct:.1f}%) deleted...")
         except Exception as e:
-            print(f"  [ERROR] Fallo al eliminar {obj.object_name}: {e}")
+            print(f"  [ERROR] Failed to delete {obj.object_name}: {e}")
 
     elapsed = time.time() - t0
-    print(f"\nPurga en MinIO completada en {elapsed:.1f}s.")
-    print(f"Total archivos eliminados: {deleted_count}/{len(matched_objects)}")
-    print(f"Espacio liberado en MinIO: {total_bytes / (1024**3):.2f} GB")
+    print(f"\nMinIO purge completed in {elapsed:.1f}s.")
+    print(f"Total files deleted: {deleted_count}/{len(matched_objects)}")
+    print(f"Space freed in MinIO: {total_bytes / (1024**3):.2f} GB")
 
-    print("\nActualizando metadatos en MongoDB (removiendo claves descartadas)...")
+    print("\nUpdating metadata in MongoDB (unsetting discarded keys)...")
     res = mongo_col.update_many({}, {"$unset": DISCARDED_MONGO_KEYS})
-    print(f"Documentos modificados en MongoDB: {res.modified_count}")
+    print(f"Documents modified in MongoDB: {res.modified_count}")
 
     print("\n" + "=" * 80)
-    print("PROCESO COMPLETADO EXITOSAMENTE")
+    print("PROCESS COMPLETED SUCCESSFULLY")
     print("=" * 80)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Purga de indices descartados en MinIO y MongoDB")
-    parser.add_argument("--dry-run", action="store_true", help="Simulacion sin modificar datos")
+    parser = argparse.ArgumentParser(description="Purge discarded spectral indices in MinIO and MongoDB")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate run without modifying data")
     args = parser.parse_args()
 
     purge_discarded_indexes(dry_run=args.dry_run)
