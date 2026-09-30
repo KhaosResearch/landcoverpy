@@ -20,6 +20,21 @@ LandCoverPy is a Python package that provides a workflow for land cover/land use
 
 Since the library is intended for large areas, it uses **S3** as the main storage system and **MongoDB** to store metadata of different assets, optimizing the overall workflow.
 
+<details>
+<summary><b>Specific Documentation</b></summary>
+
+For clear, dedicated guides on each aspect of the system, consult:
+
+| Document | Focus | Audience |
+| :--- | :--- | :--- |
+| [**workflow.md**](docs/workflow.md) | Conceptual & methodological pipeline (1 tile/season model, hierarchical classification). | Biologists, Earth Observation researchers, Engineers |
+| [**UserGuide.md**](docs/UserGuide.md) | Practical step-by-step setup, configuration files, and Docker execution commands. | End-users, Operators, Researchers |
+| [**Architecture.md**](docs/Architecture.md) | Distributed topology, atomic locks (`tile_claims`), S3 purge lifecycle, and raster optimization. | Cloud & DevOps engineers, System architects |
+| [**BandsAndIndices.md**](docs/BandsAndIndices.md) | Scientific specification of Sentinel-2 bands, biophysical index formulas, and retained features. | Remote sensing scientists, Ecologists |
+| [**TechnicalRecommendations.md**](docs/TechnicalRecommendations.md) | Hardware sizing, WSL2/Windows storage limits & fix, container tuning, and multi-node setup. | System administrators, DevOps, Operators |
+
+</details>
+
 ## Usage with Docker Compose
 
 The easiest way to use the library is through Docker Compose. A demo is provided in the [demo_deployment](demo_deployment) folder. This demo deploys a complete environment with all the services required to run the library and performs the full workflow on a small area. The workflow includes the following steps:
