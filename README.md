@@ -105,12 +105,11 @@ Clone the repository and install using pip:
 ```bash
 git clone https://github.com/KhaosResearch/landcoverpy.git
 cd landcoverpy
-pip install .
-```
 
-For development purposes, you can install the package in editable mode:
+# Install with uv (ultra-fast, recommended):
+uv pip install -e .
 
-```bash
+# Or install with standard pip:
 pip install -e .
 ```
 
