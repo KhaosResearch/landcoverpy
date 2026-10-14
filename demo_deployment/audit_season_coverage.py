@@ -2,18 +2,19 @@
 """
 audit_season_coverage.py
 
-Real-time audit and tracking tool for Sentinel-2 composites in MinIO and MongoDB.
-Provides:
-- Count and percentage of completed composites per season.
-- Active worker claims status (which worker is processing which tile).
-- Full listing of pending tiles per season.
-- High-level cluster progress metrics.
+Auditoría física y en tiempo real del clúster Sentinel-2 en MinIO y MongoDB.
+Verifica la presencia real del raster (B02_10m.tif) en MinIO para los 487 tiles
+canónicos del estudio a lo largo de las 4 estaciones.
 """
 
 import json
 import os
+import re
 import sys
-from datetime import datetime, timedelta
+import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pymongo
@@ -21,7 +22,7 @@ from minio import Minio
 
 
 def get_minio_client() -> Minio:
-    host = os.getenv("MINIO_HOST", "localhost")
+    host = os.getenv("MINIO_HOST", "192.168.219.61")
     port = os.getenv("MINIO_PORT", "31113")
     access_key = os.getenv("MINIO_ACCESS_KEY", "adminadmin")
     secret_key = os.getenv("MINIO_SECRET_KEY", "adminadmin")
@@ -34,7 +35,7 @@ def get_minio_client() -> Minio:
 
 
 def get_mongo_db():
-    host = os.getenv("MONGO_HOST", "localhost")
+    host = os.getenv("MONGO_HOST", "192.168.219.61")
     port = os.getenv("MONGO_PORT", "31114")
     user = os.getenv("MONGO_USERNAME", "adminadmin")
     password = os.getenv("MONGO_PASSWORD", "adminadmin")
@@ -44,101 +45,132 @@ def get_mongo_db():
     return client[db_name]
 
 
-def get_target_tiles():
-    from landcoverpy.utilities.geometries import (
-        _csv_to_geojson,
-        _group_validated_data_points_by_tile,
-        _kmz_to_geojson,
-    )
+def get_canonical_tiles() -> list:
+    compose_path = Path("/home/diego/Virginia/landcoverpy/demo_deployment/docker-compose.yaml")
+    if not compose_path.exists():
+        compose_path = Path("/app/docker-compose.yaml")
+    if not compose_path.exists():
+        compose_path = Path("demo_deployment/docker-compose.yaml")
 
-    data_file = os.getenv("DB_FILE", "/app/data/dataset.csv")
-    if not Path(data_file).exists():
-        data_file = "demo_deployment/app_data/dataset.csv"
+    if compose_path.exists():
+        text = compose_path.read_text(encoding="utf-8")
+        match = re.search(r"TILES_TO_PREDICT=(\[.*?\])", text)
+        if match:
+            return eval(match.group(1))
 
-    tiles_to_train = set()
-    if Path(data_file).exists():
-        if data_file.endswith(".kmz"):
-            gf = _kmz_to_geojson(data_file)
-        else:
-            gf = _csv_to_geojson(data_file, sep=";")
-        polygons_per_tile = _group_validated_data_points_by_tile(gf)
-        tiles_to_train = set(polygons_per_tile.keys())
+    # Fallback to env var if running in container
+    env_tiles = os.getenv("TILES_TO_PREDICT")
+    if env_tiles:
+        if "#" in env_tiles:
+            env_tiles = env_tiles.split("#")[0].strip()
+        try:
+            return json.loads(env_tiles)
+        except Exception:
+            pass
 
-    tiles_to_predict_env = os.getenv("TILES_TO_PREDICT", "[]")
-    if "#" in tiles_to_predict_env:
-        tiles_to_predict_env = tiles_to_predict_env.split("#")[0].strip()
-    try:
-        tiles_to_predict = set(json.loads(tiles_to_predict_env))
-    except Exception:
-        tiles_to_predict = set()
-
-    return sorted(tiles_to_train.union(tiles_to_predict))
+    return []
 
 
 def main():
-    print("=" * 80)
-    print("SENTINEL-2 CLUSTER COVERAGE AND STATUS AUDIT (MEDITERRANEAN 2021)")
-    print(f"Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    print("=" * 80)
+    print("=" * 86)
+    print("      ESTADO REAL DEL CLÚSTER SENTINEL-2 (MEDITERRÁNEO 2021) - MINIO & MONGODB")
+    print(f"      Fecha y hora: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print("=" * 86)
 
     try:
         db = get_mongo_db()
-        col = db["composites"]
-        claims_col = db["tile_claims"]
+        comp_col = db["composites"]
+        minio_client = get_minio_client()
     except Exception as e:
-        print(f"[ERROR] Connecting to MongoDB: {e}")
-        return
+        print(f"[ERROR] Conexión fallida a MongoDB/MinIO: {e}")
+        sys.exit(1)
 
-    try:
-        all_tiles = get_target_tiles()
-    except Exception as e:
-        print(f"[WARNING] Could not load complete geometries ({e}). Using distinct tiles from MongoDB.")
-        all_tiles = sorted(col.distinct("tile"))
+    tiles = get_canonical_tiles()
+    if not tiles:
+        print("[AVISO] No se pudo cargar TILES_TO_PREDICT desde docker-compose. Consultando Mongo...")
+        tiles = sorted(comp_col.distinct("tile"))
 
-    total_target = len(all_tiles)
     seasons = ["spring", "flowering", "summer", "autumn"]
+    t0 = time.time()
 
-    # 1. Summary per season
-    print("\n1. GLOBAL PROGRESS BY SEASON:")
-    print("-" * 80)
-    total_done = 0
-    pending_dict = {}
+    # Pre-cargar todos los metadatos de Mongo
+    all_docs = list(comp_col.find({}, {"tile": 1, "season": 1, "periodLabel": 1, "S3BandsPrefix": 1}))
+
+    tile_season_prefixes = defaultdict(list)
+    for d in all_docs:
+        s = d.get("season") or d.get("periodLabel")
+        t = d.get("tile")
+        p = d.get("S3BandsPrefix")
+        if t and s and p:
+            tile_season_prefixes[(t, s)].append(p)
+
+    bucket_composites = os.getenv("MINIO_BUCKET_NAME_COMPOSITES", "s2-composites")
+
+    def check_tile_season(item):
+        tile, season = item
+        prefixes = tile_season_prefixes.get((tile, season), [])
+        for p in prefixes:
+            key = p.rstrip("/") + "/B02_10m.tif" if not p.endswith(".tif") else p
+            try:
+                minio_client.stat_object(bucket_composites, key)
+                return (tile, season, True)
+            except Exception:
+                pass
+        return (tile, season, False)
+
+    all_items = [(t, s) for s in seasons for t in tiles]
+
+    with ThreadPoolExecutor(max_workers=30) as pool:
+        results = list(pool.map(check_tile_season, all_items))
+
+    elapsed = time.time() - t0
+
+    status_by_season = defaultdict(list)
+    for t, s, is_ok in results:
+        status_by_season[s].append((t, is_ok))
+
+    print("\n1. PROGRESO FÍSICO POR ESTACIÓN (CAPAS VERIFICADAS EN MINIO):")
+    print("-" * 86)
+    print(f"{'Estación':<12} | {'Completados':<12} | {'% MinIO':<8} | {'Pendientes':<10} | {'Ejemplo / Lista Pendientes'}")
+    print("-" * 86)
+
+    total_ok = 0
+    total_tiles = len(tiles)
 
     for s in seasons:
-        done_set = set(col.distinct("tile", {"season": s}))
-        pending = [t for t in all_tiles if t not in done_set]
-        pending_dict[s] = pending
-        pct = len(done_set) / total_target * 100 if total_target > 0 else 0
-        total_done += len(done_set)
-        print(f"  * {s.upper():<10}: {len(done_set):>3} / {total_target} ({pct:5.1f}%) | Pending: {len(pending):>3}")
+        ok_count = sum(1 for t, ok in status_by_season[s] if ok)
+        missing = [t for t, ok in status_by_season[s] if not ok]
+        pct = (ok_count / total_tiles) * 100 if total_tiles > 0 else 0
+        total_ok += ok_count
 
-    global_pct = total_done / (total_target * len(seasons)) * 100 if total_target > 0 else 0
-    print(f"  -------------------------------------------------------------")
-    print(f"  TOTAL GLOBAL : {total_done:>4} / {total_target * len(seasons)} ({global_pct:5.1f}%)")
-
-    # 2. Active claims
-    print("\n2. ACTIVE WORKERS AND IN-PROGRESS TILES:")
-    print("-" * 80)
-    cutoff = datetime.utcnow() - timedelta(hours=2)
-    active_claims = list(claims_col.find({"status": "processing", "claimed_at": {"$gte": cutoff}}))
-    if active_claims:
-        for c in active_claims:
-            elapsed = (datetime.utcnow() - c["claimed_at"]).total_seconds() / 60
-            print(f"  - Worker [{c.get('claimed_by', 'unknown')}]: {c.get('season', '?').upper()} -> Tile {c.get('tile')} (claimed {elapsed:.1f} min ago)")
-    else:
-        print("  No active claims currently registered.")
-
-    # 3. Sample of pending tiles
-    print("\n3. SAMPLE OF PENDING TILES:")
-    print("-" * 80)
-    for s in seasons:
-        p = pending_dict[s]
-        if p:
-            print(f"  * {s.upper():<10}: {len(p)} pending. First 3: {p[:3]} ... Last 3: {p[-3:]}")
+        if len(missing) == 0:
+            sample_str = "100% COMPLETADO (OK)"
+        elif len(missing) <= 5:
+            sample_str = f"Faltan: {missing}"
         else:
-            print(f"  * {s.upper():<10}: 100% COMPLETED")
+            sample_str = f"Faltan {len(missing)} (p. ej. {missing[:3]} ... {missing[-3:]})"
 
-    print("\n" + "=" * 80)
+        print(f"{s.capitalize():<12} | {ok_count:>4} / {total_tiles:<5} | {pct:>6.1f}% | {len(missing):>10} | {sample_str}")
+
+    total_expected = total_tiles * len(seasons)
+    global_pct = (total_ok / total_expected) * 100 if total_expected > 0 else 0
+    print("-" * 86)
+    print(f"{'TOTAL GLOBAL':<12} | {total_ok:>4} / {total_expected:<5} | {global_pct:>6.1f}% | {total_expected - total_ok:>10} | Auditado en {elapsed:.2f}s")
+    print("=" * 86)
+
+    # 2. Última actividad registrada en el clúster
+    print("\n2. ÚLTIMA ACTIVIDAD EN EL CLÚSTER (ÚLTIMOS 10 COMPOSITES GENERADOS):")
+    print("-" * 86)
+    recent = list(comp_col.find().sort("_id", -1).limit(10))
+    for r in recent:
+        t_gen = r["_id"].generation_time
+        s_name = r.get("season") or r.get("periodLabel")
+        tile_name = r.get("tile")
+        title = r.get("title", "")
+        # Cortar hash final si es largo
+        print(f"  * {t_gen.strftime('%Y-%m-%d %H:%M:%S UTC')} | Estación: {s_name:<9} | Tile: {tile_name:<6} | {title}")
+
+    print("=" * 86 + "\n")
 
 
 if __name__ == "__main__":

@@ -134,17 +134,22 @@ def _verify_composite_in_minio(
     season_end: datetime,
 ) -> Optional[dict]:
     """Check if composite already exists and contains its layers in s2-composites."""
-    comp_meta = mongo_composites_col.find_one({"tile": tile, "season": season})
-
-    if comp_meta is not None:
+    query = {"tile": tile, "$or": [{"season": season}, {"periodLabel": season}]}
+    for comp_meta in mongo_composites_col.find(query):
         prefix = comp_meta.get("S3BandsPrefix")
         if prefix:
             try:
-                objects = list(minio_client.list_objects(bucket_composites, prefix=prefix, recursive=True))
-                if len(objects) >= 10:
-                    return comp_meta
+                # Fast direct check: B02_10m.tif exists in all complete composites
+                key = prefix.rstrip("/") + "/B02_10m.tif"
+                minio_client.stat_object(bucket_composites, key)
+                return comp_meta
             except Exception:
-                pass
+                try:
+                    objects = list(minio_client.list_objects(bucket_composites, prefix=prefix, recursive=True))
+                    if len(objects) >= 10:
+                        return comp_meta
+                except Exception:
+                    pass
 
     return None
 
@@ -430,6 +435,19 @@ def download_products():
                     )
                     raw_products = list(cursor)
 
+                    valid_existing = None
+                    # Check if products from MongoDB actually have valid raw bands in MinIO
+                    if raw_products:
+                        try:
+                            valid_existing = _validate_composite_products(raw_products)
+                        except Exception as e:
+                            print(f"  {prefix_log} Stale metadata in MongoDB (raw bands missing in MinIO: {e}). Cleaning {len(raw_products)} stale records to trigger clean re-download...")
+                            valid_existing = None
+
+                        if not valid_existing:
+                            mongo_products_col.delete_many({"_id": {"$in": [p["_id"] for p in raw_products]}})
+                            raw_products = []
+
                     if not raw_products:
                         print(f"  {prefix_log} Downloading captures from Google Cloud Sentinel API (attempt {attempt}/{max_tile_attempts})...")
                         # Silence low-level individual JP2 upload spam
@@ -451,7 +469,7 @@ def download_products():
 
                     # 4. Validate and select best acquisitions
                     print(f"  {prefix_log} Validating {len(raw_products)} captures for composite...")
-                    valid_products = _validate_composite_products(raw_products)
+                    valid_products = valid_existing if valid_existing else _validate_composite_products(raw_products)
                     selected_products = valid_products[:max_products_composite]
 
                     if not selected_products:

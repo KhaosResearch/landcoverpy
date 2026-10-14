@@ -70,3 +70,7 @@ service-account*.json
 
 # Duplicate large datasets
 *MEDITERRANEAN_FOREST*.csv
+
+# Paper materials and generated datasets
+demo_deployment/app_data/paper_materials/
+paper_materials/
