@@ -112,14 +112,14 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
     s2_band_kwargs = _get_kwargs_raster(band_path)
 
     crop_mask, label_lon_lat = _mask_polygons_by_tile(polygons_in_tile, s2_band_kwargs)
+    valid_rows, valid_cols = np.where(~crop_mask)
 
     raster = _read_raster(
         band_path=band_path,
-        rescale=True
+        rescale=False
     )
-
-    raster_masked = np.ma.masked_array(raster, mask=crop_mask)
-    raster_masked = np.ma.compressed(raster_masked).flatten()
+    sample_scale = max(1, int(round(s2_band_kwargs["transform"][0] / 10)))
+    raster_masked = raster[0, valid_rows // sample_scale, valid_cols // sample_scale].flatten()
     
 
     for dem_name in dems_raster_names:
@@ -134,8 +134,7 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
             rescale=True,
             normalize_range=band_normalize_range
         )
-        raster_masked = np.ma.masked_array(raster, mask=crop_mask)
-        raster_masked = np.ma.compressed(raster_masked).flatten()
+        raster_masked = raster[0, valid_rows, valid_cols].flatten()
         raster_df = pd.DataFrame({dem_name: raster_masked})
         tile_df = pd.concat([tile_df, raster_df], axis=1)
 
@@ -166,8 +165,8 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
 
 
         # For validate dataset geometries, the product name is added.
-        raster_product_name = np.full_like(
-            raster_masked, product_name, dtype=object
+        raster_product_name = np.full(
+            len(valid_rows), product_name, dtype=object
         )
         raster_df = pd.DataFrame({f"{season}_product_name": raster_product_name})
         tile_df = pd.concat([tile_df, raster_df], axis=1)
@@ -221,13 +220,19 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
             if is_band[i] and (band_normalize_range is None):
                 band_normalize_range = (0, 7000)
 
+            band_kwargs = _get_kwargs_raster(temp_path)
+            scale_factor = max(1, int(round(band_kwargs["transform"][0] / 10)))
             raster = _read_raster(
                 band_path=temp_path,
-                rescale=True,
-                normalize_range=band_normalize_range,
+                rescale=False,
+                normalize_range=None,
             )
-            raster_masked = np.ma.masked_array(raster[0], mask=crop_mask)
-            raster_masked = np.ma.compressed(raster_masked)
+            raster_masked = raster[0, valid_rows // scale_factor, valid_cols // scale_factor]
+            if band_normalize_range is not None:
+                from landcoverpy.utilities.raster import _normalize
+                raster_masked = _normalize(raster_masked, band_normalize_range[0], band_normalize_range[1])
+
+            temp_path.unlink(missing_ok=True)
 
             raster_df = pd.DataFrame({f"{season}_{raster_name}": raster_masked})
 
@@ -235,8 +240,7 @@ def _process_tile_train(tile, polygons_in_tile, use_aster=True):
 
     for index, label in enumerate([settings.LC_PROPERTY, "longitude", "latitude", settings.SL_PROPERTY]):
 
-        raster_masked = np.ma.masked_array(label_lon_lat[:, :, index], mask=crop_mask)
-        raster_masked = np.ma.compressed(raster_masked).flatten()
+        raster_masked = label_lon_lat[valid_rows, valid_cols, index].flatten()
         raster_df = pd.DataFrame({label: raster_masked})
         tile_df = pd.concat([tile_df, raster_df], axis=1)
 
